@@ -1,3 +1,29 @@
+"""
+                                                          ..___|**_
+                                                  .|||||||||*+@+*__*++.
+                                              _||||.           .*+;].,#_
+                                         _|||*_                _    .@@@#@.
+                                   _|||||_               .@##@#| _||_
+         Morphen              |****_                   .@.,/\..@_.
+                             #///#+++*|    .       .@@@;#.,.\@.
+                              .||__|**|||||*||*+@#];_.  ;,;_
+ Geferson Lucatelli                            +\*_.__|**#
+                                              |..      .]]
+                                               ;@       @.*.
+                                                #|       _;]];|.
+                                                 ]_          _+;]@.
+                                                 _/_             |]\|    .  _
+                                              ...._@* __ .....     ]]+ ..   _
+                                                  .. .       . .. .|.|_ ..
+
+"""
+__version__ = 0.1
+__author__  = 'Geferson Lucatelli'
+__email__   = ''
+__date__    = '2023 02'
+
+print(__doc__)
+
 from lmfit import Model
 from lmfit import Parameters, fit_report, minimize
 import numpy as np
@@ -22,7 +48,13 @@ from lmfit import Model
 | |_| |  __/\ V /  __/ | (_) | |_) | | | | | |  __/ | | | |_ 
 |____/ \___| \_/ \___|_|\___/| .__/|_| |_| |_|\___|_| |_|\__|
                              |_|                             
-                             
+To do:
+    - Needs lots of documenting, 
+    - importing issues (I am using this code on a 
+        larger collection of scripts that I run on jupyter).
+    -  good model and fast convergence if config input file is well constructed. 
+        So, make this code more general, establish good initial values 
+        automatically
                              
 """
 
@@ -225,7 +257,7 @@ def do_fit2D(imagename, params_values_init, ncomponents,
                                           'seed': 1}
                                  )
 
-    if method2 == 'ampgo':
+    if method2 == 'nelder':
         result = mini.minimize(method='nelder',params=result_1.params,
                                options={'maxiter': 30000, 'maxfev' : 30000,
                                         'xatol': 1e-11, 'fatol': 1e-11,
@@ -354,3 +386,74 @@ Usage:
                                         ncomponents=n_components,constrained=True,
                                         init_params = 0.25,final_params = 4.0)
 """
+
+
+
+## Experiments with Bayesian Inference
+import numpy as np
+
+# try:
+#     np.__config__.blas_opt_info = np.__config__.blas_ilp64_opt_info
+# except Exception:
+#     pass
+
+import pymc3 as pm
+import theano.tensor as tt
+
+
+
+def two_component_sersic(params, x, y):
+    n1, Re1, Ie1, xc1, yc1, q1, PA1, n2, Re2, Ie2, xc2, yc2, q2, PA2 = params
+    bn1 = 2 * n1 - 1 / 3
+    bn2 = 2 * n2 - 1 / 3
+    xx1, yy1 = rotation(PA1, xc1, yc1, x, y)
+    r1 = np.sqrt((xx1) ** 2 + ((yy1) / q1) ** 2)
+    I1 = Ie1 * np.exp(-bn1 * (np.power(r1 / Re1, 1. / n1)) - 1)
+    xx2, yy2 = rotation(PA2, xc2, yc2, x, y)
+    r2 = np.sqrt((xx2) ** 2 + ((yy2) / q2) ** 2)
+    I2 = Ie2 * np.exp(-bn2 * (np.power(r2 / Re2, 1. / n2)) - 1)
+    return I1 + I2
+
+
+def fit_two_component_sersic(image, x, y):
+    with pm.Model() as model:
+        n1 = pm.Uniform('n1', lower=0.3, upper=2.0)
+        Re1 = pm.Uniform('Re1', lower=2.1, upper=20)
+        Ie1 = pm.Uniform('Ie1', lower=0.0001, upper=0.5)
+        xc1 = pm.Uniform('xc1', lower=80, upper=120)
+        yc1 = pm.Uniform('yc1', lower=80, upper=120)
+        q1 = pm.Uniform('q1', lower=0.001, upper=0.99)
+        PA1 = pm.Uniform('PA1', lower=-0.001, upper=359.99)
+        n2 = pm.Uniform('n2', lower=0.3, upper=2)
+        Re2 = pm.Uniform('Re2', lower=15.1, upper=90)
+        Ie2 = pm.Uniform('Ie2', lower=0.00001, upper=0.1)
+        xc2 = pm.Uniform('xc2', lower=80, upper=120)
+        yc2 = pm.Uniform('yc2', lower=80, upper=120)
+        q2 = pm.Uniform('q2', lower=0.001, upper=0.99)
+        PA2 = pm.Uniform('PA2', lower=-0.001, upper=359.99)
+
+        params = pm.math.stack(
+            [n1, Re1, Ie1, xc1, yc1, q1, PA1, n2, Re2, Ie2, xc2, yc2, q2, PA2])
+        model_image = two_component_sersic(params, x, y)
+        sigma = pm.HalfCauchy('sigma', beta=10)
+        likelihood = pm.Normal('likelihood', mu=model_image, sigma=sigma,
+                               observed=image)
+
+        trace = pm.sample(400, tune=300, chains=8)
+
+    best_params = pm.summary(trace)['mean']
+    best_params_error = pm.summary(trace)['sd']
+
+    return best_params, best_params_error, trace
+
+
+def plot_posteriors(trace):
+    pm.plot_posterior(trace,
+                      varnames=['n1', 'Re1', 'Ie1', 'xc1', 'yc1', 'q1', 'PA1',
+                                'n2', 'Re2', 'Ie2', 'xc2', 'yc2', 'q2', 'PA2'])
+    plt.show()
+
+image = pf.getdata(imagename)# 2D image data
+y, x = np.indices(image.shape)
+best_params, best_params_error, trace = fit_two_component_sersic(image, x, y)
+# plot_posteriors(trace)
