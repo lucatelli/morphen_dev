@@ -104,30 +104,15 @@ def copy_header(image, image_to_copy, file_to_save=None):
         in order to compute the total flux in residual maps after the
         header has been copied.
     """
-    hdu = pf.open(image)[0]
-    wcs = WCS(hdu.header, naxis=2)
-    image_to_copy_data = pf.getdata(image_to_copy)
-    hdu.data = image_to_copy_data
     if file_to_save == None:
-        """
-        This is just a safe fallback, you would want to overwrite the
-        existing file, therefore set image_to_copy=file_to_save 
-        when calling this function.
-        """
         file_to_save = image_to_copy.replace('.fits', 'header.fits')
-    try:
-        #The weirdest error that I got on Python ever.
-        # On a mounted drive (e.g. pcloud), hdu.writeto does not work on the
-        # first try, so we need to call it again, and bummmmm, works!!!
-        # took me hours to solve this issue.
-        hdu.writeto(file_to_save, overwrite=True)
-    except:
-        try:
-            hdu.writeto(file_to_save, overwrite=True)
-        except:
-            hdu.writeto(file_to_save, overwrite=True)
-            print('Error saving/copying header of fits file!')
-            pass
+
+    from astropy.io import fits
+    with fits.open(image) as hdul1:
+        with fits.open(image_to_copy, mode='update') as hdul2:
+            hdul2[0].header = hdul1[0].header
+            hdul2.flush()
+    pass
 
 def ctn(image):
     '''
@@ -387,7 +372,7 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
     print(' >> Using', method1, ' solver for first optimisation run... ')
     # take parameters from previous run, and re-optimize them.
     #     method2 = 'ampgo'#'least_squares'
-    method2 = 'least_squares'
+    # method2 = 'least_squares'
     result_extra = None
     if method1 == 'nelder':
         # very robust, but takes time....
@@ -621,14 +606,15 @@ def fast_plot3(imagename, modelname, residualname, reference_image, crop=False,
         std_m = mad_std(m)
 
     #     print(I1)
-    vmin = 1 * std  # 0.5*g.min()#
+    vmin = 0.01 * std  # 0.5*g.min()#
     vmax = 1.0 * g.max()
-    vmin_r = -0.01 * vmin  # 1.0*r.min()#1*std_r
+    vmin_r = -0.5 * vmin  # 1.0*r.min()#1*std_r
     vmax_r = 1.0 * r.max()
     vmin_m = vmin  # 1*mad_std(m)#vmin#0.01*std_m#0.5*m.min()#
     vmax_m = vmax  # 0.5*m.max()#vmax#0.5*m.max()
 
     levels_g = np.geomspace(g.max(), 3 * std, 7)
+    levels_colorbar2 = np.geomspace(g.max(), 3 * std, 5)
     levels_m = np.geomspace(m.max(), 10 * std_m, 7)
     levels_r = np.geomspace(r.max(), 3 * std_r, 7)
 
@@ -636,7 +622,7 @@ def fast_plot3(imagename, modelname, residualname, reference_image, crop=False,
     norm = visualization.simple_norm(g, stretch='linear',
                                      max_percent=max_percent_lowlevel)
     norm2 = simple_norm(abs(g), min_cut=vmin, max_cut=vmax,
-                        stretch='asinh', asinh_a=0.05)  # , max_percent=max_percent_highlevel)
+                        stretch='asinh', asinh_a=0.005)  # , max_percent=max_percent_highlevel)
     CM = 'magma_r'
     ax = fig.add_subplot(1, 3, 1)
 
@@ -650,9 +636,30 @@ def fast_plot3(imagename, modelname, residualname, reference_image, crop=False,
     ax.contour(g, levels=levels_g[::-1], colors='#009E73', linewidths=0.2,
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
     cb = plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes(
-        [-0.0, 0.40, 0.02,
-         0.19]))  # ,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
-    cb.set_label(r'Flux [Jy/beam]', labelpad=1)
+        [-0.0, 0.40, 0.02,0.19]))
+#     cax = fig.add_axes([-0.0, 0.40, 0.02,0.19])
+
+# #         cbar = fig.colorbar(im, cax=cax, orientation='vertical', format='%.2e',
+# #                             shrink=1, aspect='auto', pad=10, fraction=1.0,
+# #                             drawedges=False, ticklocation='left')
+#     cb = fig.colorbar(g, cax=cax, orientation='vertical',
+#                         shrink=1, aspect='auto', pad=10, fraction=1.0,
+#                         drawedges=False, ticklocation='left')
+#     cb.formatter = CustomFormatter(factor=1000, useMathText=True)
+    cb.update_ticks()
+
+
+#         cbar.update_ticks()
+    # cbar_axes = [0.12, 0.95, 0.78, 0.06]
+    # cax = fig.add_axes(cbar_axes)
+    #
+    # cbar = fig.colorbar(im, cax=cax, orientation='horizontal', format='%.0e',
+    #                     shrink=1.0, aspect='auto', pad=0.1, fraction=1.0, drawedges=False
+    #                     )
+    cb.ax.yaxis.set_tick_params(labelleft=True, labelright=False, tick1On=False, tick2On=False)
+    cb.ax.yaxis.tick_left()
+    cb.set_ticks(levels_colorbar2)
+    cb.set_label(r'Flux [Count/pixel]', labelpad=1)
     cb.ax.xaxis.set_tick_params(pad=1)
     cb.ax.tick_params(labelsize=12)
     cb.outline.set_linewidth(1)
@@ -662,7 +669,7 @@ def fast_plot3(imagename, modelname, residualname, reference_image, crop=False,
 
     #     im_plot = ax.imshow(m, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax_m, vmin=vmin_m)#norm=norm
     norm_mod = simple_norm(m, min_cut=vmin_m, max_cut=vmax_m,
-                           stretch='sqrt')  # , max_percent=max_percent_highlevel)
+                           stretch='asinh', asinh_a=0.005)  # , max_percent=max_percent_highlevel)
 
     im_plot = ax.imshow(m, cmap=CM, origin='lower', alpha=1.0,
                         norm=norm_mod)
@@ -673,7 +680,7 @@ def fast_plot3(imagename, modelname, residualname, reference_image, crop=False,
 
     ax = plt.subplot(1, 3, 3)
     norm_re = simple_norm(r, min_cut=vmin_r, max_cut=vmax_r,
-                          stretch='sqrt')  # , max_percent=max_percent_highlevel)
+                          stretch='asinh', asinh_a=0.005)  # , max_percent=max_percent_highlevel)
     #     norm = simple_norm(r,stretch='asinh',asinh_a=0.01)#,vmin=vmin,vmax=vmax)
     #     ax.imshow(r,origin='lower',cmap='magma_r',alpha=1.0,vmax=vmax_r, vmin=vmin)#norm=norm
     ax.imshow(r, origin='lower', cmap=CM, alpha=1.0, norm=norm_re)
