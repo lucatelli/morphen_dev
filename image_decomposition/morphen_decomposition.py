@@ -49,6 +49,9 @@ from petrofit.segmentation import make_catalog, plot_segments
 from petrofit.segmentation import plot_segment_residual
 from petrofit.photometry import order_cat
 
+import sep
+import fitsio
+
 """
              ____            _   _               _ 
             / ___|__ _ _   _| |_(_) ___  _ __   | |
@@ -925,6 +928,26 @@ def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
     if return_ == 'box':
         box = xin, xen, yin, yen  # [xin:xen,yin:yen]
         return(box)
+
+def sep_background(imagename,mask=None,apply_mask=True,
+                   bw=64, bh=64, fw=5, fh=5):
+    '''
+    If using astropy.io.fits, you get an error (see bug on sep`s page).
+    '''
+    data_2D = fitsio.read(imagename)
+
+    if (mask is None) and (apply_mask==True):
+        _, mask = mask_dilation(imagename, PLOT=False,
+                                sigma=3, iterations=2, dilation_size=10)
+        bkg = sep.Background(data_2D, mask=mask, bw=12, bh=12, fw=5, fh=5)
+
+    else:
+        bkg = sep.Background(data_2D, mask=mask,
+                             bw=bw, bh=bh, fw=fw, fh=fh)
+    bkg_rms = bkg.rms()
+    bkg_image = bkg.back()
+    return(bkg)
+
 
 """
  ____      _                 _             
