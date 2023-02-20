@@ -40,6 +40,7 @@ from astropy import visualization
 from astropy.visualization import simple_norm
 import scipy.ndimage as nd
 import pickle
+import pandas as pd
 """
              ____            _   _               _ 
             / ___|__ _ _   _| |_(_) ___  _ __   | |
@@ -69,6 +70,15 @@ To do:
                              
 """
 
+
+"""
+ _   _ _   _ _     
+| | | | |_(_) |___ 
+| | | | __| | / __|
+| |_| | |_| | \__ \
+ \___/ \__|_|_|___/
+
+"""
 def read_imfit_params(fileParams,return_names=False):
     dlines = [ line for line in open(fileParams) if len(line.strip()) > 0 and line[0] != "#" ]
     values=[]
@@ -120,7 +130,8 @@ def ctn(image):
         FUnction that read fits files inside CASA environment.
         Read a CASA format image file and return as a numpy array.
         Also works with wsclean images!
-        Note: For some reason, casa returns a rotated mirroed array, so we need to undo it by a rotation.
+        Note: For some reason, casa returns a rotated mirroed array, so we need
+        to undo it by a rotation.
         '''
     try:
         ia = IA()
@@ -142,6 +153,38 @@ def ctn(image):
             print('Error loading fits file')
             return(ValueError)
     return(data_image)
+
+
+def save_results_csv(result_mini, save_name, ext='.csv', save_corr=True,
+                     save_params=True):
+    values = result_mini.params.valuesdict()
+    if save_corr:
+        covariance = result_mini.covar
+        covar_df = pd.DataFrame(covariance, index=values.keys(),
+                                columns=values.keys())
+        covar_df.to_csv(save_name + '_mini_corr' + ext, index_label='parameter')
+
+    if save_params:
+        try:
+            stderr = [result_mini.params[name].stderr for name in values.keys()]
+            df = pd.DataFrame({'value': list(values.values()), 'stderr': stderr},
+                              index=values.keys())
+            df.to_csv(save_name + '_mini_params' + ext, index_label='parameter')
+        except:
+            print('Errors not present in mini, saving only parameters.')
+            df = pd.DataFrame(result_mini.params.valuesdict(), index=['value'])
+            df.T.to_csv(save_name + '_mini_params' + ext,
+                        index_label='parameter')
+
+
+"""
+ __  __       _   _         
+|  \/  | __ _| |_| |__  ___ 
+| |\/| |/ _` | __| '_ \/ __|
+| |  | | (_| | |_| | | \__ \
+|_|  |_|\__,_|\__|_| |_|___/
+"""
+
 def rotation(PA, x0, y0, x, y):
     """
     Rotate an input image array. It can be used to modify
@@ -186,6 +229,15 @@ def sersic2D(xy, x0, y0, PA, ell, n, In, Rn):
 def FlatSky(data_level, a):
     return (a * data_level)
 
+"""
+ __  __       _ _   _      ____                _      
+|  \/  |_   _| | |_(_)    / ___|  ___ _ __ ___(_) ___ 
+| |\/| | | | | | __| |____\___ \ / _ \ '__/ __| |/ __|
+| |  | | |_| | | |_| |_____|__) |  __/ |  \__ \ | (__ 
+|_|  |_|\__,_|_|\__|_|    |____/ \___|_|  |___/_|\___|
+
+"""
+
 
 def setup_model_components(n_components=2):
     """
@@ -206,9 +258,27 @@ def setup_model_components(n_components=2):
     return (smodel2D)
 
 
-def construct_model_parameters(params_values_init, n_components=3,
-                               constrained=True, fix_n=True,
+def construct_model_parameters(n_components=None, params_values_init=None,
+                               init_constraints=None,
+                               constrained=True, fix_n=True, fix_x0_y0=False,
                                init_params=0.25, final_params=4.0):
+    """
+    This function creates a single or multi-component Sersic model to be fitted
+    onto an astronomical image.
+
+    Note:
+
+    Parameters
+    ----------
+    n_components:
+    params_values_init: np.array or None; optional
+        np.array containing initial values for paremeters. These values
+        are generated using
+            params_values_init = read_imfit_params(imfit_config_file).
+
+
+    """
+
     if n_components is None:
         n_components = len(params_values_init) - 1
 
@@ -216,106 +286,356 @@ def construct_model_parameters(params_values_init, n_components=3,
     # print(smodel2D)
     model_temp = Model(sersic2D)
     dr = 10
+    dr_fix = 2
 
     # params_values_init = [] #grid of parameter values, each row is the
     # parameter values of a individual component
-    for i in range(0, n_components):
-        x0, y0, PA, ell, n, In, Rn = params_values_init[i]
 
-        if constrained == True:
-            for param in model_temp.param_names:
-                # print(param)
-                # apply bounds to each parameter.
-                smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                        value=eval(param),
-                                        min=init_params * eval(param),
-                                        max=final_params * eval(param))
-
-                # still, some of them must be treated in particular.
-                if param == 'n':
-                    if (i + 1 == 1 or i + 1 == 3) and (fix_n == True):
-                        print('Fixing sersic index to 0.5')
-                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                                value=0.5, min=0.49, max=0.51)
-                    else:
-                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                                value=eval(param), min=0.3,
-                                                max=2.0)
-                if param == 'x0':
-                    print('Limiting ', param)
+    if params_values_init is not None:
+        """This takes the values from config file as init params and set 
+        number of components.
+        """
+        for i in range(0, n_components):
+            x0, y0, PA, ell, n, In, Rn = params_values_init[i]
+            if fix_x0_y0 is not False:
+                fix_x0_y0_i = fix_x0_y0[i]
+            else:
+                fix_x0_y0_i = False
+            ii = str(i + 1)
+            if constrained == True:
+                for param in model_temp.param_names:
+                    # apply bounds to each parameter.
                     smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
                                             value=eval(param),
-                                            min=eval(param) - dr,
-                                            max=eval(param) + dr)
-                if param == 'y0':
-                    # print('Limiting ',param)
+                                            min=init_params * eval(param),
+                                            max=final_params * eval(param))
+
+                    # still, some of them must be treated in particular.
+                    if param == 'n':
+                        if (i + 1 == 1 or i + 1 == 3) and (fix_n == True):
+                            print('Fixing sersic index to 0.5')
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=0.5, min=0.49, max=0.51)
+                        else:
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=eval(param), min=0.3,
+                                max=4.0)
+                    if param == 'x0':
+                        if fix_x0_y0_i is not False:
+                            """
+                            Fix centre position by no more than dr_fix.
+                            """
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=eval(param),
+                                min=eval(param) - dr_fix,
+                                max=eval(param) + dr_fix)
+                        else:
+                            if (init_constraints is not None) and (
+                                    init_constraints['ncomps'] == n_components):
+                                """
+                                If initial constraints using Petro analysis are provided, then use!
+                                """
+                                ddxx = 3  # the offset on x direction from Petro centre.
+                                x0 = init_constraints['c' + ii + '_x0c']
+                                x0_max = x0 + ddxx
+                                x0_min = x0 - ddxx
+                                print('Limiting ', param)
+                                smodel2D.set_param_hint(
+                                    'f' + str(i + 1) + '_' + param,
+                                    value=x0,
+                                    min=x0_min,
+                                    max=x0_max)
+                            else:
+                                """
+                                Then, consider that input File is good, then give some bound
+                                around those values.
+                                """
+                                print('Limiting ', param)
+                                smodel2D.set_param_hint(
+                                    'f' + str(i + 1) + '_' + param,
+                                    value=eval(param),
+                                    min=eval(param) - dr,
+                                    max=eval(param) + dr)
+                    if param == 'y0':
+                        if fix_x0_y0_i is not False:
+                            """
+                            Fix centre position by no more than dr_fix.
+                            """
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=eval(param),
+                                min=eval(param) - dr_fix,
+                                max=eval(param) + dr_fix)
+                        else:
+                            if (init_constraints is not None) and (
+                                    init_constraints['ncomps'] == n_components):
+                                """
+                                If initial constraints is using Petro analysis are provided, then use!
+                                """
+                                ddyy = 3  # the offset on x direction from Petro centre.
+                                y0 = init_constraints['c' + ii + '_y0c']
+                                y0_max = y0 + ddyy
+                                y0_min = y0 - ddyy
+                                print('Limiting ', param)
+                                smodel2D.set_param_hint(
+                                    'f' + str(i + 1) + '_' + param,
+                                    value=y0,
+                                    min=y0_min,
+                                    max=y0_max)
+                            else:
+                                """
+                                Then, consider that input File is good, then give some bound
+                                around those values.
+                                """
+                                print('Limiting ', param)
+                                smodel2D.set_param_hint(
+                                    'f' + str(i + 1) + '_' + param,
+                                    value=eval(param),
+                                    min=eval(param) - dr,
+                                    max=eval(param) + dr)
+                    if param == 'ell':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=eval(param), min=0.001,
+                                                max=0.8)
+                    if param == 'PA':
+                        if (init_constraints is not None) and (
+                                init_constraints['ncomps'] == n_components):
+                            _PA = init_constraints['c' + ii + '_PA']
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=_PA, min=_PA - 60,
+                                max=_PA + 60)
+                        else:
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=eval(param), min=-50.0,
+                                max=190.0)
+                    if param == 'In':
+                        if (init_constraints is not None) and (
+                                init_constraints['ncomps'] == n_components):
+                            I50 = init_constraints['c' + ii + '_I50']
+                            I50_max = I50 * 10
+                            I50_min = I50 * 0.1
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=I50_max, min=I50_min, max=I50_max)
+                        else:
+                            smodel2D.set_param_hint(
+                                'f' + str(i + 1) + '_' + param,
+                                value=eval(param),
+                                min=init_params * eval(param),
+                                max=10 * final_params * eval(param))
+            if constrained == False:
+                for param in model_temp.param_names:
                     smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param),
-                                            min=eval(param) - dr,
-                                            max=eval(param) + dr)
-                if param == 'ell':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param), min=0.01, max=0.7)
-                if param == 'PA':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param), min=-50.0,
-                                            max=190.0)
-                if param == 'In':
-                    if i + 1 == 1:
+                                            value=eval(param), min=0.000001)
+                    if param == 'n':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=0.5, min=0.3, max=5)
+                    if param == 'PA':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=45, min=-50.0, max=190)
+                    if param == 'ell':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=eval(param), min=0.001,
+                                                max=0.99)
+                    if param == 'In':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=eval(param), min=0.0000001,
+                                                max=10.0)
+                    if param == 'Rn':
+                        smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                                                value=eval(param), min=0.5,
+                                                max=300.0)
+                    if param == 'x0':
+                        print('Limiting ', param)
                         smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
                                                 value=eval(param),
-                                                min=init_params * eval(param),
-                                                max=50 * final_params * eval(param))
-                    else:
+                                                min=eval(param) - dr * 5,
+                                                max=eval(param) + dr * 5)
+                    if param == 'y0':
+                        # print('Limiting ',param)
                         smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
                                                 value=eval(param),
-                                                min=init_params * eval(param),
-                                                max=1 * final_params * eval(param))
+                                                min=eval(param) - dr * 5,
+                                                max=eval(param) + dr * 5)
 
-            smodel2D.set_param_hint('s_a', value=2, min=0.01, max=5.0)
+        smodel2D.set_param_hint('s_a', value=10.0, min=0.1, max=50.0)
+    else:
+        if init_constraints is not None:
+            if constrained == True:
+                for j in range(init_constraints['ncomps']):
+                    jj = str(j + 1)
+                    for param in model_temp.param_names:
+                        if (param == 'n'):
+                            if (fix_n == True):
+                                smodel2D.set_param_hint(
+                                    'f' + str(j + 1) + '_' + param,
+                                    value=0.5, min=0.49, max=0.51)
+                            else:
+                                smodel2D.set_param_hint(
+                                    'f' + str(j + 1) + '_' + param,
+                                    value=0.5, min=0.3, max=4.0)
 
-        if constrained == False:
-            for param in model_temp.param_names:
-                smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                        value=eval(param), min=0.000001)
-                if param == 'n':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=0.5, min=0.3, max=5)
-                if param == 'PA':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=45, min=-50.0, max=190)
-                if param == 'ell':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param), min=0.001, max=0.99)
-                if param == 'In':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param), min=0.0000001, max=10.0)
-                if param == 'Rn':
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param), min=0.5, max=300.0)
-                if param == 'x0':
-                    print('Limiting ', param)
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param),
-                                            min=eval(param) - dr * 5,
-                                            max=eval(param) + dr * 5)
-                if param == 'y0':
-                    # print('Limiting ',param)
-                    smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
-                                            value=eval(param),
-                                            min=eval(param) - dr * 5,
-                                            max=eval(param) + dr * 5)
+                        """
+                        Constraining PA and q from the pre-analysis of the image 
+                        (e.g. petro analysys) is not robust, since that image is 
+                        already convolved with the restoring beam, which can be 
+                        rotated. So the PA and q of a DECONVOLVED_MODEL 
+                        (the actual minimization problem here) can be different 
+                        from the PA and q of a CONVOLVED_MODEL (as well 
+                        Rn_conv > Rn_decon; In_conv< In_deconv). 
+                        So, at least we give some large bound.
+                        """
+                        if param == 'PA':
+                            dO = 60
+                            _PA = init_constraints['c' + jj + '_PA']
+                            PA_max = _PA + dO
+                            PA_min = _PA - dO
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=_PA, min=PA_min, max=PA_max)
+                        if param == 'ell':
+                            dell = 0.2
+                            ell = 1 - init_constraints['c' + jj + '_q']
+                            ell_min = ell * 0.5
 
-            smodel2D.set_param_hint('s_a', value=2, min=-10.00, max=50.0)
+                            if ell * 2.0 <= 1.0:
+                                ell_max = ell * 2.0
+                            else:
+                                ell_max = 1.0
+
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=ell, min=ell_min, max=ell_max)
+
+                        if param == 'In':
+                            I50 = init_constraints['c' + jj + '_I50']
+                            I50_max = I50 * 100
+                            I50_min = I50 * 0.1
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=I50_max, min=I50_min, max=I50_max)
+                        if param == 'Rn':
+                            R50 = init_constraints['c' + jj + '_R50']
+                            dR = R50 * 0.75
+                            R50_max = R50 * 1.2
+                            R50_min = R50 * 0.1
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=R50_min, min=R50_min, max=R50_max)
+
+                        if param == 'x0':
+                            ddxx = 5
+                            x0c = init_constraints['c' + jj + '_x0c']
+                            x0_max = x0c + ddxx
+                            x0_min = x0c - ddxx
+                            print('Limiting ', param)
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=x0c,
+                                min=x0_min,
+                                max=x0_max)
+                        if param == 'y0':
+                            ddyy = 5
+                            y0c = init_constraints['c' + jj + '_y0c']
+                            y0_max = y0c + ddyy
+                            y0_min = y0c - ddyy
+                            print('Limiting ', param)
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=y0c,
+                                min=y0_min,
+                                max=y0_max)
+            if constrained == False:
+                for j in range(init_constraints['ncomps']):
+                    jj = str(j + 1)
+                    for param in model_temp.param_names:
+                        smodel2D.set_param_hint('f' + str(j + 1) + '_' + param,
+                                                value=eval(param), min=0.000001,
+                                                max=0.5)
+                        if param == 'n':
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=0.5, min=0.3, max=5)
+                        if param == 'PA':
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=45, min=-50.0, max=190)
+                        if param == 'ell':
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=0.2, min=0.001, max=0.9)
+                        if param == 'In':
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=0.1, min=0.0000001, max=10.0)
+                        if param == 'Rn':
+                            Rp = init_constraints['c' + jj + '_x0c']
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=10, min=2.0, max=2 * Rp)
+
+                        """
+                        This is not contrained, but at least is a good idea to 
+                        give some hints to the centre (x0,y0).
+                        """
+                        if param == 'x0':
+                            ddxx = 20
+                            x0c = init_constraints['c' + jj + '_x0c']
+                            x0_max = x0c + ddxx
+                            x0_min = x0c - ddxx
+                            print('Limiting ', param)
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=x0c,
+                                min=x0_min,
+                                max=x0_max)
+                        if param == 'y0':
+                            ddyy = 20
+                            y0c = init_constraints['c' + jj + '_y0c']
+                            y0_max = y0c + ddyy
+                            y0_min = y0c - ddyy
+                            print('Limiting ', param)
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=y0c,
+                                min=y0_min,
+                                max=y0_max)
+
+            smodel2D.set_param_hint('s_a', value=10.0, min=0.1, max=50.0)
+        else:
+            '''
+            Run a complete free-optimization.
+            '''
+            try:
+                for j in range(n_components):
+                    jj = str(j + 1)
+                    for param in model_temp.param_names:
+                        smodel2D.set_param_hint('f' + str(j + 1) + '_' + param,
+                                                value=0.5, min=0.000001)
+                        if param == 'n':
+                            smodel2D.set_param_hint(
+                                'f' + str(j + 1) + '_' + param,
+                                value=0.5, min=0.3, max=6)
+                smodel2D.set_param_hint('s_a', value=10.0, min=0.1, max=50.0)
+            except:
+                print('Please, if not providing initial parameters file,')
+                print('provide basic information for the source.')
+                return (ValueError)
 
     params = smodel2D.make_params()
     print(smodel2D.param_hints)
     return (smodel2D, params)
 
 
-
-def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None, residualname=None,
-             init_params=0.25, final_params=4.0, constrained=True, fix_n=True,PSF_CONV = True,
+def do_fit2D(imagename, params_values_init=None, ncomponents=None,
+             init_constraints=None, data_2D_=None, residualname=None,
+             init_params=0.25, final_params=4.0, constrained=True, fix_n=True,
+             fix_x0_y0=False,
              special_name='', method1='nelder', method2='least_squares',
              save_name_append=''):
     startTime = time.time()
@@ -333,13 +653,16 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
         background = residual_2D_shuffled
 
     else:
-        print('No residual/background provided. Setting 0.')
-        background = 0.0
+        print('No residual/background provided. Using image bkg map...')
+        background_map = sep_background(imagename)
+        background = background_map.back()
 
-
-    PSF_BEAM = pf.getdata(psf_name)
+    PSF_CONV = True
+    PSF_BEAM = pf.getdata(
+        imagename.replace('-image.cutout.fits', '-beampsf.cutout.fits'))
     size = data_2D.shape
     xy = np.meshgrid(np.arange((size[1])), np.arange((size[0])))
+    #     FlatSky_level = background#mad_std(data_2D)
     FlatSky_level = mad_std(data_2D)
     nfunctions = ncomponents
 
@@ -347,23 +670,30 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
         dict_model = {}
         model = 0
         for i in range(1, nfunctions + 1):
-            model = model + sersic2D(xy, params['f' + str(i) + '_x0'], params['f' + str(i) + '_y0'],
-                                     params['f' + str(i) + '_PA'], params['f' + str(i) + '_ell'],
-                                     params['f' + str(i) + '_n'], params['f' + str(i) + '_In'],
+            model = model + sersic2D(xy, params['f' + str(i) + '_x0'],
+                                     params['f' + str(i) + '_y0'],
+                                     params['f' + str(i) + '_PA'],
+                                     params['f' + str(i) + '_ell'],
+                                     params['f' + str(i) + '_n'],
+                                     params['f' + str(i) + '_In'],
                                      params['f' + str(i) + '_Rn'])
         # print(model.shape)
-        model = model + FlatSky(FlatSky_level, params['s_a'])
+        model = model + FlatSky(FlatSky_level, params['s_a']) + background
         if PSF_CONV == True:
-            MODEL_2D_conv = scipy.signal.fftconvolve(model + background, PSF_BEAM, 'same')
+            MODEL_2D_conv = scipy.signal.fftconvolve(model, PSF_BEAM, 'same')
         else:
-            MODEL_2D_conv = model + background
+            MODEL_2D_conv = model  # + background
 
         residual = data_2D - MODEL_2D_conv  # - FlatSky(FlatSky_level, params['s_a'])
         return (residual)
 
-    smodel2D, params = construct_model_parameters(params_values_init, n_components=nfunctions, fix_n=fix_n,
-                                                  init_params=init_params, final_params=final_params,
-                                                  constrained=constrained)
+    smodel2D, params = construct_model_parameters(
+        params_values_init=params_values_init, n_components=nfunctions,
+        init_constraints=init_constraints,
+        fix_n=fix_n, fix_x0_y0=fix_x0_y0,
+        init_params=init_params, final_params=final_params,
+        constrained=constrained)
+
     mini = lmfit.Minimizer(residual_2D, params, max_nfev=10000,
                            nan_policy='omit', reduce_fcn='neglogcauchy')
 
@@ -372,16 +702,15 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
     print(' >> Using', method1, ' solver for first optimisation run... ')
     # take parameters from previous run, and re-optimize them.
     #     method2 = 'ampgo'#'least_squares'
-    # method2 = 'least_squares'
+    #     method2 = 'least_squares'
     result_extra = None
     if method1 == 'nelder':
         # very robust, but takes time....
         #         print(' >> Using', method1,' solver for first optimisation run... ')
         result_1 = mini.minimize(method='nelder',
-                                 #                                  xatol = 1e-12, fatol = 1e-12, disp=True,
-                                 #                                  adaptive = True,max_nfev = 30000,
                                  options={'maxiter': 30000, 'maxfev': 30000,
-                                          'xatol': 1e-10, 'fatol': 1e-10, 'return_all': True,
+                                          'xatol': 1e-12, 'fatol': 1e-12,
+                                          'return_all': True,
                                           'disp': True}
                                  )
 
@@ -389,14 +718,17 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
         # faster, but usually not good for first run.
         result_1 = mini.minimize(method='least_squares',
                                  max_nfev=30000, x_scale='jac',  # f_scale=0.5,
-                                 tr_solver="exact", tr_options={'regularize': True},
+                                 tr_solver="exact",
+                                 tr_options={'regularize': True},
                                  ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,
                                  loss="cauchy")  # ,f_scale=0.5, max_nfev=5000, verbose=2)
 
     if method1 == 'differential_evolution':
         # de is giving some issues, I do not know why.
-        result_1 = mini.minimize(method='differential_evolution', popsize=600, disp=True,  # init = 'random',
-                                 mutation=(0.5, 1.5), recombination=[0.2, 0.9], max_nfev=20000,
+        result_1 = mini.minimize(method='differential_evolution', popsize=600,
+                                 disp=True,  # init = 'random',
+                                 mutation=(0.5, 1.5), recombination=[0.2, 0.9],
+                                 max_nfev=20000,
                                  workers=1, updating='deferred', vectorized=True)
 
     print(' >> Using', method2, ' solver for second optimisation run... ')
@@ -404,7 +736,7 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
     if method2 == 'nelder':
         result = mini.minimize(method='nelder', params=result_1.params,
                                options={'maxiter': 30000, 'maxfev': 30000,
-                                        'xatol': 1e-12, 'fatol': 1e-12,
+                                        'xatol': 1e-13, 'fatol': 1e-13,
                                         'disp': True})
 
     if method2 == 'ampgo':
@@ -418,15 +750,18 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
         # Very robust if used in second opt from first opt parameters.
         result = mini.minimize(method='least_squares', params=result_1.params,
                                max_nfev=30000,
-                               tr_solver="exact", tr_options={'regularize': True},
+                               tr_solver="exact",
+                               tr_options={'regularize': True},
                                x_scale='jac',  # f_scale=0.5,
                                ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,
                                loss="cauchy")  # ,f_scale=0.5, max_nfev=5000, verbose=2)
 
     if method2 == 'differential_evolution':
-        result = mini.minimize(method='differential_evolution', params=result_1.params,
+        result = mini.minimize(method='differential_evolution',
+                               params=result_1.params,
                                options={'maxiter': 30000, 'workers': -1,
-                                        'tol': 0.001, 'vectorized': True, 'strategy': 'randtobest1bin',
+                                        'tol': 0.001, 'vectorized': True,
+                                        'strategy': 'randtobest1bin',
                                         'updating': 'deferred', 'disp': True,
                                         'seed': 1}
                                )
@@ -435,52 +770,68 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
 
     model_temp = Model(sersic2D)
     model = 0
-    size = ctn(imagename).shape
+    size = ctn(crop_image).shape
     xy = np.meshgrid(np.arange((size[0])), np.arange((size[1])))
     model_dict = {}
     image_results_conv = []
     image_results_deconv = []
     for i in range(1, ncomponents + 1):
-        model_temp = sersic2D(xy, params['f' + str(i) + '_x0'], params['f' + str(i) + '_y0'],
-                              params['f' + str(i) + '_PA'], params['f' + str(i) + '_ell'],
-                              params['f' + str(i) + '_n'], params['f' + str(i) + '_In'],
-                              params['f' + str(i) + '_Rn']) + background / ncomponents + FlatSky(FlatSky_level, params[
-            's_a']) / ncomponents
+        model_temp = sersic2D(xy, params['f' + str(i) + '_x0'],
+                              params['f' + str(i) + '_y0'],
+                              params['f' + str(i) + '_PA'],
+                              params['f' + str(i) + '_ell'],
+                              params['f' + str(i) + '_n'],
+                              params['f' + str(i) + '_In'],
+                              params['f' + str(
+                                  i) + '_Rn']) + \
+                     background / ncomponents + \
+                     FlatSky(FlatSky_level, params['s_a']) / ncomponents
+        #                                  params['f'+str(i)+'_Rn'])+FlatSky(FlatSky_level, params['s_a'])/ncomponents
         # print(model_temp[0])
         model = model + model_temp
         # print(model)
         model_dict['model_c' + str(i)] = model_temp
 
         if PSF_CONV == True:
-            model_dict['model_c' + str(i) + '_conv'] = scipy.signal.fftconvolve(model_temp, PSF_BEAM,
-                                                                                'same')  # + FlatSky(FlatSky_level, params['s_a'])/ncomponents
+            model_dict['model_c' + str(i) + '_conv'] = scipy.signal.fftconvolve(
+                model_temp, PSF_BEAM,'same')
         else:
             model_dict['model_c' + str(i) + '_conv'] = model_temp
 
-        pf.writeto(imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model_component_" + str(
-            i) + special_name + save_name_append + '.fits', model_dict['model_c' + str(i) + '_conv'], overwrite=True)
-        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model_component_" + str(
+        pf.writeto(imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_model_component_" + str(
             i) + special_name + save_name_append + '.fits',
-                    imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model_component_" + str(
+                   model_dict['model_c' + str(i) + '_conv'], overwrite=True)
+        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_model_component_" + str(
+            i) + special_name + save_name_append + '.fits',
+                    imagename.replace('.fits', '') + "_" + str(
+                        ncomponents) + "C_model_component_" + str(
                         i) + special_name + save_name_append + '.fits')
-        pf.writeto(imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_dec_model_component_" + str(
-            i) + special_name + save_name_append + '.fits', model_dict['model_c' + str(i)], overwrite=True)
-        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_dec_model_component_" + str(
+        pf.writeto(imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_dec_model_component_" + str(
             i) + special_name + save_name_append + '.fits',
-                    imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_dec_model_component_" + str(
+                   model_dict['model_c' + str(i)], overwrite=True)
+        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_dec_model_component_" + str(
+            i) + special_name + save_name_append + '.fits',
+                    imagename.replace('.fits', '') + "_" + str(
+                        ncomponents) + "C_dec_model_component_" + str(
                         i) + special_name + save_name_append + '.fits')
 
-        image_results_conv.append(imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model_component_" + str(
+        image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_model_component_" + str(
             i) + special_name + save_name_append + '.fits')
-        image_results_deconv.append(
-            imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_dec_model_component_" + str(
-                i) + special_name + save_name_append + '.fits')
+        image_results_deconv.append(imagename.replace('.fits', '') + "_" + str(
+            ncomponents) + "C_dec_model_component_" + str(
+            i) + special_name + save_name_append + '.fits')
 
     #     model = model
     model_dict['model_total'] = model  # + FlatSky(FlatSky_level, params['s_a'])
 
     if PSF_CONV == True:
-        model_dict['model_total_conv'] = scipy.signal.fftconvolve(model, PSF_BEAM,
+        model_dict['model_total_conv'] = scipy.signal.fftconvolve(model,
+                                                                  PSF_BEAM,
                                                                   'same')  # + FlatSky(FlatSky_level, params['s_a'])
     else:
         model_dict['model_total_conv'] = model
@@ -488,12 +839,12 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
     model_dict['best_residual'] = data_2D - model_dict['model_total']
     model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
 
-    pf.writeto(
-        imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model" + special_name + save_name_append + '.fits',
-        model_dict['model_total_conv'], overwrite=True)
     pf.writeto(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_residual" + special_name + save_name_append + ".fits", model_dict['best_residual_conv'],
-               overwrite=True)
+        ncomponents) + "C_model" + special_name + save_name_append + '.fits',
+               model_dict['model_total_conv'], overwrite=True)
+    pf.writeto(imagename.replace('.fits', '') + "_" + str(
+        ncomponents) + "C_residual" + special_name + save_name_append + ".fits",
+               model_dict['best_residual_conv'], overwrite=True)
     copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
         ncomponents) + "C_model" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') + "_" + str(
@@ -504,8 +855,8 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
                     ncomponents) + "C_residual" + special_name + save_name_append + '.fits')
 
     pf.writeto(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits', model_dict['model_total'],
-               overwrite=True)
+        ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits',
+               model_dict['model_total'], overwrite=True)
     copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
         ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') + "_" + str(
@@ -517,19 +868,29 @@ def do_fit2D(imagename, params_values_init, ncomponents, psf_name,data_2D_=None,
     #     method2 = 'ampgo'#'least_squares'
     method2 = 'least_squares'
 
-    image_results_conv.append(
-        imagename.replace('.fits', '') + "_" + str(ncomponents) + "C_model" + special_name + save_name_append + '.fits')
+    image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
+        ncomponents) + "C_model" + special_name + save_name_append + '.fits')
     image_results_deconv.append(imagename.replace('.fits', '') + "_" + str(
         ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits')
     image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
         ncomponents) + "C_residual" + special_name + save_name_append + ".fits")
 
-    with open(imagename.replace('.fits','_' + str(ncomponents) + 'C_de_fit' + special_name + save_name_append + '.pickle'),"wb") as f:
+    # save mini results (full) to a pickle file.
+    with open(imagename.replace('.fits', '_' + str(
+            ncomponents) + 'C_fit' + special_name + save_name_append + '.pickle'),
+              "wb") as f:
         pickle.dump(result, f)
     exec_time = time.time() - startTime
     print('Exec time fitting=', exec_time, 's')
 
-    return (result, mini, result_1, result_extra, model_dict, image_results_conv, image_results_deconv)
+    # save results to csv file.
+    save_results_csv(result_mini=result,
+                     save_name=image_results_conv[-2].replace('.fits', ''),
+                     ext='.csv',
+                     save_corr=True, save_params=True)
+
+    return (result, mini, result_1, result_extra, model_dict, image_results_conv,
+            image_results_deconv)
 
 def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
     """
