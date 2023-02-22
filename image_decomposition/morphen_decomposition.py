@@ -188,6 +188,69 @@ def save_results_csv(result_mini, save_name, ext='.csv', save_corr=True,
                         index_label='parameter')
 
 
+def add_extra_component(petro_properties, copy_from_id):
+    """
+    Create another component from a dictionary (petro_properties) having 
+    photometric properties for N detected components in an image. 
+    
+    Params
+    ------
+    petro_properties: dict
+        Contain parameters of a number o N components obtained 
+        by a petrosian analysis of all detected sources.
+        Example (these are actually the keys() from the dictionary):
+        ['c1_PA', 'c1_q', 'c1_area', 'c1_Re', 
+        'c1_x0c', 'c1_y0c', 'c1_label', 'c1_R50', 
+        'c1_Snu', 'c1_Rp', 'c1_Rpidx', 'c1_rlast', 
+        'c1_I50']
+    copy_from: int
+        From which component copy parameters from.
+        This is useful, for example, the source has two components detected, 
+        1 compact and the other a structure that can not be modelled by a single 
+        sersic function. Then, we need one function to model the compact structure, 
+        but 2 sersic functions to model the other structure. 
+        
+        Assume that we have a blob surrounded by a disky emission (though detected 
+        as being one source). Both are placed on the same region, on top of each other 
+        (e.g. from optical, we call a bulge and 
+        a disk). We need two functions to model this region. 
+        
+        So, if component i=1 is the blob (or the bulge) we copy the parameters from it and 
+        create a second component. We just have to ajust some of the parameters. 
+        E.g. the effective radius of this new component, is in principle, larger than the original component. 
+        As well, the effective intensity will be smaller because we are adding a component 
+        further away from the centre. Other quantities, however, are uncertain, such as the Sersic index, position angle 
+        etc, but may be close to those of component i. 
+        
+    """
+    
+    from collections import OrderedDict
+    dict_keys = list(petro_properties.keys())
+    unique_list = list(OrderedDict.fromkeys([elem.split('_')[1] for \
+        elem in dict_keys if '_' in elem]))
+#     print(unique_list)
+
+    petro_properties_copy = petro_properties.copy()
+    new_comp_id = sources_photometies['ncomps'] + 1
+    for k in range(len(unique_list)):
+#         print(unique_list[k])
+        # do not change anything for other parameters. 
+        petro_properties_copy['c'+str(new_comp_id)+'_'+unique_list[k]] = \
+            petro_properties_copy['c'+str(copy_from_id)+'_'+unique_list[k]]
+        if unique_list[k] == 'R50':
+            # multiply the R50 value by a factor, e.g., 1.5
+            factor = 2
+            petro_properties_copy['c'+str(new_comp_id)+'_'+unique_list[k]] = \
+                petro_properties_copy['c'+str(copy_from_id)+'_'+unique_list[k]]*factor
+        if unique_list[k] == 'I50':
+            # divide the I50 value by a factor, e.g., 2
+            factor = 0.5
+            petro_properties_copy['c'+str(new_comp_id)+'_'+unique_list[k]] = \
+                petro_properties_copy['c'+str(copy_from_id)+'_'+unique_list[k]]*factor
+    #update number of components
+    petro_properties_copy['ncomps'] = petro_properties_copy['ncomps'] + 1
+    return(petro_properties_copy)
+
 """
  __  __       _   _         
 |  \/  | __ _| |_| |__  ___ 
