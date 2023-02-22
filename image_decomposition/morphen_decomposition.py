@@ -271,7 +271,7 @@ def setup_model_components(n_components=2):
 
 def construct_model_parameters(n_components=None, params_values_init=None,
                                init_constraints=None,
-                               constrained=True, fix_n=True, fix_x0_y0=False,
+                               constrained=True, fix_n=False, fix_x0_y0=False,
                                init_params=0.25, final_params=4.0):
     """
     This function creates a single or multi-component Sersic model to be fitted
@@ -312,6 +312,10 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                 fix_x0_y0_i = fix_x0_y0[i]
             else:
                 fix_x0_y0_i = False
+            
+            if fix_n is not False:
+                fix_n_i = fix_n[i]
+            
             ii = str(i + 1)
             if constrained == True:
                 for param in model_temp.param_names:
@@ -323,8 +327,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
 
                     # still, some of them must be treated in particular.
                     if param == 'n':
-                        if (i + 1 == 1 or i + 1 == 3) and (fix_n == True):
-                            print('Fixing sersic index to 0.5')
+                        if fix_n_i == True:
+                            print('Fixing sersic index of component',i,' to 0.5')
                             smodel2D.set_param_hint(
                                 'f' + str(i + 1) + '_' + param,
                                 value=0.5, min=0.49, max=0.51)
@@ -347,7 +351,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             if (init_constraints is not None) and (
                                     init_constraints['ncomps'] == n_components):
                                 """
-                                If initial constraints using Petro analysis are provided, then use!
+                                If initial constraints using Petro analysis are 
+                                provided, then use!
                                 """
                                 ddxx = 3  # the offset on x direction from Petro centre.
                                 x0 = init_constraints['c' + ii + '_x0c']
@@ -361,7 +366,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                     max=x0_max)
                             else:
                                 """
-                                Then, consider that input File is good, then give some bound
+                                Then, consider that input File is good, then 
+                                give some bound
                                 around those values.
                                 """
                                 print('Limiting ', param)
@@ -384,7 +390,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             if (init_constraints is not None) and (
                                     init_constraints['ncomps'] == n_components):
                                 """
-                                If initial constraints is using Petro analysis are provided, then use!
+                                If initial constraints is using Petro analysis 
+                                are provided, then use!
                                 """
                                 ddyy = 3  # the offset on x direction from Petro centre.
                                 y0 = init_constraints['c' + ii + '_y0c']
@@ -398,8 +405,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                     max=y0_max)
                             else:
                                 """
-                                Then, consider that input File is good, then give some bound
-                                around those values.
+                                Then, consider that input File is good, then give 
+                                some bound around those values.
                                 """
                                 print('Limiting ', param)
                                 smodel2D.set_param_hint(
@@ -479,10 +486,16 @@ def construct_model_parameters(n_components=None, params_values_init=None,
         if init_constraints is not None:
             if constrained == True:
                 for j in range(init_constraints['ncomps']):
+                    if fix_n is not False:
+                        fix_n_j = fix_n[j]
                     jj = str(j + 1)
                     for param in model_temp.param_names:
+
+                        #                         smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
+                        #                                                 value=eval(param), min=0.000001)
                         if (param == 'n'):
-                            if (fix_n == True):
+                            if (fix_n_j == True):
+                                print('Fixing Sersic Index of component',j,' to 0.5.')
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=0.5, min=0.49, max=0.51)
@@ -497,8 +510,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                         already convolved with the restoring beam, which can be 
                         rotated. So the PA and q of a DECONVOLVED_MODEL 
                         (the actual minimization problem here) can be different 
-                        from the PA and q of a CONVOLVED_MODEL (as well 
-                        Rn_conv > Rn_decon; In_conv< In_deconv). 
+                        from the PA and q of a CONVOLVED_MODEL 
+                        (as well Rn_conv > Rn_decon; In_conv< In_deconv). 
                         So, at least we give some large bound.
                         """
                         if param == 'PA':
@@ -513,11 +526,15 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             dell = 0.2
                             ell = 1 - init_constraints['c' + jj + '_q']
                             ell_min = ell * 0.5
-
+                            #                         if ell + dell <= 1.0:
                             if ell * 2.0 <= 1.0:
                                 ell_max = ell * 2.0
                             else:
                                 ell_max = 1.0
+                            #                         if ell - dell >= 0.0:
+
+                            #                         else:
+                            #                             ell_min = 0.0
 
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
