@@ -11,11 +11,16 @@ available for wsclean <3.0
 ## Setting up arguments
 The first point is to know where `wsclean` is installed, natively or in singularity.
 
-### Singularity Mode
-If you are using singularity, you must specify the mounting directory where 
-your data is stored. For example:
+### Native mode
+If you have wsclean installed locally, you only need to set the path to the data.
 
-    mount_dir = '/media/user/data/Arp220/:/mnt'
+    root_dir_sys = '/media/user/data/Arp220/'
+
+### Singularity Mode
+If you are using singularity,in addition of setting the variable `root_dir_sys` 
+you must specify the mounting directory where your data is stored. For example:
+
+    mount_dir = root_dir_sys+':/mnt'
 
 Then, the root_dir where your data will be stored becomes:
 
@@ -25,11 +30,6 @@ In case of using singularity, we need also to specify where `wsclean` image is
 located:
 
     wsclean_dir = '/home/user/apps/wsclean-gpu.simg
-
-### Native mode
-If you have wsclean installed locally, you only need to set the path to the data.
-
-    root_dir = '/media/user/data/Arp220/'
 
 ## Setting image and deconvolution options.
 ### Cleaning arguments
