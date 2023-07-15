@@ -35,10 +35,28 @@ Directory [```imaging/```](imaging/) contains a python script called
 See the intructions file of how to use it: [```imaging/wsclean_imaging.md```](imaging/wsclean_imaging.md)
 
 
-## Image Decomposition
+# Image Decomposition
 Folder [```image_decomposition/```](image_decomposition/) contains sets of functions to perform multi-purpose image decomposition. It uses the LMFIT package with object-oriented implementation, easy to use and manageable number of n-components. 
 
-## Image Analysis (focused to radio interferometric images)
+# Image Analysis (focused to radio interferometric images)
+## Jupyter Notebook
+For all analysis tools, we provide a library file called `libs.py` which contains all relevant functions to be used easily with a Jupyter Notebook called `radio_morphen.ipynb`.
+## Comandline application.
+*COMING OUT SOON* 
+We are porting the iterative Jupyter Notebook to a command line interface, in which the code can be used easily, performing the most common tasks for image processing and providing outputs plots and measurements.
+
+## Basic Image Analysis
+### `level_statistics()`
+Function to compute basic image statistics, such as total flux density and
+uncertain flux. The flux uncertainty is computed as being the flux from 
+ `$5 \times$ rms` to `$3 \times$ rms`.   
+
+
+ 
+
+
+
+
 
 
 
