@@ -16,7 +16,7 @@
                                               ...._@* __ .....     ]]+ ..   _
                                                   .. .       . .. .|.|_ ..
 
-
+Using short library file.
 """
 __version__ = 0.2
 __author__  = 'Geferson Lucatelli'
@@ -1944,12 +1944,24 @@ def get_image_statistics(imagename,cell_size,
     return (dic_data)
 
 
-def plot_values_std(img, cell_size=None, mask_component=None,
-                    sigma=5, do_PLOT=True, crop=False,data_2D = None,
+def level_statistics(img, cell_size=None, mask_component=None,
+                    sigma=6, do_PLOT=True, crop=False,data_2D = None,
                     box_size=256, bkg_to_sub=None, apply_mask=True,
                     mask=None,rms=None,
-                    results=None, dilation_size=3, iterations=10,
+                    results=None, dilation_size=None, iterations=2,
                     add_save_name='', SAVE=True, show_figure=False, ext='.jpg'):
+    """
+    Function old name: plot_values_std
+
+    Estimate information for multiple bin levels of the emission.
+    It splits the range of image intensity values in four distinct regions:
+
+        1. Inner region: peak intensity -> 0.1 * peak intensity
+        2. Mid region: 0.1 * peak intensity -> 10 * rms
+        3. Low region: 10 * rms -> 5 * rms
+        4. Uncertain region: 5 * rms -> 3 * rms
+
+    """
     if cell_size is None:
         cell_size = get_cell_size(img)
     if data_2D is not None:
@@ -2012,7 +2024,7 @@ def plot_values_std(img, cell_size=None, mask_component=None,
             levels_mid = np.asarray([0])
         try:
             levels_low = np.geomspace(10 * std, (5.0  * std + dl), 2)
-            levels_uncertain = np.geomspace(3 * std, (1.0 * std + dl), 3)
+            levels_uncertain = np.geomspace(5.0 * std, (3.0 * std + dl), 3)
         except:
             levels_low = np.asarray([0])
             levels_uncertain = np.asarray([0])
@@ -2370,7 +2382,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     else:
         data_2D = ctn(imagename)
 
-    results_final = plot_values_std(img=imagename, cell_size=cell_size,
+    results_final = level_statistics(img=imagename, cell_size=cell_size,
                                     mask_component=mask_component,
                                     mask=mask, apply_mask=False,
                                     data_2D=data_2D,
