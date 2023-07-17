@@ -14,6 +14,10 @@ from casatasks import *
 import casatools
 from casaplotms import plotms
 from casaviewer.imview import imview
+msmd = casatools.msmetadata()
+ms = casatools.ms()
+tb = casatools.table()
+
 
 '''
 tclean parameters
@@ -589,7 +593,7 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
     pass
 
 
-def update_model_image(g_name,field,n_interaction,
+def update_model_image(g_name,field,n_interaction,robust=0.5,
     interactive=interactive,datacolumn='corrected',
     usemask=usemask,niter = 1000,mask='',
     uvtaper=[],uvrange='',PLOT=False):
