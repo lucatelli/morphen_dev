@@ -27,7 +27,9 @@ These tools involves pure python, but also are integrated with CASA
 (https://casa.nrao.edu/) in order to use common `casatasks` as well `wsclean` -- a 
 code for fast interferometric imaging (https://wsclean.readthedocs.io/en/latest/).
 
-*NOTE: This readme file is under development.*
+*NOTES: This readme file is under development. I am also currently adding basic usages 
+to Jupyter notebooks guides. Core functionalities are expected to be ready 
+by end of July/2023.*
 
 # Image deconvolution Using `wsclean`
 Directory [```imaging/```](imaging/) contains a python script called 
@@ -43,13 +45,21 @@ Folder [```image_decomposition/```](image_decomposition/) contains sets of funct
 For all analysis tools, we provide a library file called `libs.py` which contains all relevant functions to be used easily with a Jupyter Notebook called `radio_morphen.ipynb`.
 ## Comandline application.
 *COMING OUT SOON* 
-We are porting the iterative Jupyter Notebook to a command line interface, in which the code can be used easily, performing the most common tasks for image processing and providing outputs plots and measurements.
+
+We are porting the iterative Jupyter Notebook to a command line interface, 
+in which the code can be used easily in a single run, 
+performing the most common tasks for image processing and providing 
+outputs plots and measurements.
+
 
 ## Basic Image Analysis
 ### `level_statistics()`
 Function to compute basic image statistics, such as total flux density and
 uncertain flux. The flux uncertainty is computed as being the flux from 
- `$5 \times$ rms` to `$3 \times$ rms`.   
+ `5*rms` to `3*rms`.   
+
+
+
 
 
  
