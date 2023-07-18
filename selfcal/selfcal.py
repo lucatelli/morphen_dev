@@ -853,8 +853,7 @@ usemask='user'#'auto-multithresh'
 interactive=True
 
 
-proj_name = '_combined_w_0.75'
-image_list = ['Arp220']#,'VV250a','VV705']
+
 
 steps=[
        # 'startup',
@@ -862,41 +861,52 @@ steps=[
        '0',
        ]
 
-for field in image_list:
+run_mode = 'terminal'
+
+if run_mode == 'terminal':
     path = '/run/media/sagauga/storage_wd_2/astronomical_data/lirgi/vla/K_band/Arp220/'
     # field = 'Arp220'
+    image_list = ['Arp220']  # ,'VV250a','VV705']
     proj_name = '_16B_316.calibrated.avg8s'
-    g_name = path + field + proj_name
-    g_vis = g_name + '.ms'
+    # proj_name = '_combined_w_0.75'
 
-    if 'startup' in steps:
-        if not os.path.exists(path+'selfcal/'):
-            os.makedirs(path+'selfcal/')
-        else:
-            print('>> Skiping create directory structure...')
-        if not os.path.exists(path+'selfcal/plots'):
-            os.makedirs(path+'selfcal/plots')
-        else:
-            print('>> Skiping create directory structure...')
+    for field in image_list:
+        g_name = path + field + proj_name
+        g_vis = g_name + '.ms'
 
-    if 'save_init_flags' in steps:
-        if not os.path.exists(g_name+'.ms.flagversions/flags.Original/'):
-            flagmanager(vis=g_name+'.ms',mode='save',versionname='Original',
-                comment='Original flags.')
-        else:
-            print('     ==> Skipping flagging backup init (exists).')
+        if 'startup' in steps:
+            if not os.path.exists(path+'selfcal/'):
+                os.makedirs(path+'selfcal/')
+            else:
+                print('>> Skiping create directory structure...')
+            if not os.path.exists(path+'selfcal/plots'):
+                os.makedirs(path+'selfcal/plots')
+            else:
+                print('>> Skiping create directory structure...')
 
-    if '0' in steps:
-        ############################################################################
-        #### 0. Zero interaction. Use a small/negative robust parameter,        ####
-        ####    to find the bright/compact emission(s).                         ####
-        ############################################################################
-        robust = 0.0 #decrease more if lots of failed solutions.
-        niter = 500
-        threshold = '20.0e-6Jy'
+        if 'save_init_flags' in steps:
+            if not os.path.exists(g_name+'.ms.flagversions/flags.Original/'):
+                flagmanager(vis=g_name+'.ms',mode='save',versionname='Original',
+                    comment='Original flags.')
+            else:
+                print('     ==> Skipping flagging backup init (exists).')
 
-        start_image(g_name,field,0,delmodel=False,PLOT=True,niter=niter,robust=robust,
-            interactive=interactive,usemask=usemask,datacolumn='data')
+        if '0' in steps:
+            ############################################################################
+            #### 0. Zero interaction. Use a small/negative robust parameter,        ####
+            ####    to find the bright/compact emission(s).                         ####
+            ############################################################################
+            robust = 0.0 #decrease more if lots of failed solutions.
+            niter = 500
+            threshold = '20.0e-6Jy'
+
+            start_image(g_name,field,0,delmodel=False,PLOT=True,niter=niter,robust=robust,
+                interactive=interactive,usemask=usemask,datacolumn='data')
+
+if run_mode == 'jupyter':
+    print('selfcal script is not doing anything, you can use it on a '
+          'jupyter notebook. For that, you have to manually '
+          'set your variable names. ')
 
 # for field in image_list:
 #     g_name = field + proj_name
