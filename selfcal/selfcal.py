@@ -37,7 +37,7 @@ SPWS = ''
 ANTENNAS = ''
 weighting = 'briggs'
 refant=''
-cell = '0.05arcsec'
+cell = '0.01arcsec'
 gridder = 'standard'
 specmode = 'mfs'
 deconvolver = 'mtmfs'
@@ -73,10 +73,7 @@ combine = ''
 #plotting config
 data_range=[-5.55876e-06, 0.00450872]
 
-if not os.path.exists('selfcal/'):
-    os.makedirs('selfcal/')
-if not os.path.exists('selfcal/plots'):
-    os.makedirs('selfcal/plots')
+
 
 
 # proj_name = '.calibrated'
@@ -167,27 +164,27 @@ def plot_visibilities(g_vis,name,with_DATA=False,with_MODEL=False,with_CORRECTED
         antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
         ydatacolumn='corrected-model', avgchannel='64', avgtime='60',
         width=800,height=540,showgui=False,overwrite=True,
-        plotfile='selfcal/plots/'+name+'_uvwave_amp_corrected-model.jpg')
+        plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvwave_amp_corrected-model.jpg')
 
     plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
         antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
         ydatacolumn='corrected-model', avgchannel='64', avgtime='60',
         width=800,height=540,showgui=False,overwrite=True,
-        plotfile='selfcal/plots/'+name+'_uvdist_amp_corrected-model.jpg')
+        plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvdist_amp_corrected-model.jpg')
 
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
         antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
         ydatacolumn='corrected/model', avgchannel='64', avgtime='60',
         width=800,height=540,showgui=False,overwrite=True,
         plotrange=[-1,-1,0,5],
-        plotfile='selfcal/plots/'+name+'_uvwave_amp_corrected_div_model.jpg')
+        plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvwave_amp_corrected_div_model.jpg')
 
     plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
         antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
         ydatacolumn='corrected/model', avgchannel='64', avgtime='60',
         width=800,height=540,showgui=False,overwrite=True,
         plotrange=[-1,-1,0,5],
-        plotfile='selfcal/plots/'+name+'_uvdist_amp_corrected_div_model.jpg')
+        plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvdist_amp_corrected_div_model.jpg')
 
 
     if with_MODEL == True:
@@ -195,19 +192,19 @@ def plot_visibilities(g_vis,name,with_DATA=False,with_MODEL=False,with_CORRECTED
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
             ydatacolumn='model', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_uvwave_amp_model.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvwave_amp_model.jpg')
 
         plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
             ydatacolumn='model', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_uvdist_amp_model.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvdist_amp_model.jpg')
 
         plotms(vis=g_vis, xaxis='freq', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
             ydatacolumn='model', avgchannel='', avgtime='60',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_freq_amp_model.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_freq_amp_model.jpg')
 
 
     if with_DATA ==True:
@@ -216,18 +213,18 @@ def plot_visibilities(g_vis,name,with_DATA=False,with_MODEL=False,with_CORRECTED
             ydatacolumn='data', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
             # plotrange=[-1,-1,-1,0.3],
-            plotfile='selfcal/plots/'+name+'_uvwave_amp_data.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvwave_amp_data.jpg')
         plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
             ydatacolumn='data', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
             # plotrange=[-1,-1,0,0.3],
-            plotfile='selfcal/plots/'+name+'_uvdist_amp_data.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvdist_amp_data.jpg')
         plotms(vis=g_vis, xaxis='freq', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
             ydatacolumn='data', avgchannel='', avgtime='60',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_freq_amp_data.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_freq_amp_data.jpg')
 
     if with_CORRECTED ==True:
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
@@ -235,18 +232,18 @@ def plot_visibilities(g_vis,name,with_DATA=False,with_MODEL=False,with_CORRECTED
             # plotrange=[-1,-1,0,0.3],
             ydatacolumn='corrected', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_uvwave_amp_corrected.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvwave_amp_corrected.jpg')
         plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,
             # plotrange=[-1,-1,0,0.3],
             ydatacolumn='corrected', avgchannel='64', avgtime='30',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_uvdist_amp_corrected.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_uvdist_amp_corrected.jpg')
         plotms(vis=g_vis, xaxis='freq', yaxis='amp',
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
             ydatacolumn='corrected', avgchannel='', avgtime='60',
             width=800,height=540,showgui=False,overwrite=True,
-            plotfile='selfcal/plots/'+name+'_freq_amp_corrected.jpg')
+            plotfile=os.path.dirname(g_vis)+'selfcal/plots/'+name+'_freq_amp_corrected.jpg')
 
     pass
 
@@ -258,7 +255,7 @@ def make_dirty(g_name,field,n_interaction,mask=''):
     niter = 0
     image_dirty = str(n_interaction)+'_dirty_'+os.path.basename(g_name)+'_'+str(imsize)+'_'+cell+'_'+str(niter)+'.'+weighting+'.'+specmode+'.'+deconvolver+'.'+gridder
     tclean(vis=g_vis,
-           imagename='selfcal/'+image_dirty,
+           imagename=os.path.dirname(g_vis)+'selfcal/'+image_dirty,
            field=FIELD,
            specmode='mfs',deconvolver=deconvolver,gridder=gridder,
            scales=scales, smallscalebias=smallscalebias,
@@ -283,7 +280,7 @@ def initial_test_image(g_name,field,n_interaction='test',niter=250,
     image_test = str(n_interaction)+'_image_'+os.path.basename(g_name)+'_'+str(imsize)+'_'+cell+'_'+str(niter)+'.'+weighting+'.'+specmode+'.'+deconvolver+'.'+gridder
     print(image_test)
     tclean(vis=g_vis,
-        imagename='selfcal/'+image_test,
+        imagename=os.path.dirname(g_vis)+'selfcal/'+image_test,
         field=FIELD,spw=SPWS,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
@@ -302,15 +299,16 @@ def initial_test_image(g_name,field,n_interaction='test',niter=250,
         pblimit=pblimit,nterms=nterms,pbcor=True,
         savemodel='none')
     try:
-        eview('selfcal/'+image_test+'.image'+ext,data_range=data_range,
-            scaling=-2.0,out='selfcal/'+image_test+'.image'+ext+'.png')
+        eview(os.path.dirname(g_vis)+'selfcal/'+image_test+'.image'+ext,data_range=data_range,
+            scaling=-2.0,out=os.path.dirname(g_vis)+'selfcal/'+image_test+'.image'+ext+'.png')
     except:
         print('Error in ploting image with contours....')
         pass
 
     pass
 
-def start_image(g_name,field,n_interaction,delmodel=False,interactive=False,
+def start_image(g_name,field,n_interaction,robust=0.0,
+                delmodel=False,interactive=False,
     niter=600,
     usemask=usemask,PLOT=True,datacolumn='corrected',mask='',
     savemodel='modelcolumn',uvtaper=[],uvrange='',startmodel=''):
@@ -337,7 +335,7 @@ def start_image(g_name,field,n_interaction,delmodel=False,interactive=False,
         clearcal(g_vis)
     print('selfcal/'+image_start_model+'.image')
     tclean(vis=g_vis,
-        imagename='selfcal/'+image_start_model,
+        imagename=os.path.dirname(g_vis)+'selfcal/'+image_start_model,
         field=FIELD,spw=SPWS,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
@@ -359,8 +357,8 @@ def start_image(g_name,field,n_interaction,delmodel=False,interactive=False,
         savemodel=savemodel)
 
     try:
-        eview('selfcal/'+image_start_model+'.image'+ext,data_range=data_range,
-            scaling=-2.0,out='selfcal/'+image_start_model+'.image'+ext+'.png')
+        eview(os.path.dirname(g_vis)+'selfcal/'+image_start_model+'.image'+ext,data_range=data_range,
+            scaling=-2.0,out=os.path.dirname(g_vis)+'selfcal/'+image_start_model+'.image'+ext+'.png')
     except:
         pass
 
@@ -369,7 +367,7 @@ def start_image(g_name,field,n_interaction,delmodel=False,interactive=False,
             with_MODEL=True,with_DATA=True)
 
     print(' Start Image Statistics:')
-    get_image_statistics('selfcal/'+image_start_model+'.image'+ext)
+    get_image_statistics(os.path.dirname(g_vis)+'selfcal/'+image_start_model+'.image'+ext)
     pass
 
 def get_tb_data(table,param):
@@ -403,8 +401,8 @@ def calibration_table_plot(table,stage='selfcal',
      xaxis='time',yaxis='phase',
      fields=['']):
 
-     if not os.path.exists('selfcal/plots/'+stage):
-         os.makedirs('selfcal/plots/'+stage)
+     if not os.path.exists(os.path.dirname(table)+'plots/'+stage):
+         os.makedirs(os.path.dirname(table)+'plots/'+stage)
 
      if yaxis == 'phase':
          plotrange=[-1,-1,-180,180]
@@ -415,7 +413,7 @@ def calibration_table_plot(table,stage='selfcal',
          plotms(vis=table,xaxis=xaxis,yaxis=yaxis,field='',
              gridcols=1,gridrows=1,coloraxis='spw',antenna='',plotrange=plotrange,
              width=800,height=540,dpi=600,overwrite=True,showgui=False,
-             plotfile='selfcal/plots/'+stage+'/'+table_type+'_'+xaxis+'_'+yaxis+'_field_'+str('all')+'.jpg')
+             plotfile=os.path.dirname(table)+'plots/'+stage+'/'+table_type+'_'+xaxis+'_'+yaxis+'_field_'+str('all')+'.jpg')
      else:
 
          for FIELD in fields:
@@ -424,7 +422,7 @@ def calibration_table_plot(table,stage='selfcal',
                  # width=2048,height=1280,dpi=256,overwrite=True,showgui=False,
                  gridcols=1,gridrows=1,coloraxis='spw',antenna='',plotrange=plotrange,
                  width=800,height=540,dpi=600,overwrite=True,showgui=False,
-                 plotfile='selfcal/plots/'+stage+'/'+table_type+'_'+xaxis+'_'+yaxis+'_field_'+str(FIELD)+'.jpg')
+                 plotfile=os.path.dirname(table)+'plots/'+stage+'/'+table_type+'_'+xaxis+'_'+yaxis+'_field_'+str(FIELD)+'.jpg')
 
      pass
 
@@ -435,13 +433,13 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
 
     g_vis = g_name + '.ms'
 
-    caltable_int = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_int.tb'
+    caltable_int = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_int.tb'
     # caltable_5 = 'selfcal/selfcal_'+str(n_interaction)+'_'+g_name+'_solint_5.tb'
-    caltable_20 = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_20.tb'
-    caltable_40 = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_40.tb'
-    caltable_60 = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_60.tb'
-    caltable_120 = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_120.tb'
-    caltable_inf = 'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_inf.tb'
+    caltable_20 = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_20.tb'
+    caltable_40 = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_40.tb'
+    caltable_60 = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_60.tb'
+    caltable_120 = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_120.tb'
+    caltable_inf = os.path.dirname(g_name)+'selfcal/selfcal_'+str(n_interaction)+'_'+os.path.basename(g_name)+'_solint_inf.tb'
 
 
     if not os.path.exists(caltable_int):
@@ -502,7 +500,8 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
         plt.legend( loc='upper right' )
         plt.xlabel( 'SNR' )
         plt.semilogx()
-        plt.savefig('selfcal/plots/'+str(n_interaction)+'_'+g_name+'_gain_solutions_comparisons_norm.pdf')
+        plt.savefig(os.path.dirname(g_name)+'selfcal/plots/'+str(n_interaction)+
+                    '_'+g_name+'_gain_solutions_comparisons_norm.pdf')
         plt.clf()
         plt.close()
 
@@ -517,7 +516,8 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
         plt.legend( loc='upper right' )
         plt.xlabel( 'SNR' )
         plt.semilogx()
-        plt.savefig('selfcal/plots/'+str(n_interaction)+'_'+os.path.basename(g_name)+'_gain_solutions_comparisons.pdf')
+        plt.savefig(os.path.dirname(g_name)+'selfcal/plots/'+str(n_interaction)+
+                    '_'+os.path.basename(g_name)+'_gain_solutions_comparisons.pdf')
 
         print( 'P(<='+str(cut_off)+') = {0}  ({1})'.format(
             stats.percentileofscore( snr_int, cut_off ), 'int' ) )
@@ -556,7 +556,8 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
             clearplots=False,customsymbol=True,symbolsize=4,
             symbolcolor='purple',symbolshape='square',
             width=1600,height=1080,showgui=True,overwrite=True,
-            plotfile='selfcal/plots/'+str(n_interaction)+'_'+os.path.basename(g_name)+'_phase_variation_intervals.jpg')
+            plotfile=os.path.dirname(g_name)+'selfcal/plots/'+str(n_interaction)+
+                     '_'+os.path.basename(g_name)+'_phase_variation_intervals.jpg')
 
     def compare_amp_variation():
         plotms(caltable_int,antenna='',scan='',yaxis='amp')
@@ -578,7 +579,8 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
             clearplots=False,customsymbol=True,symbolsize=4,
             symbolcolor='purple',symbolshape='square',
             width=1600,height=1080,showgui=True,overwrite=True,
-            plotfile='selfcal/plots/'+str(n_interaction)+'_'+os.path.basename(g_name)+'_amp_variation_intervals.jpg')
+            plotfile=os.path.dirname(g_name)+'selfcal/plots/'+str(n_interaction)+
+                     '_'+os.path.basename(g_name)+'_amp_variation_intervals.jpg')
 
     #
     # def plot_gains():
@@ -614,7 +616,7 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
     image_update_model = str(n_interaction)+base_name+os.path.basename(g_name)+'_'+str(imsize)+'_'+cell+'_'+str(niter)+'.'+weighting+'.'+str(robust)+'.'+specmode+'.'+deconvolver+'.'+gridder
 
     tclean(vis=g_vis,
-        imagename='selfcal/'+image_update_model,
+        imagename=os.path.dirname(g_name)+'selfcal/'+image_update_model,
         field=FIELD,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
@@ -642,14 +644,14 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
             with_MODEL=True,with_CORRECTED=True)
 
     try:
-        eview('selfcal/'+image_update_model+'.image'+ext,data_range=data_range,
-            scaling=-2.0,out='selfcal/'+image_update_model+'.image'+ext+'.png')
+        eview(os.path.dirname(g_name)+'selfcal/'+image_update_model+'.image'+ext,data_range=data_range,
+            scaling=-2.0,out=os.path.dirname(g_name)+'selfcal/'+image_update_model+'.image'+ext+'.png')
     except:
         print('Error in ploting image with contours....')
         pass
 
     print(' Image (update) Statistics:')
-    get_image_statistics('selfcal/'+image_update_model+'.image'+ext)
+    get_image_statistics(os.path.dirname(g_name)+'selfcal/'+image_update_model+'.image'+ext)
 
     pass
 
@@ -683,10 +685,14 @@ def self_gain_cal(g_name,field,n_interaction,gain_tables=[],
 
 
 
-    image_update_model = str(n_interaction)+base_name+os.path.basename(g_name)+'_'+str(imsize)+'_'+cell+'_'+str(niter)+'.'+weighting+'.'+str(robust)+'.'+specmode+'.'+deconvolver+'.'+gridder
+    image_update_model = str(n_interaction)+base_name+os.path.basename(g_name)\
+                         +'_'+str(imsize)+'_'+cell+'_'+str(niter)+'.'+weighting\
+                         +'.'+str(robust)+'.'+specmode+'.'+deconvolver+'.'+gridder
 
 
-    caltable = 'selfcal/'+str(n_interaction)+cal_basename+os.path.basename(g_name)+'_'+'_solint_'+solint+'_minsnr_'+str(minsnr)+'.tb'
+    caltable = 'selfcal/'+str(n_interaction)\
+               +cal_basename+os.path.basename(g_name)\
+               +'_'+'_solint_'+solint+'_minsnr_'+str(minsnr)+'.tb'
     if not os.path.exists(caltable):
         if calmode=='ap':
             solonrm=True
@@ -750,7 +756,7 @@ def image_selfcal(g_name,field,n_interaction,
     print('selfcal/'+image_deep_selfcal+'.image'+ext)
 
     tclean(vis=g_vis,
-        imagename='selfcal/'+image_deep_selfcal,
+        imagename=os.path.dirname(g_name)+'selfcal/'+image_deep_selfcal,
         field=FIELD,spw=SPWS,antenna=ANTENNAS,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         imsize=imsize,cell=cell,uvrange=uvrange,
@@ -774,13 +780,15 @@ def image_selfcal(g_name,field,n_interaction,
     # pass
     #usepointing=False
     try:
-        eview('selfcal/'+image_deep_selfcal+'.image'+ext,data_range=data_range,
-            scaling=-2.0,out='selfcal/'+image_deep_selfcal+'.image'+ext+'.png')
+        eview(os.path.dirname(g_name)+'selfcal/'
+              +image_deep_selfcal+'.image'+ext,
+              data_range=data_range,
+              scaling=-2.0,out=os.path.dirname(g_name)+'selfcal/'+image_deep_selfcal+'.image'+ext+'.png')
     except:
         pass
 
     print(' Image Statistics:')
-    get_image_statistics('selfcal/'+image_deep_selfcal+'.image'+ext)
+    get_image_statistics(os.path.dirname(g_name)+'selfcal/'+image_deep_selfcal+'.image'+ext)
     pass
 
 def mask_params(imagename,residualname=None,sidelobelevel=0.2):
@@ -842,7 +850,10 @@ interactive=True
 
 # for field in image_list:
 #     g_name = field + proj_name
-
+#     if not os.path.exists('selfcal/'):
+#         os.makedirs('selfcal/')
+#     if not os.path.exists('selfcal/plots'):
+#         os.makedirs('selfcal/plots')
 #     if 'save_init_flags' in steps:
 #         if not os.path.exists(g_name+'.ms.flagversions/flags.Original/'):
 #             flagmanager(vis=g_name+'.ms',mode='save',versionname='Original',
