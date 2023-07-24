@@ -858,7 +858,7 @@ def mask_params(imagename,residualname=None,sidelobelevel=0.2):
     return(sidelobethreshold,noisethreshold)
 
 os.environ['SAVE_ALL_AUTOMASKS']="false"
-usemask='user'#'auto-multithresh'
+usemask='auto-multithresh'
 interactive=False
 
 
