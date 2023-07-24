@@ -859,7 +859,7 @@ def mask_params(imagename,residualname=None,sidelobelevel=0.2):
 
 os.environ['SAVE_ALL_AUTOMASKS']="false"
 usemask='user'#'auto-multithresh'
-interactive=True
+interactive=False
 
 
 steps=[
