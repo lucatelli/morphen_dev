@@ -74,12 +74,12 @@ if deconvolver=='mtmfs':
 
 usemask='auto-multithresh'
 # usemask='user'
-sidelobethreshold=2.0
-noisethreshold=12.0
-lownoisethreshold=4.0
-minbeamfrac=0.05
-growiterations=75
-negativethreshold=12.0
+sidelobethreshold=3.0
+noisethreshold=15.0
+lownoisethreshold=5.0
+minbeamfrac=0.06
+growiterations=50
+negativethreshold=15.0
 # os.environ['SAVE_ALL_AUTOMASKS']="true"
 interactive = False
 
@@ -866,9 +866,9 @@ steps=[
        'startup',
        'save_init_flags',
        '0',
-       '1',
-       '2',
-       '3',
+       # '1',
+       # '2',
+       # '3',
        ]
 
 # run_mode = 'jupyter'
@@ -908,8 +908,8 @@ if run_mode == 'terminal':
             ####    to find the bright/compact emission(s).                         ####
             ############################################################################
             robust = -0.5 #decrease more if lots of failed solutions.
-            niter = 400
-            threshold = '40.0e-6Jy'
+            niter = 300
+            threshold = '60.0e-6Jy'
             os.environ['SAVE_ALL_AUTOMASKS'] = "true"
             start_image(g_name,field,0,delmodel=True,PLOT=True,niter=niter,
                         robust=robust,interactive=interactive,
