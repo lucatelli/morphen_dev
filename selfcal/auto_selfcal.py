@@ -65,7 +65,7 @@ deconvolver = 'mtmfs'
 scales=[0,4,8,16,32]
 smallscalebias=0.7
 robust = 0.0
-gain = 0.03
+gain = 0.05
 pblimit=-0.1
 nterms = 3
 ext = ''
@@ -76,7 +76,7 @@ usemask='auto-multithresh'
 # usemask='user'
 sidelobethreshold=3.0
 noisethreshold=15.0
-lownoisethreshold=5.0
+lownoisethreshold=6.0
 minbeamfrac=0.06
 growiterations=50
 negativethreshold=15.0
@@ -327,7 +327,7 @@ def initial_test_image(g_name,field,n_interaction='test',niter=250,
 
     pass
 
-def start_image(g_name,field,n_interaction,robust=0.0,
+def start_image(g_name,field,n_interaction,robust=0.0,cycleniter=25,
                 delmodel=False,interactive=False,
     niter=600,
     usemask=usemask,PLOT=True,datacolumn='corrected',mask='',
@@ -373,7 +373,7 @@ def start_image(g_name,field,n_interaction,robust=0.0,
         negativethreshold=negativethreshold,
         uvtaper=uvtaper,startmodel=startmodel,uvrange=uvrange,
         threshold=threshold,nterms=nterms,parallel=parallel,
-        datacolumn=datacolumn,cycleniter=25,
+        datacolumn=datacolumn,cycleniter=cycleniter,
         savemodel=savemodel)
 
     try:
@@ -617,7 +617,7 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
 
 def update_model_image(g_name,field,n_interaction,robust=0.5,
     interactive=interactive,datacolumn='corrected',
-    usemask=usemask,niter = 1000,mask='',
+    usemask=usemask,niter = 1000,mask='',cycleniter=100,
     uvtaper=[],uvrange='',PLOT=False):
 
     g_vis = g_name + '.ms'
@@ -651,7 +651,7 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
         lownoisethreshold=lownoisethreshold,
         minbeamfrac=minbeamfrac,
         spw=SPWS,
-        datacolumn=datacolumn,cycleniter=50,calcpsf=calcpsf,
+        datacolumn=datacolumn,cycleniter=cycleniter,calcpsf=calcpsf,
         growiterations=growiterations,
         negativethreshold=negativethreshold,parallel=parallel,
         verbose=True,uvtaper=uvtaper,uvrange=uvrange,
@@ -866,9 +866,10 @@ steps=[
        'startup',
        'save_init_flags',
        '0',
-       # '1',
-       # '2',
-       # '3',
+       '1',
+       '2',
+       '3',
+       '4',
        ]
 
 # run_mode = 'jupyter'
@@ -908,11 +909,11 @@ if run_mode == 'terminal':
             ####    to find the bright/compact emission(s).                         ####
             ############################################################################
             robust = -0.5 #decrease more if lots of failed solutions.
-            niter = 300
+            niter = 160
             threshold = '60.0e-6Jy'
             os.environ['SAVE_ALL_AUTOMASKS'] = "true"
             start_image(g_name,field,0,delmodel=True,PLOT=True,niter=niter,
-                        robust=robust,interactive=interactive,
+                        robust=robust,interactive=interactive,cycleniter=40,
                         usemask=usemask,datacolumn='data')
 
             gain_tables_selfcal_temp=self_gain_cal(g_name,field,n_interaction=0,
@@ -927,14 +928,14 @@ if run_mode == 'terminal':
             ####    start to consider more extended emission.                       ####
             ############################################################################
             threshold = '20.0e-6Jy'
-            niter = 600
+            niter = 300
             robust = 0.0  # or 0.5 if lots of extended emission.
 
             update_model_image(g_name, field, robust = robust, n_interaction=1,
                                interactive=interactive,uvtaper=[], niter=niter,
-                               usemask=usemask, PLOT=True)
+                               usemask=usemask, cycleniter = 50, PLOT=True)
 
-            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=1,
+            gain_tables_selfcal_temp = self_gain_cal(g_name, field, n_interaction=1,
                                                      minsnr=2.0, solint='60s',
                                                      flagbackup=True,
                                                      gain_tables=[], calmode='p',
@@ -946,14 +947,34 @@ if run_mode == 'terminal':
             #### 2. Second interaction. Increase more the robust parameter, or use  ####
             ####    uvtapering. Consider even more extended emission (if there is). ####
             ############################################################################
-            robust = 0.5
-            threshold = '8.0e-6Jy'
-            niter = 1500
-            update_model_image(g_name,field,n_interaction=2,
+            robust = 0.0
+            threshold = '10.0e-6Jy'
+            niter = 1000
+            update_model_image(g_name,field,n_interaction=2,cycleniter=75,
                                interactive=interactive,robust = robust,
                                uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
 
             gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=2,
+                                                minsnr=2.0, solint='60s',
+                                                flagbackup=True,
+                                                gain_tables=[],
+                                                calmode='p', gaintype='G',
+                                                action='apply', PLOT=True)
+
+
+        if '3' in steps:
+            ############################################################################
+            #### 2. Second interaction. Increase more the robust parameter, or use  ####
+            ####    uvtapering. Consider even more extended emission (if there is). ####
+            ############################################################################
+            robust = 0.0
+            threshold = '10.0e-6Jy'
+            niter = 1000
+            update_model_image(g_name,field,n_interaction=3,cycleniter=75,
+                               interactive=interactive,robust = robust,
+                               uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
+
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=3,
                                                 minsnr=2.0, solint='20s',
                                                 flagbackup=True,
                                                 gain_tables=gain_tables_selfcal,
@@ -961,7 +982,7 @@ if run_mode == 'terminal':
                                                 action='apply', PLOT=True)
 
 
-        if '3' in steps:
+        if '4' in steps:
             # ############################################################################
             # #### 3. Third interaction.If you see that further improvements can be   ####
             # ####    obtained, do one more interaction, now amp selfcal.             ####
@@ -969,15 +990,31 @@ if run_mode == 'terminal':
             # ####    need them for the amp gain. If they are not, consider           ####
             # ####    to iterate as many times you see fit in phases again.           ####
             # ############################################################################
-            robust = 1.0
-            threshold = '5e-6Jy'
+            robust = 0.5
+            threshold = '10e-6Jy'
             niter = 2000
-            update_model_image(g_name,field,n_interaction=3,
+            update_model_image(g_name,field,n_interaction=4,cycleniter = 100,
                                interactive=interactive,robust = robust,
                                uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
 
-            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=3,
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=4,
                                                 minsnr=2.0, solint='60s',
+                                                flagbackup=True, solnorm=True,
+                                                gain_tables=gain_tables_selfcal,
+                                                calmode='ap', gaintype='G',
+                                                combine='',
+                                                action='apply', PLOT=True)
+
+        if '5' in steps:
+            robust = 2.0
+            threshold = '4e-6Jy'
+            niter = 2000
+            update_model_image(g_name,field,n_interaction=5,cycleniter = 100,
+                               interactive=interactive,robust = robust,
+                               uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
+
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=5,
+                                                minsnr=2.0, solint='16s',
                                                 flagbackup=True, solnorm=True,
                                                 gain_tables=gain_tables_selfcal,
                                                 calmode='ap', gaintype='G',
