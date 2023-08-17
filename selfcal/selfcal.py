@@ -1,16 +1,31 @@
-# Self-Calibration
+"""
+                                                          ..___|**_
+                                                  .|||||||||*+@+*__*++.
+                                              _||||.           .*+;].,#_
+                                         _|||*_                _    .@@@#@.
+                                   _|||||_               .@##@#| _||_
+   Radio Morphen              |****_                   .@.,/\..@_.
+                             #///#+++*|    .       .@@@;#.,.\@.
+                              .||__|**|||||*||*+@#];_.  ;,;_
+ Geferson Lucatelli                            +\*_.__|**#
+                                              |..      .]]
+                                               ;@       @.*.
+                                                #|       _;]];|.
+                                                 ]_          _+;]@.
+                                                 _/_             |]\|    .  _
+                                              ...._@* __ .....     ]]+ ..   _
+                                                  .. .       . .. .|.|_ ..
 
-#wsclean -name UGC08387_50K_autothr_3_automask_5_mgain_0.9.briggs_robust_0.5.selfcal.multiscale -size 1024 1024 -scale 0.03arcsec -mgain 0.9 -niter 50000 -weight briggs 0.5 -auto-threshold 3 -auto-mask 5 -multiscale -data-column CORRECTED_DATA UGC08387_AL746.calibrated.ms
-# wsclean -name 0_corrected_IRASF17132+531_100K_thr_auto3_automask_5_mgain_0.99.briggs_0.5 -size 1024 1024 -scale 0.03arcsec -mgain 0.99 -niter 100000 -weight briggs 0.5 -auto-threshold 3 -auto-mask 5 -data-column CORRECTED_DATA -no-update-model-required IRASF17132+531_AL746.calibrated.ms/
-# source /opt/lofarsoft/lofarinit.sh
-
-# Self-Calibration
-#imaging settings
-## Using VLA Calculator
+Selfcal.
+"""
+__version__ = 0.3
+__author__  = 'Geferson Lucatelli'
+__email__   = 'geferson.lucatelli@postgrad.manchester.ac.uk'
+__date__    = '2023 05 05'
+print(__doc__)
 
 import os
 from casatasks import *
-# from casatools import *
 try:
     import casatools
 except:
@@ -27,11 +42,12 @@ tb = casatools.table()
 '''
 tclean parameters
 '''
-imsize = 3072
+imsize = 2048
 unit = 'mJy'
 rms_std_factor = 3
 
 parallel = True
+calcpsf = True
 #rms_level = 0.037 #Natural
 # rms_level = 0.044#0.005 #Robust-briggs
 # threshold = str(rms_level/rms_std_factor)+unit
@@ -41,12 +57,14 @@ FIELD=''
 SPWS = ''
 ANTENNAS = ''
 weighting = 'briggs'
-refant=''
-cell = '0.01arcsec'
+refant='ea21,ea28,ea10'
+cell = '0.05arcsec'
 gridder = 'standard'
+# gridder = 'wproject'
+# specmode = 'mfs'
 specmode = 'mfs'
 deconvolver = 'mtmfs'
-scales=[0,1,2,3,4,5,8,12,20,30]
+scales=[0,8,16,32,64,128]
 smallscalebias=0.7
 robust = 0.0
 gain = 0.05
@@ -56,16 +74,16 @@ ext = ''
 if deconvolver=='mtmfs':
     ext = ext + '.tt0'
 
-# usemask='auto-multithresh'
-usemask='user'
-sidelobethreshold=2.0
-noisethreshold=12.0
-lownoisethreshold=4.0
-minbeamfrac=0.05
-growiterations=75
-negativethreshold=12.0
+usemask='auto-multithresh'
+# usemask='user'
+sidelobethreshold=3.5
+noisethreshold=15.0
+lownoisethreshold=5.0
+minbeamfrac=0.06
+growiterations=50
+negativethreshold=15.0
 # os.environ['SAVE_ALL_AUTOMASKS']="true"
-interactive = True
+interactive = False
 
 # gain settings
 solint_inf = 'inf'
@@ -79,7 +97,7 @@ combine = ''
 data_range=[-5.55876e-06, 0.00450872]
 
 
-
+outlierfile='outliers_Arp299.txt'
 
 # proj_name = '.calibrated'
 
@@ -165,87 +183,87 @@ def plot_visibilities(g_vis,name,with_DATA=False,with_MODEL=False,with_CORRECTED
 
 
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
-        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-        ydatacolumn='corrected-model', avgchannel='64', avgtime='60',
+        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',avgantenna=True,
+        ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
         width=800,height=540,showgui=False,overwrite=True,
         plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvwave_amp_corrected-model.jpg')
 
     plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
-        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-        ydatacolumn='corrected-model', avgchannel='64', avgtime='60',
+        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',avgantenna=True,
+        ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
         width=800,height=540,showgui=False,overwrite=True,
         plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvdist_amp_corrected-model.jpg')
 
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
-        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-        ydatacolumn='corrected/model', avgchannel='64', avgtime='60',
+        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',avgantenna=True,
+        ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
         width=800,height=540,showgui=False,overwrite=True,
         plotrange=[-1,-1,0,5],
         plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvwave_amp_corrected_div_model.jpg')
 
     plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
-        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-        ydatacolumn='corrected/model', avgchannel='64', avgtime='60',
+        antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',avgantenna=True,
+        ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
         width=800,height=540,showgui=False,overwrite=True,
         plotrange=[-1,-1,0,5],
         plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvdist_amp_corrected_div_model.jpg')
 
 
     if with_MODEL == True:
-        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
+        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-            ydatacolumn='model', avgchannel='64', avgtime='30',
+            ydatacolumn='model', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvwave_amp_model.jpg')
 
-        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
+        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-            ydatacolumn='model', avgchannel='64', avgtime='30',
+            ydatacolumn='model', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvdist_amp_model.jpg')
 
-        plotms(vis=g_vis, xaxis='freq', yaxis='amp',
+        plotms(vis=g_vis, xaxis='freq', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
-            ydatacolumn='model', avgchannel='', avgtime='60',
+            ydatacolumn='model', avgchannel='', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_freq_amp_model.jpg')
 
 
     if with_DATA ==True:
-        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
+        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-            ydatacolumn='data', avgchannel='64', avgtime='30',
+            ydatacolumn='data', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             # plotrange=[-1,-1,-1,0.3],
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvwave_amp_data.jpg')
-        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
+        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='baseline',
-            ydatacolumn='data', avgchannel='64', avgtime='30',
+            ydatacolumn='data', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             # plotrange=[-1,-1,0,0.3],
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvdist_amp_data.jpg')
-        plotms(vis=g_vis, xaxis='freq', yaxis='amp',
+        plotms(vis=g_vis, xaxis='freq', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
-            ydatacolumn='data', avgchannel='', avgtime='60',
+            ydatacolumn='data', avgchannel='', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_freq_amp_data.jpg')
 
     if with_CORRECTED ==True:
-        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
+        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,
             # plotrange=[-1,-1,0,0.3],
-            ydatacolumn='corrected', avgchannel='64', avgtime='30',
+            ydatacolumn='corrected', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvwave_amp_corrected.jpg')
-        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
+        plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,
             # plotrange=[-1,-1,0,0.3],
-            ydatacolumn='corrected', avgchannel='64', avgtime='30',
+            ydatacolumn='corrected', avgchannel='64', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_uvdist_amp_corrected.jpg')
-        plotms(vis=g_vis, xaxis='freq', yaxis='amp',
+        plotms(vis=g_vis, xaxis='freq', yaxis='amp',avgantenna=True,
             antenna=ANTENNAS,spw=SPWS,coloraxis='scan',
-            ydatacolumn='corrected', avgchannel='', avgtime='60',
+            ydatacolumn='corrected', avgchannel='', avgtime='360',
             width=800,height=540,showgui=False,overwrite=True,
             plotfile=os.path.dirname(g_vis)+'/selfcal/plots/'+name+'_freq_amp_corrected.jpg')
 
@@ -285,7 +303,7 @@ def initial_test_image(g_name,field,n_interaction='test',niter=250,
     print(image_test)
     tclean(vis=g_vis,
         imagename=os.path.dirname(g_vis)+'/selfcal/'+image_test,
-        field=FIELD,spw=SPWS,
+        field=FIELD,spw=SPWS,outlierfile=outlierfile,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
         imsize=imsize,cell= cell,
@@ -311,7 +329,7 @@ def initial_test_image(g_name,field,n_interaction='test',niter=250,
 
     pass
 
-def start_image(g_name,field,n_interaction,robust=0.0,
+def start_image(g_name,field,n_interaction,robust=0.0,cycleniter=25,
                 delmodel=False,interactive=False,
     niter=600,
     usemask=usemask,PLOT=True,datacolumn='corrected',mask='',
@@ -322,8 +340,8 @@ def start_image(g_name,field,n_interaction,robust=0.0,
 
     It creates an automatic output name according the parameter values.
     Additionally, it performs some visibility plots for the data.
-    
-    Note that this start operates on the data column, not the corrected. 
+
+    Note that this start operates on the data column, not the corrected.
     '''
     g_vis = g_name + '.ms'
     base_name = '_start_image_'
@@ -340,7 +358,7 @@ def start_image(g_name,field,n_interaction,robust=0.0,
     print('selfcal/'+image_start_model+'.image')
     tclean(vis=g_vis,
         imagename=os.path.dirname(g_vis)+'/selfcal/'+image_start_model,
-        field=FIELD,spw=SPWS,
+        field=FIELD,spw=SPWS,outlierfile=outlierfile,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
         imsize=imsize,cell= cell,
@@ -357,7 +375,7 @@ def start_image(g_name,field,n_interaction,robust=0.0,
         negativethreshold=negativethreshold,
         uvtaper=uvtaper,startmodel=startmodel,uvrange=uvrange,
         threshold=threshold,nterms=nterms,parallel=parallel,
-        datacolumn=datacolumn,cycleniter=25,
+        datacolumn=datacolumn,cycleniter=cycleniter,
         savemodel=savemodel)
 
     try:
@@ -416,7 +434,7 @@ def calibration_table_plot(table,stage='selfcal',
      if fields=='':
          plotms(vis=table,xaxis=xaxis,yaxis=yaxis,field='',
              gridcols=1,gridrows=1,coloraxis='spw',antenna='',plotrange=plotrange,
-             width=800,height=540,dpi=600,overwrite=True,showgui=False,
+             width=800,height=540,dpi=600,overwrite=True,showgui=True,
              plotfile=os.path.dirname(table)+'/plots/'+stage+'/'+table_type+'_'+xaxis+'_'+yaxis+'_field_'+str('all')+'.jpg')
      else:
 
@@ -601,7 +619,8 @@ def check_solutions(g_name,field,cut_off=3.0,n_interaction=0,
 
 def update_model_image(g_name,field,n_interaction,robust=0.5,
     interactive=interactive,datacolumn='corrected',
-    usemask=usemask,niter = 1000,mask='',
+    usemask=usemask,niter = 1000,mask='',cycleniter=100,
+    usepointing=True,psfphasecenter='',phasecenter='',
     uvtaper=[],uvrange='',PLOT=False):
 
     g_vis = g_name + '.ms'
@@ -621,7 +640,7 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
 
     tclean(vis=g_vis,
         imagename=os.path.dirname(g_name)+'/selfcal/'+image_update_model,
-        field=FIELD,
+        spw=SPWS,field=FIELD,outlierfile=outlierfile,
         specmode=specmode,deconvolver=deconvolver,gridder=gridder,
         scales=scales, smallscalebias=smallscalebias,
         imsize=imsize,cell= cell,
@@ -634,13 +653,12 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
         noisethreshold=noisethreshold,
         lownoisethreshold=lownoisethreshold,
         minbeamfrac=minbeamfrac,
-        spw=SPWS,
-        datacolumn=datacolumn,cycleniter=25,
+        usepointing=usepointing,psfphasecenter=psfphasecenter,phasecenter=phasecenter,
+        datacolumn=datacolumn,cycleniter=cycleniter,calcpsf=calcpsf,
         growiterations=growiterations,
         negativethreshold=negativethreshold,parallel=parallel,
         verbose=True,uvtaper=uvtaper,uvrange=uvrange,
-        savemodel='modelcolumn',
-        usepointing=False)
+        savemodel='modelcolumn')
 
 
     if PLOT==True:
@@ -661,7 +679,7 @@ def update_model_image(g_name,field,n_interaction,robust=0.5,
 
 def self_gain_cal(g_name,field,n_interaction,gain_tables=[],
     combine=combine,solnorm=False,uvtaper=[],uvrange='',
-    niter=500,
+    niter=500,spwmap=[],
     minsnr=5.0,solint='inf',gaintype='G',calmode='p',
     action='apply',flagbackup=True,PLOT=False):
 
@@ -694,15 +712,16 @@ def self_gain_cal(g_name,field,n_interaction,gain_tables=[],
                          +'.'+str(robust)+'.'+specmode+'.'+deconvolver+'.'+gridder
 
 
-    caltable = 'selfcal/'+str(n_interaction)\
+    caltable = os.path.dirname(g_name)+'/selfcal/'+str(n_interaction)\
                +cal_basename+os.path.basename(g_name)\
-               +'_'+'_solint_'+solint+'_minsnr_'+str(minsnr)+'.tb'
+               +'_'+'_solint_'+solint+'_minsnr_'+str(minsnr)+'_combine'+combine+'_gtype_'+gaintype+'.tb'
     if not os.path.exists(caltable):
         if calmode=='ap':
             solonrm=True
         else:
             solnorm=False
-        gaincal(vis=g_vis,field=FIELD,caltable=caltable,solint=solint,gaintable=gain_tables,combine=combine,
+        gaincal(vis=g_vis,field=FIELD,caltable=caltable,spwmap=spwmap,
+                solint=solint,gaintable=gain_tables,combine=combine,
             refant=refant,calmode=calmode,gaintype=gaintype, minsnr=minsnr,solnorm=solnorm)
     else:
         print(' => Using existing caltable with same parameters asked.')
@@ -710,12 +729,12 @@ def self_gain_cal(g_name,field,n_interaction,gain_tables=[],
 
     calibration_table_plot(table=caltable,
         fields='',yaxis='phase',
-        table_type='selfcal_phase_'+os.path.basename(g_name)+'_'+str(n_interaction)+'_solint_'+solint+'_minsnr_'+str(minsnr))
+        table_type=str(n_interaction)+'_selfcal_phase_'+os.path.basename(g_name)+'_solint_'+solint+'_minsnr_'+str(minsnr)+'_combine'+combine+'_gtype_'+gaintype)
 
     if calmode=='ap':
         calibration_table_plot(table=caltable,
             fields='',yaxis='amp',
-            table_type='selfcal_ampphase_'+os.path.basename(g_name)+'_'+str(n_interaction)+'_solint_'+solint+'_minsnr_'+str(minsnr))
+            table_type=str(n_interaction)+'_selfcal_ampphase_'+os.path.basename(g_name)+'_solint_'+solint+'_minsnr_'+str(minsnr)+'_combine'+combine+'_gtype_'+gaintype)
 
 
     make_plot_snr(caltable=caltable,cut_off=minsnr,
@@ -732,7 +751,8 @@ def self_gain_cal(g_name,field,n_interaction,gain_tables=[],
         summary_bef = flagdata(vis=g_vis, field=FIELD,mode='summary')
         report_flag(summary_bef,'field')
 
-        applycal(vis=g_vis,gaintable=gain_tables,flagbackup=False,calwt=False)
+        applycal(vis=g_vis,gaintable=gain_tables,spwmap=spwmap,
+                 flagbackup=False,calwt=False)
 
         print('     => Reporting data flagged after selfcal apply interaction',n_interaction,'...')
         summary_aft = flagdata(vis=g_vis, field=FIELD,mode='summary')
@@ -776,7 +796,7 @@ def image_selfcal(g_name,field,n_interaction,
         minbeamfrac=minbeamfrac,
         growiterations=growiterations,
         negativethreshold=negativethreshold,
-        verbose=True,parallel=parallel,cycleniter=25,
+        verbose=True,parallel=parallel,cycleniter=50,
         savemodel='none',datacolumn='corrected'
         )
     # if PLOT==True:
@@ -840,34 +860,37 @@ def mask_params(imagename,residualname=None,sidelobelevel=0.2):
     print(sidelobethreshold,noisethreshold)
 
     return(sidelobethreshold,noisethreshold)
-#
-# steps=[
-# 	   'save_init_flags',
-# 	   '0',
-# 	   #'2',
-#        	#    '3'
-#       ]
 
 os.environ['SAVE_ALL_AUTOMASKS']="false"
-usemask='user'#'auto-multithresh'
+# usemask='auto-multithresh'
+# interactive=False
+usemask='user'
 interactive=True
 
 
-
-
 steps=[
-       # 'startup',
-       # 'save_init_flags',
+    #    'startup',
+    #    'save_init_flags',
        '0',
+       '1',
+       # '2',
+       # '3',
+       # '4',
        ]
 
+# run_mode = 'jupyter'
 run_mode = 'terminal'
 
 if run_mode == 'terminal':
-    path = '/run/media/sagauga/storage_wd_2/astronomical_data/lirgi/vla/K_band/Arp220/'
+    # path = '/run/media/sagauga/data/astronomical_data/LIRGI/VLA/23A-324/C_band/MRK0331/'
+    # # field = 'Arp220'
+    # image_list = ['MRK0331']  # ,'VV250a','VV705']
+    # proj_name = '.calibrated'
+    # path = '/run/media/sagauga/data_processing/astronomical_data/C_band/Arp299A_19A-076/19A-076.sb36968005.eb37389480.58776.372127407405/19A-076.sb36968005.eb37389480.58776.372127407405.avg12s/fields/Arp299A/'
+    path = './'
     # field = 'Arp220'
-    image_list = ['Arp220']  # ,'VV250a','VV705']
-    proj_name = '_16B_316.calibrated.avg8s'
+    image_list = ['Arp299']  # ,'VV250a','VV705']
+    proj_name = '_multi_C_EVLA'
     # proj_name = '_combined_w_0.75'
 
     for field in image_list:
@@ -890,206 +913,144 @@ if run_mode == 'terminal':
                     comment='Original flags.')
             else:
                 print('     ==> Skipping flagging backup init (exists).')
+                flagmanager(vis=g_name+'.ms',mode='restore',versionname='Original',
+                    comment='Original flags.')
+                print('     ==> Restoring Flags Instead...')
 
         if '0' in steps:
             ############################################################################
             #### 0. Zero interaction. Use a small/negative robust parameter,        ####
             ####    to find the bright/compact emission(s).                         ####
             ############################################################################
-            robust = 0.0 #decrease more if lots of failed solutions.
-            niter = 500
-            threshold = '20.0e-6Jy'
+            robust = -1.0 #decrease more if lots of failed solutions.
+            niter = 160
+            threshold = '40.0e-6Jy'
+            # os.environ['SAVE_ALL_AUTOMASKS'] = "true"
+            # start_image(g_name,field,n_interaction=0,delmodel=True,PLOT=False,niter=niter,
+            #             robust=robust,interactive=interactive,cycleniter=40,
+            #             usemask=usemask,datacolumn='data')
 
-            start_image(g_name,field,0,delmodel=False,PLOT=True,niter=niter,robust=robust,
-                interactive=interactive,usemask=usemask,datacolumn='data')
+            gain_tables_selfcal_temp=self_gain_cal(g_name,field,n_interaction=0,
+                niter=niter,
+                minsnr = 1.0,solint = 'inf',flagbackup=True,
+                gaintype='T',combine='scan',
+                # spwmap=[[0, 0, 0, 0, 0, 0, 0, 0]],
+                # spwmap=[[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+                calmode='p',action='apply',PLOT=False)
+
+        os.environ['SAVE_ALL_AUTOMASKS'] = "false"
+        if '1' in steps:
+            ############################################################################
+            #### 1. First interaction. Increase a little the robust parameter,      ####
+            ####    start to consider more extended emission.                       ####
+            ############################################################################
+            threshold = '10.0e-6Jy'
+            niter = 300
+            robust = 0.0  # or 0.5 if lots of extended emission.
+
+            update_model_image(g_name, field, robust = robust, n_interaction=1,
+                               interactive=interactive,uvtaper=[], niter=niter,
+                               usemask=usemask, cycleniter = 50, PLOT=False)
+
+            gain_tables_selfcal_temp = self_gain_cal(g_name, field, n_interaction=1,
+                                                     minsnr=1.0, solint='240s',
+                                                     flagbackup=True,
+                                                    #  spwmap=[[0, 0, 0, 0, 4, 4, 4, 4]],
+                                                     gain_tables=[], calmode='p',
+                                                     gaintype='G',combine='',
+                                                     action='calculate', PLOT=False)
+
+        if '2' in steps:
+            ############################################################################
+            #### 2. Second interaction. Increase more the robust parameter, or use  ####
+            ####    uvtapering. Consider even more extended emission (if there is). ####
+            ############################################################################
+            robust = 2.0
+            threshold = '3.0e-6Jy'
+            niter = 1000
+            # update_model_image(g_name,field,n_interaction=2,cycleniter=75,
+            #                    interactive=interactive,robust = robust,
+            #                    # psfphasecenter='J2000 11h28m33.35  +58d33m49.10',
+            #                    # phasecenter='J2000 11h28m33.35  +58d33m49.10',
+            #                    # usepointing=True,
+            #                    uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
+
+            gain_tables_selfcal_temp = self_gain_cal(g_name, field, n_interaction='2_p_T_spw',
+                                                minsnr=0.5, solint='58s',
+                                                flagbackup=True,
+                                                spwmap=[[0, 0, 0, 0, 4, 4, 4, 4]],
+                                                gain_tables=[],combine='spw',
+                                                calmode='p', gaintype='T',
+                                                action='apply', PLOT=True)
+
+        if '3' in steps:
+            ############################################################################
+            #### 2. Second interaction. Increase more the robust parameter, or use  ####
+            ####    uvtapering. Consider even more extended emission (if there is). ####
+            ############################################################################
+            robust = 1.0
+            threshold = '1.0e-6Jy'
+            niter = 1000
+            update_model_image(g_name,field,n_interaction=3,cycleniter=75,
+                               interactive=interactive,robust = robust,
+                               # uvtaper=['0.3arcsec'],
+                               # psfphasecenter='J2000 11h28m33.35  +58d33m49.10',
+                               # phasecenter='J2000 11h28m33.35  +58d33m49.10',
+                               # usepointing=True,
+                               niter=niter,
+                               usemask=usemask,PLOT=False)
+
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=3,
+                                                minsnr=0.5, solint='240',
+                                                flagbackup=True,combine='',
+                                                gain_tables=gain_tables_selfcal_temp,
+                                                calmode='p', gaintype='G',
+                                                spwmap=[[0, 0, 0, 0, 4, 4, 4, 4],[]],
+                                                # spwmap = [[],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],
+                                                action='calculate', PLOT=False)
+
+        if '4' in steps:
+            # ############################################################################
+            # #### 3. Third interaction.If you see that further improvements can be   ####
+            # ####    obtained, do one more interaction, now amp selfcal.             ####
+            # ####    Be sure that the previous phase gains are ok, because you       ####
+            # ####    need them for the amp gain. If they are not, consider           ####
+            # ####    to iterate as many times you see fit in phases again.           ####
+            # ############################################################################
+            robust = 2.0
+            threshold = '3e-6Jy'
+            niter = 2000
+            # update_model_image(g_name,field,n_interaction=4,cycleniter = 100,
+            #                    interactive=interactive,robust = robust,
+            #                    # uvtaper=['0.6arcsec'],
+            #                    niter=niter,usemask=usemask,PLOT=False)
+
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=4,
+                                                minsnr=1.0, solint='60s',
+                                                flagbackup=True, solnorm=True,
+                                                gain_tables=gain_tables_selfcal,
+                                                calmode='ap', gaintype='G',
+                                                combine='',
+                                                action='apply', PLOT=False)
+
+        if '5' in steps:
+            robust = 2.0
+            threshold = '4e-6Jy'
+            niter = 2000
+            update_model_image(g_name,field,n_interaction=5,cycleniter = 100,
+                               interactive=interactive,robust = robust,
+                               uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
+
+            gain_tables_selfcal = self_gain_cal(g_name, field, n_interaction=5,
+                                                minsnr=2.0, solint='16s',
+                                                flagbackup=True, solnorm=True,
+                                                gain_tables=gain_tables_selfcal,
+                                                calmode='ap', gaintype='G',
+                                                combine='',
+                                                action='apply', PLOT=True)
+
 
 if run_mode == 'jupyter':
     print('selfcal script is not doing anything, you can use it on a '
           'jupyter notebook. For that, you have to manually '
           'set your variable names. ')
-
-# for field in image_list:
-#     g_name = field + proj_name
-#     if not os.path.exists('selfcal/'):
-#         os.makedirs('selfcal/')
-#     if not os.path.exists('selfcal/plots'):
-#         os.makedirs('selfcal/plots')
-#     if 'save_init_flags' in steps:
-#         if not os.path.exists(g_name+'.ms.flagversions/flags.Original/'):
-#             flagmanager(vis=g_name+'.ms',mode='save',versionname='Original',
-#                 comment='Original flags.')
-#         else:
-#             print('     ==> Skipping flagging backup init (exists).')
-
-#     if 'restore_init_flags' in steps:
-#         try:
-#             print('     ==> Restoring flags to original...')
-#             flagmanager(vis=g_name+'.ms',mode='restore',versionname='Original')
-#             delmod(vis=g_name + '.ms')
-#             clearcal(vis=g_name + '.ms')
-#             print('     ==> Renaming selfcal/ folder to selfcal.old/ ')
-#             os.system('mv selfcal/ selfcal.old/')
-#         except:
-#             pass
-
-#     os.environ['SAVE_ALL_AUTOMASKS']="false"#need to set to false if using the same image twice.
-
-#     if 'make_dirty' in steps:
-#         make_dirty(g_name=g_name,field=field,n_interaction=0)
-
-#     if 'initial_test_image' in steps:
-#         initial_test_image(g_name,field,n_interaction='test',niter=1500,
-#             usemask=usemask,interactive=interactive)
-
-#     if '0' in steps:
-#         ############################################################################
-#         #### 0. Zero interaction. Use a small/negative robust parameter,        ####
-#         ####    to find the bright/compact emission(s).                         ####
-#         ############################################################################
-#         robust = 0.0 #decrease more if lots of failed solutions.
-#         niter = 500
-#         threshold = '20.0e-6Jy'
-
-#         start_image(g_name,field,0,delmodel=True,PLOT=True,niter=niter,
-#             interactive=interactive,usemask=usemask,datacolumn='data')
-
-#         # check_solutions(g_name,field,calmode='p',combine='scan')
-#         gain_tables_selfcal_temp=self_gain_cal(g_name,field,n_interaction=0,
-#             niter=niter,
-#             minsnr = 1.0,solint = '240s',flagbackup=True,combine='',
-#             calmode='p',action='calculate',PLOT=True)
-
-#         # robust = 0.0
-#         # image_selfcal(g_name,field,n_interaction=0,interactive=False,usemask=usemask)
-#     if '1' in steps:
-#         ############################################################################
-#         #### 1. First interaction. Increase a little the robust parameter,      ####
-#         ####    start to consider more extended emission.                       ####
-#         ############################################################################
-#         threshold = '5.0e-6Jy'
-#         niter = 800
-#         robust = 2.0 #or 0.5 if lots of extended emission.
-#         #
-#         # update_model_image(g_name,field,n_interaction=1,interactive=interactive,
-#         #     uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
-#         #
-#         # # do not consider incremental gains yet (last table is not good)
-#         # check_solutions(g_name,field,n_interaction=1,gain_tables_selfcal=[])
-
-#         gain_tables_selfcal_temp=self_gain_cal(g_name,field,n_interaction=1,
-#             minsnr = 1.5,solint = '240s',flagbackup=True,
-#             gain_tables=[],calmode='p',gaintype='G',
-#             action='apply',PLOT=True)
-
-
-#         os.environ['SAVE_ALL_AUTOMASKS']="true"
-#         # mask = 'selfcal/1_update_model_image_interactive_VV705_AL746_fix_combined_1024_0.05arcsec_500.briggs.mfs.mtmfs.standard.mask'
-#         # image_selfcal(g_name,field,n_interaction=1,interactive=True,
-#             # usemask=usemask,mask=mask)
-#         # image_selfcal(g_name,field,n_interaction='1',niter = 3000,interactive=True,usemask=usemask)
-
-#     if '2' in steps:
-#         ############################################################################
-#         #### 2. Second interaction. Increase more the robust parameter, or use  ####
-#         ####    uvtapering. Consider even more extended emission (if there is). ####
-#         ############################################################################
-#         os.environ['SAVE_ALL_AUTOMASKS']="false"
-#         robust = 1.0
-#         threshold = '3.0e-6Jy'
-#         niter = 1000
-#         #update_model_image(g_name,field,n_interaction=2,interactive=interactive,
-#         #    uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
-
-
-#         # #if your solutions are good in the previous step, try to add them bellow,
-#         # #e.g. gain_tables_selfcal=gain_tables_selfcal, so the next ones will be
-#         # #incremental.
-#         #check_solutions(g_name,field,n_interaction=2,
-#         #    gain_tables_selfcal=[],calmode='p')
-#         #
-#         #
-#         # inspect the previous solutions (percentage of flagged data), and
-#         # try to decrease the solution interval (e.g. 30s, in this case).
-#         # again, if previous solutions are good, consider a incremental run,
-#         # e.g. gain_tables=gain_tables_selfcal in the call bellow.
-#         gain_tables_selfcal=self_gain_cal(g_name,field,n_interaction=2,
-#             minsnr = 2.91,solint = solint_long,flagbackup=True,
-#             gain_tables=[],calmode='p',gaintype='G',
-#             action='apply',PLOT=True)
-#         #
-#         # os.environ['SAVE_ALL_AUTOMASKS']="true"
-#         # perform imaging to check.
-#         # robust = 1.0
-#         #image_selfcal(g_name,field,n_interaction='2',interactive=interactive,usemask=usemask)
-#     #
-#     #
-#     #
-#     # ############################################################################
-#     # #### 3. Third interaction.If you see that further improvements can be   ####
-#     # ####    obtained, do one more interaction, now amp selfcal.             ####
-#     # ####    Be sure that the previous phase gains are ok, because you       ####
-#     # ####    need them for the amp gain. If they are not, consider           ####
-#     # ####    to iterate as many times you see fit in phases again.           ####
-#     # ############################################################################
-#     if '3' in steps:
-#         ############################################################################
-#         #### 2. Second interaction. Increase more the robust parameter, or use  ####
-#         ####    uvtapering. Consider even more extended emission (if there is). ####
-#         ############################################################################
-#         os.environ['SAVE_ALL_AUTOMASKS']="false"
-#         robust = -0.1
-#         threshold = '2e-6Jy'
-#         niter = 1000
-#         #update_model_image(g_name,field,n_interaction=3,interactive=interactive,
-#         #   uvtaper=[],niter=niter,usemask=usemask,PLOT=True)
-
-#         # #if your solutions are good in the previous step, try to add them bellow,
-#         # #e.g. gain_tables_selfcal=gain_tables_selfcal, so the next ones will be
-#         # #incremental.
-#         #gain_tables_selfcal = ['selfcal/1_selfcal_phase_interactive_0935+6121_LE1014_C_L14_002_20191012_avg_2ndtry__solint_120s_minsnr_1.5.tb']
-#         # check_solutions(g_name,field,n_interaction=3,
-#         #     gain_tables_selfcal=gain_tables_selfcal,calmode='ap',solnorm=True)
-#         #
-#         gain_tables_selfcal = ['selfcal/2_selfcal_phase_interactive_UGC5101_combined_w_0.05_RR_LL_newshift__solint_120s_minsnr_2.91.tb']
-#         # # inspect the previous solutions (percentage of flagged data), and
-#         # # try to decrease the solution interval (e.g. 30s, in this case).
-#         # # again, if previous solutions are good, consider a incremental run,
-#         # # e.g. gain_tables=gain_tables_selfcal in the call bellow.
-#         #gain_tables_selfcal=self_gain_cal(g_name,field,n_interaction=3,
-#         #    minsnr = 3.0,solint = 'inf',flagbackup=True,solnorm=True,
-#         #    gain_tables=gain_tables_selfcal,calmode='ap',gaintype='G',combine='scan',
-#         #    action='apply',PLOT=True)
-#         #
-#         # os.environ['SAVE_ALL_AUTOMASKS']="true"
-#         # perform imaging to check.
-#         #image_selfcal(g_name,field,n_interaction='3',interactive=True,usemask='user',niter=5000)
-#         image_selfcal(g_name,field,n_interaction='3',interactive=False,usemask='auto-multithresh',niter=2000)
-
-
-
-    #
-    # robust = 1.5
-    # update_model_image(g_name,field,n_interaction=3,interactive=interactive,
-    #     uvtaper=[],niter=500,usemask=usemask,PLOT=True)
-    # # update_model_image(g_name,field,n_interaction=1,interactive=interactive,
-    # #     uvtaper=['300klambda'],niter=1000,usemask=usemask)
-    #
-    #
-    # check_solutions(g_name,field,calmode='ap',n_interaction=3,
-    #     gain_tables_selfcal=gain_tables_selfcal)
-    # # os.environ['SAVE_ALL_AUTOMASKS']="false"
-    # gain_tables_selfcal=self_gain_cal(g_name,field,n_interaction=3,
-    #     minsnr = 3.0,solint = '30s',flagbackup=False,
-    #     interactive=True,combine='scan',calmode='ap',solnorm=True,gaintype='T',
-    #     update_model=False,delmodel=False,gain_tables=gain_tables_selfcal,
-    #     usemask=usemask,niter=1000,
-    #     action='apply',PLOT=True)
-    #
-    # # os.environ['SAVE_ALL_AUTOMASKS']="true"
-    #
-    # # mask = 'selfcal/1_update_model_image_interactive_VV705_AL746_fix_combined_1024_0.05arcsec_500.briggs.mfs.mtmfs.standard.mask'
-    # # image_selfcal(g_name,field,n_interaction=1,interactive=True,
-    # #     usemask=usemask,mask=mask)
-    #
-    # robust = 1.5
-    # image_selfcal(g_name,field,n_interaction='3',interactive=False,usemask=usemask)
