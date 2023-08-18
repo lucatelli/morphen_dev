@@ -28,8 +28,8 @@ These tools involves pure python, but also are integrated with CASA
 code for fast interferometric imaging (https://wsclean.readthedocs.io/en/latest/).
 
 *NOTES: This readme file is under development. I am also currently adding basic usages 
-to Jupyter notebooks guides. Core functionalities are expected to be ready 
-by end of July/2023.*
+to Jupyter notebooks guides. A major update and core functionalities will be provided 
+September/2023 with the release of the paper.
 
 # Image deconvolution Using `wsclean`
 Directory [```imaging/```](imaging/) contains a python script called 
