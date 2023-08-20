@@ -93,20 +93,6 @@ def ellipse_axis_length(fit):
     a = sqrt(abs(det(Aq) / (lam1 * det(A33))))
     b = sqrt(abs(det(Aq) / (lam2 * det(A33))))
     return array([max(a, b), min(a, b)])
-    '''
-    b,c,d,f,g,a = fit[1]/2, fit[2], fit[3]/2, fit[4]/2, fit[5], fit[0]
-
-    print b**2-4*a*c < 0
-    up = 2*( a*f**2 + c*d**2 + g*b**2 - 2*b*d*f - a*c*g)
-    #down1=(b*b-a*c)*( (c-a)*np.sqrt(1+4*b*b/((a-c)*(a-c)))-(c+a))
-    #down2=(b*b-a*c)*( (a-c)*np.sqrt(1+4*b*b/((a-c)*(a-c)))-(c+a))
-    down1=(b**2-a*c)*( (-1)*np.sqrt((a-c)**2 + 4*b**2 ) - (a+c))
-    down2=(b**2-a*c)*(      np.sqrt((a-c)**2 + 4*b**2 ) - (a+c))
-    res1=np.sqrt(up/down1)
-    res2=np.sqrt(up/down2)
-    return np.array([res1, res2])
-    #return np.array([max(res1,res2), min(res1,res2)])
-    '''
 
 
 def ellipse_axis_length_orig(fit):
@@ -174,127 +160,96 @@ def main_test2(g,Isequence = None,region_split=None,SAVENAME=None):
     YE = np.zeros_like((Isequence))
     for k in range(len(Isequence)):
         I = Isequence[k]
-        # try:
-        delta = 0.5 * I
-        y, x = where((gal > I - delta) & (gal < I + delta))
-
-        # remove outliers
-        remove_indexes = np.where(np.logical_or(abs(y - y.mean()) >
-                                                abs(y - y.mean()).mean() * 1.5, \
-                                                abs(x - x.mean()) >
-                                                abs(x - x.mean()).mean() * 1.5) == True)[0]
-        # remove_indexes = np.where(np.logical_or(abs(y - np.std(y)) >
-        #                                         np.mean(abs(y - np.std(y))) * 3.0, \
-        #                                         abs(x - np.std(x)) >
-        #                                         np.mean(abs(x - np.std(x))) * 3.0) == True)[0]
-
-        x = np.delete(x, remove_indexes)
-        y = np.delete(y, remove_indexes)
-
-        if len(x) < 6:
-            continue
         try:
-            fit = fitEllipse2(x, y)
+            delta = 0.5 * I
+            y, x = where((gal > I - delta) & (gal < I + delta))
+
+            # remove outliers
+            remove_indexes = np.where(np.logical_or(abs(y - y.mean()) >
+                                                    abs(y - y.mean()).mean() * 1.5, \
+                                                    abs(x - x.mean()) >
+                                                    abs(x - x.mean()).mean() * 1.5) == True)[0]
+            # remove_indexes = np.where(np.logical_or(abs(y - np.std(y)) >
+            #                                         np.mean(abs(y - np.std(y))) * 3.0, \
+            #                                         abs(x - np.std(x)) >
+            #                                         np.mean(abs(x - np.std(x))) * 3.0) == True)[0]
+
+            x = np.delete(x, remove_indexes)
+            y = np.delete(y, remove_indexes)
+
+            if len(x) < 6:
+                continue
+            try:
+                fit = fitEllipse2(x, y)
+            except:
+                continue
+            x0, y0 = ellipse_center(fit)
+            phi = ellipse_angle(fit)
+            if phi < 0:
+                phi = phi + np.pi
+            a, b = ellipse_axis_length(fit)
+
+            xe = x0 + a * cos(R) * cos(phi) - b * sin(R) * sin(phi)
+            ye = y0 + a * cos(R) * sin(phi) + b * sin(R) * cos(phi)
+
+
+            PA = np.rad2deg(phi)
+            II[k] = I  # Note that II is not on the same size as Isequence.
+            AA[k] = a
+            BB[k] = b
+            PPAA[k] = PA
+            PHI[k] = phi
+            XX0[k] = x0
+            YY0[k] = y0
+            XE = XE
+            YE = YE
+
+
+            Ifit = mean(gal[y, x])
+            Iellipses[y, x] = Ifit
+            # rr = np.sqrt(xe**2.0+ye**2.0)
+
+            loopc = 0
+            fit2 = array([0, 0, 0, 0, 0, 0])
+            dpoints = 1
+
+            while dpoints != 1 and loopc < 50:
+                # print mean(fit-fit2)
+                ### Distance matrix
+
+                m = sqrt((x - x0) ** 2 / a ** 2 + (y - y0) ** 2 / b ** 2)
+                mmean = m.mean()
+                mstd = m.std()
+
+                # Q based
+                # idxin = where( qq<(qqmean+1.0*qqstd) )[0]
+                # m based
+                idxin = where((m > (mmean - 2.0 * mstd)) & (m < (mmean + 2.0 * mstd)))[0]
+                if len(idxin) < 6:
+                    break
+
+                plt.plot(x, y, '.r', ms=4)
+                plt.plot(x[idxin], y[idxin], '+b', ms=4)
+                plt.plot(xe, ye, '-k', lw=2)
+                plt.imshow(arcsinh(gal))
+                plt.show()
+                fit2 = fitEllipse2(x[idxin], y[idxin])
+                xe2, ye2 = fitted_ellipse_points(fit2)
+                plt.plot(xe2,ye2, '-b', lw=2)
+
+                dpoints = abs(len(x) - len(x[idxin]))
+
+                x = x[idxin]
+                y = y[idxin]
+
+                xlim(0, N)
+                ylim(0, M)
+                draw()
+                loopc += 1
+
+            print('ctr=(%8.2f %8.2f)     I=%8.2f     q=%8.2f     PA=%8.2f' % (x0, y0, Ifit, b / a, rad2deg(phi)))
         except:
-            continue
-        x0, y0 = ellipse_center(fit)
-        phi = ellipse_angle(fit)
-        if phi < 0:
-            phi = phi + np.pi
-        a, b = ellipse_axis_length(fit)
-
-        xe = x0 + a * cos(R) * cos(phi) - b * sin(R) * sin(phi)
-        ye = y0 + a * cos(R) * sin(phi) + b * sin(R) * cos(phi)
-
-
-        PA = np.rad2deg(phi)
-        print('###################################')
-        print('###################################')
-        print('DEBUGGGGGGGGGGGGGGGGGG')
-        print('###################################')
-        print('###################################')
-        II[k] = I  # Note that II is not on the same size as Isequence.
-        AA[k] = a
-        BB[k] = b
-        PPAA[k] = PA
-        PHI[k] = phi
-        XX0[k] = x0
-        YY0[k] = y0
-        print(xe)
-        print(ye)
-        print(y0)
-        XE[k] = xe
-        YE[k] = ye
-
-
-        Ifit = mean(gal[y, x])
-        Iellipses[y, x] = Ifit
-        # rr = np.sqrt(xe**2.0+ye**2.0)
-
-        loopc = 0
-        fit2 = array([0, 0, 0, 0, 0, 0])
-        dpoints = 1
-
-        while dpoints != 1 and loopc < 50:
-            # print mean(fit-fit2)
-            ### Distance matrix
-
-            m = sqrt((x - x0) ** 2 / a ** 2 + (y - y0) ** 2 / b ** 2)
-            mmean = m.mean()
-            mstd = m.std()
-
-            # Q based
-            # idxin = where( qq<(qqmean+1.0*qqstd) )[0]
-            # m based
-            idxin = where((m > (mmean - 2.0 * mstd)) & (m < (mmean + 2.0 * mstd)))[0]
-            if len(idxin) < 6:
-                break
-
-            plt.plot(x, y, '.r', ms=4)
-            plt.plot(x[idxin], y[idxin], '+b', ms=4)
-            plt.plot(xe, ye, '-k', lw=2)
-            plt.imshow(arcsinh(gal))
-            plt.show()
-            fit2 = fitEllipse2(x[idxin], y[idxin])
-            xe2, ye2 = fitted_ellipse_points(fit2)
-            plt.plot(xe2,ye2, '-b', lw=2)
-
-            dpoints = abs(len(x) - len(x[idxin]))
-
-            x = x[idxin]
-            y = y[idxin]
-
-            xlim(0, N)
-            ylim(0, M)
-            draw()
-            loopc += 1
-
-        print('ctr=(%8.2f %8.2f)     I=%8.2f     q=%8.2f     PA=%8.2f' % (x0, y0, Ifit, b / a, rad2deg(phi)))
-        # except:
-            # II.append(np.nan)  # Note that II is not on the same size as Isequence.
-            # AA.append(np.nan)
-            # BB.append(np.nan)
-            # PPAA.append(np.nan)
-            # PHI.append(np.nan)
-            # XX0.append(np.nan)
-            # YY0.append(np.nan)
-            # XE.append(np.nan)
-            # YE.append(np.nan)
-            # pass
-
-    # IIa = np.asarray(II)
-    # AAa = np.asarray(AA)
-    # BBa = np.asarray(BB)
-    # PPAAa = np.asarray(PPAA)
-    # XX0a = np.asarray(XX0)
-    # YY0a = np.asarray(YY0)
-    # PHIa = np.asarray(PHI)
-    # print(XE)
-    # print(BB)
-    # XEa = np.asarray(XE)
-    # YEa = np.asarray(YE)
-
-
+            pass
 
     if region_split is None:
         rsplit = int(len(II) * 0.5)
