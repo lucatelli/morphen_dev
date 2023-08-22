@@ -1,21 +1,13 @@
 import pandas as pd
 import numpy as np
 import os
-
+os.system('/usr/local/cuda/extras/demo_suite/bandwidthTest &> /dev/null')
+os.system('export CUDA_DEVICE=0')
 running_container = 'singularity' # or 'native'
-
-root_dir_sys = '/nvme1/scratch/lucatelli/lirgi/combined_data/UGC5101_C/'
-
-if running_container == 'singularity':
-    mount_dir = root_dir_sys+':/mnt'
-    root_dir = '/mnt/'
-    wsclean_dir = '/raid1/scratch/lucatelli/apps/wsclean-gpu.simg'
-
-
 
 ## Setting image and deconvolution noptions.
 ### Cleaning arguments
-auto_mask = '-auto-mask 3.0'
+auto_mask = '-auto-mask 5.0'
 auto_threshold = '-auto-threshold 0.001'
 #auto_threshold = '-threshold 1.0e-6Jy'
 # threshold = '-threshold 5.0e-6Jy'
@@ -23,19 +15,20 @@ auto_threshold = '-auto-threshold 0.001'
 
 ### Selecting the deconvolver
 deconvolver = '-multiscale'
-# deconvolver_options = '-multiscale-max-scales 15'#'-multiscale-scales 0,3,6,9,15,20,30,60,120,240'
-deconvolver_options = '-multiscale-scales 0,4,8,16,32,64,128,256'
-# deconvolver_args = '-channels-out 5 -join-channels'# -nmiter 100 -local-rms -local-rms -local-rms-method rms-with-min
-deconvolver_args = '-channels-out 4 -join-channels -weighting-rank-filter 3 ' \
-                   '-weighting-rank-filter-size 64 -no-mf-weighting ' \
-                   '-use-wgridder'#'  # -nmiter 100 -local-rms -circular-beam
+deconvolver_options = '-multiscale-scales 0,4,12,20,32,64'
+deconvolver_args = ('-channels-out 4 -join-channels -weighting-rank-filter 5 '
+                    '-weighting-rank-filter-size 64 -no-mf-weighting '
+                    '-gridder wgridder -apply-primary-beam -local-rms '
+                    '-local-rms-window 25 -local-rms-method rms '
+                    '-save-source-list ')
+                   #' -gridder idg -idg-mode hybrid -grid-with-beam '#'  # -no-negative -nmiter 100 -local-rms
 
 #image parameters
 weighting = 'briggs'
 # robust = '0.5'
-imsize= '3072'
+imsize= '2048'
 cell = '0.008arcsec'
-niter= '10000'
+niter= '2000'
 
 
 #taper options (this is a to-do)
@@ -51,14 +44,18 @@ uvtaper_addargs = ''
 # uvtaper = uvtaper_mode + ' '+ uvtaper_args + ' ' +uvtaper_addmode + ' ' + uvtaper_addargs
 
 #data to run deconvolution
-data_column = '-data-column DATA'
+# data_column = '-data-column DATA'
+data_column = '-data-column CORRECTED_DATA'
 
 #general arguments
 gain_args = '-mgain 0.3 -multiscale-gain 0.05 -gain 0.05'
-shift_options = ''#'-shift 13:15:30.6915 +062.07.45.3489 '
-opt_args = '-super-weight 15.0 -mem 90 -j 64 -parallel-gridding 64 ' \
-           '-parallel-reordering 1 -deconvolution-threads 64 ' \
-           '-log-time -no-update-model-required -field all'
+lirgi_coordinates = {'VV250b' : 'J2000 13:15:30.698 62.07.45.34'}
+
+shift_options = ''#' -shift 13:15:30.698 62.07.45.34 '
+opt_args = '-super-weight 20.0 -mem 90 -j 10 ' \
+           '-parallel-reordering 10 -deconvolution-threads 10 ' \
+           '-save-first-residual -save-weights -save-uv ' \
+           '-log-time -no-update-model-required -field all ' #-no-update-model-required
 opt_args = opt_args + shift_options
 
 data_range = [1e-06, 0.001]
@@ -214,7 +211,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image_'):
 
     print(image_deepclean_name)
 
-    if not os.path.exists(image_deepclean_name + ext):
+    if not os.path.exists(root_dir_sys+image_deepclean_name + ext):
         if running_container == 'native':
             os.system(
                 'wsclean -name ' + root_dir_sys + image_deepclean_name +
@@ -226,7 +223,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image_'):
                 ' ' + opt_args + ' ' + data_column + ' ' + root_dir_sys + g_vis)
         if running_container == 'singularity':
             os.system(
-                'singularity exec --bind ' + mount_dir + ' ' + wsclean_dir +
+                'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
                 ' ' + 'wsclean -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsize + ' ' + imsize + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
@@ -250,15 +247,23 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image_'):
     # pass
 
 
-# proj_name = 'VV705_L26_emerlin'
-# image_list = ['1518+4244']#,'VV250a','VV705']
-image_list = ['UGC5101_combined_w_0.55_RR_LL']
-robusts = [-1.0,-0.5
-    # -2.0,-1.8,-1.4,-1.0,-0.8,-0.6,-0.2,0.0,0.5,1.0
-    ]
-tapers = ['','0.25asec']
-# for fixed visibility weights during concat.
-for field in image_list:
+root_dir_sys_list = [
+                     '/run/media/sagauga/xfs_evo/lirgi_sample/combined_data/C_band/VV250/',
+                     ]
+image_list = [
+              'VV250_EVLA_eM.avg12s'
+             ]
+
+robusts = [-1.0,0.0,1.0]
+tapers = ['']
+for i in range(len(image_list)):
+    field = image_list[i]
+    root_dir_sys = root_dir_sys_list[i]
+    if running_container == 'singularity':
+        mount_dir = root_dir_sys + ':/mnt'
+        root_dir = '/mnt/'
+        wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
+        # wsclean_dir = '/raid1/scratch/lucatelli/apps/wsclean_wg_eb.simg'
     g_name = field
     for robust in robusts:
         for uvtaper in tapers:
