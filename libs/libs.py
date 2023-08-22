@@ -6521,12 +6521,15 @@ def plot_interferometric_decomposition(imagename0, imagename,
         m = ctn(modelname)
         r = ctn(residualname)
 
+    dx1 = g.shape[0]/2
+    dx = g.shape[0]/2
     if crop == True:
         xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                        center=None, return_='box')
         #         I1 = I1[int(2*xin):int(xen/2),int(2*yin):int(yen/2)]
         I1 = I1[int(xin + box_size / 1.25):int(xen - box_size / 1.25),
              int(yin + box_size / 1.25):int(yen - box_size / 1.25)]
+        dx1 = I1.shape[0]/2
         # g = g[xin:xen,yin:yen]
         # m = m[xin:xen,yin:yen]
         # r = r[xin:xen,yin:yen]
@@ -6565,6 +6568,7 @@ def plot_interferometric_decomposition(imagename0, imagename,
     levels_g = np.geomspace(2*g.max(), 3 * std, 7)
     levels_m = np.geomspace(2*m.max(), 20 * std_m, 7)
     levels_r = np.geomspace(2*r.max(), 3 * std_r, 7)
+    levels_neg = np.asarray([-3]) * std
     if run_phase == '1st':
         title_labels = [r'$I_1^{\rm mask}$',
                         r'$I_2$',
@@ -6605,51 +6609,112 @@ def plot_interferometric_decomposition(imagename0, imagename,
     #     im = ax.imshow(I1, cmap='gray_r',norm=norm,alpha=0.2)
 
     #     im_plot = ax.imshow(g, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax, vmin=vmin)#norm=norm
-    im_plot = ax.imshow(I1, cmap='magma_r', origin='lower', alpha=1.0, norm=norm0)
+    im_plot = ax.imshow(I1, cmap='magma_r', extent=[-dx1,dx1,-dx1,dx1],
+                        origin='lower', alpha=1.0, norm=norm0)
 
     ax.set_title(title_labels[0])
 
     ax.contour(I1, levels=levels_I1[::-1], colors=cm,
+               extent=[-dx1, dx1, -dx1, dx1],
                linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
-    #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
 
+    cell_size = get_cell_size(imagename0)
+
+    xticks = np.linspace(-dx1, dx1, 5)
+    xticklabels = np.linspace(-dx1*cell_size, +dx1*cell_size, 5)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    ax.set_xlabel(r'Offset [arcsec]')
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+
+    #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
     ax = fig.add_subplot(1, 4, 2)
     #     im = ax.imshow(g, cmap='gray_r',norm=norm,alpha=0.2)
 
     #     im_plot = ax.imshow(g, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax, vmin=vmin)#norm=norm
-    im_plot = ax.imshow(g, cmap='magma_r', origin='lower', alpha=1.0, norm=norm2)
+    im_plot = ax.imshow(g, cmap='magma_r',extent=[-dx,dx,-dx,dx],
+                        origin='lower', alpha=1.0, norm=norm2)
 
     ax.set_title(title_labels[1])
 
-    ax.contour(g, levels=levels_g[::-1], colors=cm,
+    ax.contour(g, levels=levels_g[::-1], colors=cm,extent=[-dx,dx,-dx,dx],
                linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
+
+    # cb = plt.colorbar(mappable=plt.gca().images[0],
+    #                   cax=fig.add_axes([-0.0, 0.40, 0.02,0.19]))  # ,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
+
     cb = plt.colorbar(mappable=plt.gca().images[0],
-                      cax=fig.add_axes([-0.0, 0.40, 0.02,0.19]))  # ,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
-    cb.set_label(r'Flux [Jy/beam]', labelpad=1)
+                      cax=fig.add_axes([0.07, 0.40, 0.02,0.19]),
+                      orientation='vertical',shrink=1, aspect='auto',
+                      pad=1, fraction=1.0,
+                      drawedges=False, ticklocation='left')
+    cb.formatter = CustomFormatter(factor=1000, useMathText=True)
+    cb.update_ticks()
+#     print('++++++++++++++++++++++')
+#     print(plt.gca().images[0])
+    cb.set_label(r'Flux [mJy/beam]', labelpad=1)
     cb.ax.xaxis.set_tick_params(pad=1)
     cb.ax.tick_params(labelsize=12)
     cb.outline.set_linewidth(1)
     # cb.dividers.set_color('none')
-    ax.set_yticks([])
+
+    cell_size = get_cell_size(imagename)
+    xticks = np.linspace(-dx, dx, 5)
+    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 5)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+
     ax = plt.subplot(1, 4, 3)
 
     #     im_plot = ax.imshow(m, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax_m, vmin=vmin_m)#norm=norm
-    im_plot = ax.imshow(m, cmap='magma_r', origin='lower', alpha=1.0, norm=norm2)
+    im_plot = ax.imshow(m, cmap='magma_r',extent=[-dx,dx,-dx,dx],
+                        origin='lower', alpha=1.0, norm=norm2)
     ax.set_title(title_labels[2])
-    ax.contour(m, levels=levels_g[::-1], colors=cm,
+    ax.contour(m, levels=levels_g[::-1], colors=cm,extent=[-dx,dx,-dx,dx],
                linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
     #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.08,0.3,0.02,0.4]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
-    ax.set_yticks([])
+
+    cell_size = get_cell_size(modelname)
+    xticks = np.linspace(-dx, dx, 5)
+    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 5)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+
+
+
     ax = plt.subplot(1, 4, 4)
     norm_re = simple_norm(r, min_cut=vmin, max_cut=vmax, stretch='sqrt')  # , max_percent=max_percent_highlevel)
     #     norm = simple_norm(r,stretch='asinh',asinh_a=0.01)#,vmin=vmin,vmax=vmax)
     #     ax.imshow(r,origin='lower',cmap='magma_r',alpha=1.0,vmax=vmax_r, vmin=vmin)#norm=norm
-    ax.imshow(r, origin='lower', cmap='magma_r', alpha=1.0, norm=norm2)
+    ax.imshow(r, origin='lower',extent=[-dx,dx,-dx,dx],
+              cmap='magma_r', alpha=1.0, norm=norm2)
     #     ax.imshow(r, cmap='magma_r',norm=norm,alpha=0.3,origin='lower')
 
-    ax.contour(r, levels=levels_r[::-1], colors=cm,#colors='grey',
+    ax.contour(r, levels=levels_r[::-1],extent=[-dx,dx,-dx,dx],
+               colors=cm,#colors='grey',
                linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
-    ax.set_yticks([])
+    ax.contour(r, levels=levels_neg[::-1],extent=[-dx,dx,-dx,dx],
+               colors='k', linewidths=1.0,
+               alpha=1.0)
+
+    cell_size = get_cell_size(residualname)
+    xticks = np.linspace(-dx, dx, 5)
+    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 5)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+
+
     ax.set_title(title_labels[3])
     #     cb1=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([0.91,0.40,0.02,0.19]))
     #     cb1.set_label(r'Flux [Jy/beam]',labelpad=1)
