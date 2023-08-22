@@ -6232,7 +6232,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     else:
         data_2D = ctn(imagename)
 
-    fast_plot3(data_2D, modelname=model_dict['model_total_conv'],
+    plot_data_model_res(data_2D, modelname=model_dict['model_total_conv'],
                residualname=model_dict['best_residual_conv'],
                reference_image=imagename,
                NAME=image_results_conv[-2].replace('.fits',
@@ -6244,7 +6244,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
 
     ncomponents = sources_photometies['ncomps']
     if sources_photometies is not None:
-        plotlim =  3 * sources_photometies['c1_rlast']
+        plotlim =  4.0 * sources_photometies['c'+str(int(ncomponents))+'_rlast']
         # plotlim = 0
         # for i in range(ncomponents):
         #     plotlim = plotlim + sources_photometies['c' + str(i + 1) + '_rlast']
@@ -6306,7 +6306,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
         # return(plt)
     else:
         plt.close()
-
+        
 
 
 # plt.savefig(config_file.replace('params_imfit.csv','result_lmfit_py_IR.pdf'),dpi=300, bbox_inches='tight')
@@ -6867,6 +6867,185 @@ def fast_plot(imagename0, imagename, modelname, residualname, crop=False, box_si
             plt.show()
         else:
             plt.close()
+
+
+def plot_data_model_res(imagename, modelname, residualname, reference_image, crop=False,
+               box_size=512, NAME=None, CM='magma_r',
+               vmin_factor=3.0,vmax_factor=0.1,
+               max_percent_lowlevel=99.0, max_percent_highlevel=99.9999,
+               ext='.pdf', show_figure=True):
+    """
+    Plots fitting results: image <> model <> residual images.
+
+    """
+    fig = plt.figure(figsize=(12, 12))
+    try:
+        try:
+            g = pf.getdata(imagename)
+            # if len(np.shape(g)==4):
+            #     g = g[0][0]
+            m = pf.getdata(modelname)
+            r = pf.getdata(residualname)
+        except:
+            g = imagename
+            m = modelname
+            r = residualname
+    except:
+        g = ctn(imagename)
+        m = ctn(modelname)
+        r = ctn(residualname)
+
+    if crop == True:
+        xin, xen, yin, yen = do_cutout(reference_image, box_size=box_size,
+                                       center=None, return_='box')
+        #         I1 = I1[int(2*xin):int(xen/2),int(2*yin):int(yen/2)]
+        g = g[xin:xen, yin:yen]
+        m = m[xin:xen, yin:yen]
+        r = r[xin:xen, yin:yen]
+
+    if mad_std(g) == 0:
+        std = g.std()
+    else:
+        std = mad_std(g)
+
+    if mad_std(r) == 0:
+        std_r = r.std()
+    else:
+        std_r = mad_std(r)
+
+    if mad_std(m) == 0:
+        std_m = m.std()
+    else:
+        std_m = mad_std(m)
+
+    dx = g.shape[0]/2
+    try:
+        cell_size = get_cell_size(imagename)
+        axis_units_label = r'Offset [arcsec]'
+    except:
+        print('No cell or pixel size information in the image wcs/header. '
+              'Setting cell/pixel size = 1.')
+        cell_size = 1
+        axis_units_label = r'Offset [px]'
+
+    #     print(I1)
+    vmin = vmin_factor * std  # 0.5*g.min()#
+    vmax = vmax_factor * g.max()
+    vmin_r = vmin  # 1.0*r.min()#1*std_r
+    vmax_r = vmax #1.0 * r.max()
+    vmin_m = vmin  # 1*mad_std(m)#vmin#0.01*std_m#0.5*m.min()#
+    vmax_m = vmax  # 0.5*m.max()#vmax#0.5*m.max()
+
+    levels_g = np.geomspace(3*g.max(), 3 * std, 7)
+    levels_m = np.geomspace(3*m.max(), 10 * std_m, 7)
+    levels_r = np.geomspace(3*r.max(), 3 * std_r, 7)
+
+    #     norm = simple_norm(g,stretch='asinh',asinh_a=0.01)#,vmin=vmin,vmax=vmax)
+    norm = visualization.simple_norm(g, stretch='linear',
+                                     max_percent=max_percent_lowlevel)
+    norm2 = simple_norm(abs(g), min_cut=vmin, max_cut=vmax,
+                        stretch='asinh',asinh_a=0.05)  # , max_percent=max_percent_highlevel)
+
+    ax = fig.add_subplot(1, 3, 1)
+
+    #     im = ax.imshow(g, cmap='gray_r',norm=norm,alpha=0.2)
+
+    #     im_plot = ax.imshow(g, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax, vmin=vmin)#norm=norm
+    im_plot = ax.imshow(g, cmap=CM,
+                        origin='lower', extent=[-dx,dx,-dx,dx],
+                        alpha=1.0, norm=norm2)
+
+    ax.set_title(r'Image')
+
+    ax.contour(g, levels=levels_g[::-1], colors='grey', linewidths=1.0,
+               extent=[-dx, dx, -dx, dx],
+               alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    """
+    # No need for this additional colorbar.
+    cb = plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes(
+        [-0.0, 0.40, 0.02,
+         0.19]))  # ,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
+    cb.formatter = CustomFormatter(factor=1000, useMathText=True)
+    cb.update_ticks()
+    cb.set_label(r'Flux [mJy/beam]', labelpad=1)
+    cb.ax.xaxis.set_tick_params(pad=1)
+    cb.ax.tick_params(labelsize=12)
+    cb.outline.set_linewidth(1)
+    # cb.dividers.set_color('none')
+    """
+    xticks = np.linspace(-dx, dx, 4)
+    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 4)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    ax.set_xlabel(axis_units_label)
+    # ax.set_yticks([])
+    # ax.set_yticklabels([])
+
+
+    ax = plt.subplot(1, 3, 2)
+
+    #     im_plot = ax.imshow(m, cmap='magma_r',origin='lower',alpha=1.0,vmax=vmax_m, vmin=vmin_m)#norm=norm
+    norm_mod = simple_norm(m, min_cut=vmin, max_cut=vmax,
+                           stretch='asinh',asinh_a=0.05)  # , max_percent=max_percent_highlevel)
+
+    im_plot = ax.imshow(m, cmap=CM,
+                        origin='lower',extent=[-dx,dx,-dx,dx],
+                        alpha=1.0,
+                        norm=norm_mod)
+    ax.set_title(r'Model')
+    ax.contour(m, levels=levels_g[::-1],
+               extent=[-dx, dx, -dx, dx],
+               colors='grey', linewidths=1.0,
+               alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.08,0.3,0.02,0.4]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    ax.set_xlabel(axis_units_label)
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+
+    ax = plt.subplot(1, 3, 3)
+    norm_re = simple_norm(r, min_cut=vmin, max_cut=vmax,
+                          stretch='asinh',asinh_a=0.05)  # , max_percent=max_percent_highlevel)
+    #     norm = simple_norm(r,stretch='asinh',asinh_a=0.01)#,vmin=vmin,vmax=vmax)
+    #     ax.imshow(r,origin='lower',cmap='magma_r',alpha=1.0,vmax=vmax_r, vmin=vmin)#norm=norm
+    ax.imshow(r, origin='lower',extent=[-dx, dx, -dx, dx],
+              cmap=CM, alpha=1.0, norm=norm_re)
+    #     ax.imshow(r, cmap='magma_r',norm=norm,alpha=0.3,origin='lower')
+
+    ax.contour(r, levels=levels_g[::-1],
+               extent=[-dx, dx, -dx, dx],
+               colors='grey', linewidths=1.0,
+               alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    levels_neg = np.asarray([-3 * std])
+
+    ax.contour(r, levels=levels_neg[::-1],
+               extent=[-dx, dx, -dx, dx],
+               colors='k', linewidths=1.0,
+               alpha=1.0)
+    ax.set_yticks(xticks, xticklabels)
+    ax.set_xticks(xticks, xticklabels)
+    ax.set_xlabel(axis_units_label)
+    # ax.set_yticks([])
+    ax.set_yticklabels([])
+    ax.set_title(r'Residual')
+    cb1 = plt.colorbar(mappable=plt.gca().images[0],
+                       cax=fig.add_axes([0.91, 0.40, 0.02, 0.19]))
+    cb1.formatter = CustomFormatter(factor=1000, useMathText=True)
+    cb1.update_ticks()
+    cb1.set_label(r'Flux [mJy/beam]', labelpad=1)
+    cb1.ax.xaxis.set_tick_params(pad=1)
+    cb1.ax.tick_params(labelsize=12)
+    cb1.outline.set_linewidth(1)
+    # cb1.dividers.set_color('none')
+    if NAME != None:
+        plt.savefig(NAME + ext, dpi=300, bbox_inches='tight')
+        if show_figure == True:
+            plt.show()
+        else:
+            plt.close()
+
 
 def plot_image_model_res(imagename, modelname, residualname, reference_image, crop=False,
                box_size=512, NAME=None, CM='magma_r',
