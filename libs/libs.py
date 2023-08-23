@@ -4215,8 +4215,7 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
 | |_) / _ \ __| '__/ _ \/ __| |/ _` | '_ \
 |  __/  __/ |_| | | (_) \__ \ | (_| | | | |
 |_|   \___|\__|_|  \___/|___/_|\__,_|_| |_|
- 
-
+#Petrosian
 """
 
 
@@ -5051,11 +5050,17 @@ def sep_background(imagename,mask=None,apply_mask=False,
 
 
 def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
-                   deblend_nthresh = 100, deblend_cont=0.005,maskthresh=0.0,
-                   gain=1,filter_kernel=None,mask=None,
-                   segmentation_map=False,clean_param=1.0, clean=True,
-                   minarea=20,filter_type='matched',sort_by='flux',
-                   bw=64, bh=64, fw=3, fh=3, ell_size_factor=4, apply_mask=False):
+                   deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
+                   gain=1, filter_kernel=None, mask=None,
+                   segmentation_map=False, clean_param=1.0, clean=True,
+                   minarea=20, filter_type='matched', sort_by='flux',
+                   bw=64, bh=64, fw=3, fh=3, ell_size_factor=4,
+                   apply_mask=False, show_bkg_map=False):
+    """
+    Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
+
+
+    """
     import sep
     import fitsio
     import matplotlib.pyplot as plt
@@ -5064,17 +5069,24 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
 
     data_2D = fitsio.read(imagename)
     m, s = np.mean(data_2D), mad_std(data_2D)
-    plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=m - s,
-               vmax=m + s, origin='lower')
-    plt.colorbar()
+    if show_bkg_map == True:
+        #display bkg map.
+        plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=m - s,
+                   vmax=m + s, origin='lower')
+        plt.colorbar()
+
     bkg = sep.Background(data_2D)
+
     if apply_mask:
-        _, mask = mask_dilation(data_2D, sigma=sigma, iterations=iterations,
-                                dilation_size=dilation_size)
+        if mask is not None:
+            data_2D = data_2D * mask
+        else:
+            _, mask = mask_dilation(data_2D, sigma=sigma, iterations=iterations,
+                                    dilation_size=dilation_size)
+            data_2D = data_2D * mask
+
     # else:
     #     mask = None
-    if mask is not None:
-        data_2D = data_2D * mask
     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
     print(bkg.globalback)
     print(bkg.globalrms)
@@ -5087,7 +5099,7 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
         objects, seg_maps = sep.extract(data_sub, thresh=sigma,
                                         minarea=minarea, filter_type=filter_type,
                                         deblend_nthresh=deblend_nthresh,
-                                        deblend_cont=deblend_cont,filter_kernel=filter_kernel,
+                                        deblend_cont=deblend_cont, filter_kernel=filter_kernel,
                                         maskthresh=maskthresh, gain=gain,
                                         clean=clean, clean_param=clean_param,
                                         segmentation_map=segmentation_map,
@@ -5096,12 +5108,11 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
         objects = sep.extract(data_sub, thresh=sigma,
                               minarea=minarea, filter_type=filter_type,
                               deblend_nthresh=deblend_nthresh,
-                              deblend_cont=deblend_cont,filter_kernel=filter_kernel,
-                              maskthresh=maskthresh,gain=gain,
+                              deblend_cont=deblend_cont, filter_kernel=filter_kernel,
+                              maskthresh=maskthresh, gain=gain,
                               clean=clean, clean_param=clean_param,
                               segmentation_map=segmentation_map,
                               err=bkg.globalrms, mask=mask)
-
 
     # len(objects)
     from matplotlib.patches import Ellipse
@@ -5117,8 +5128,8 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
     y, x = np.indices(data_2D.shape[:2])
     for i in range(len(objects)):
         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
-                    width= 2*ell_size_factor * objects['a'][i],
-                    height= 2*ell_size_factor * objects['b'][i],
+                    width=2 * ell_size_factor * objects['a'][i],
+                    height=2 * ell_size_factor * objects['b'][i],
                     angle=objects['theta'][i] * 180. / np.pi)
 
         xc = objects['x'][i]
@@ -5135,22 +5146,21 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
         e.set_facecolor('none')
         e.set_edgecolor('red')
         ax.add_artist(e)
-        label = str('ID'+str(i))
-        text = Text(xc+10, yc+10, label+10, ha='center', va='center', color='black')
-        ax.add_artist(text)
         masks_regions.append(mask_ell)
+
+    #         plt.savefig('components_SEP.pdf',dpi=300, bbox_inches='tight')
     flux, fluxerr, flag = sep.sum_circle(data_sub, objects['x'], objects['y'],
                                          3.0, err=bkg.globalrms, gain=1.0)
     for i in range(len(objects)):
         print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
     objects['b'] / objects['a'], np.rad2deg(objects['theta'])
 
-    #sort regions from largest size to smallest size.
+    # sort regions from largest size to smallest size.
     mask_areas = []
     mask_fluxes = []
     for mask_comp in masks_regions:
         area_mask = np.sum(mask_comp)
-        sum_mask = np.sum(mask_comp*data_2D)
+        sum_mask = np.sum(mask_comp * data_2D)
         mask_areas.append(area_mask)
         mask_fluxes.append(sum_mask)
     mask_areas = np.asarray(mask_areas)
@@ -5161,11 +5171,20 @@ def sep_source_ext(imagename, sigma=5.0, iterations=5, dilation_size=3,
     if sort_by == 'flux':
         sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
         sorted_arr_desc = mask_fluxes[sorted_indices_desc]
+    for i in range(len(objects)):
+        xc = objects['x'][sorted_indices_desc[i]]
+        yc = objects['y'][sorted_indices_desc[i]]
+        label = str('ID' + str(i + 1))
+        text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label, ha='center', va='center', color='red')
+        ax.add_artist(text)
+
+        plt.axis('off')
+        plt.savefig(imagename + '_SEP.jpg', dpi=300, bbox_inches='tight')
 
     if segmentation_map == True:
-        return (masks_regions,sorted_indices_desc, seg_maps)
+        return (masks_regions, sorted_indices_desc, seg_maps)
     else:
-        return (masks_regions,sorted_indices_desc)
+        return (masks_regions, sorted_indices_desc)
 
 
 """
@@ -5792,6 +5811,51 @@ def constrain_nelder_mead_params(params,
     return(params_copy)
 
 
+def generate_random_params_uniform(params, param_errors):
+    # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
+    # try:
+    #     # Scale the random numbers by the standard errors of the parameters
+    param_errors_corr = param_errors.copy()
+    random_nums = np.random.uniform(-5, 5, size=len(params))
+    scaled_random_nums = random_nums * param_errors
+    random_params = params + scaled_random_nums
+    return random_params
+
+
+def generate_random_params_normal(params, param_errors):
+    # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
+    param_errors_corr = param_errors.copy()
+
+    #     ndim_params = int((len(params)-1)/(len(params[0:8])))
+    #     weights = np.asarray([3,3,5,0.05,0.1,0.00001,5,0.01])
+    #     weights_m = np.tile(weights, (ndim_params, 1))
+    #     weights_f = weights_m.flatten()
+    #     weights_f = np.append(weights_f,np.asarray([0.1]))
+    # #     np.random.seed(123)
+
+    #     # Generate a random distribution of values between -1 and 1
+    #     random_noise = np.random.uniform(low=-1, high=1, size=len(weights_f))
+    # #     random_noise = np.random.random(len(weights_f)) * weights_f
+
+    random_nums = np.random.normal(0.0, 5.0, size=len(params))
+    scaled_random_nums = random_nums * param_errors  # + random_noise
+    #     random_nums = np.random.normal(0.0, 0.1, size=len(params))
+    #     scaled_random_nums = random_nums * params
+    random_params = params + scaled_random_nums
+    return random_params
+
+
+def generate_random_params_tukeylambda(params, param_errors):
+    from scipy.stats import tukeylambda
+    # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
+    param_errors_corr = param_errors.copy()
+    random_nums = tukeylambda.rvs(0.5, size=len(params)) * 10
+    scaled_random_nums = random_nums * param_errors
+    #     random_nums =  tukeylambda.rvs(0.5, size=len(params)) *0.1
+    #     scaled_random_nums = random_nums * params
+    random_params = params + scaled_random_nums
+    return random_params
+
 def add_extra_component(petro_properties, copy_from_id):
     """
     Create another component from a dictionary (petro_properties) having
@@ -5843,14 +5907,14 @@ def add_extra_component(petro_properties, copy_from_id):
         petro_properties_copy['c' + str(copy_from_id) + '_' + unique_list[k]]
         if unique_list[k] == 'R50':
             # multiply the R50 value by a factor, e.g., 2.0
-            factor = 3
+            factor = 4
             petro_properties_copy[
                 'c' + str(new_comp_id) + '_' + unique_list[k]] = \
             petro_properties_copy[
                 'c' + str(copy_from_id) + '_' + unique_list[k]] * factor
         if unique_list[k] == 'I50':
             # divide the I50 value by a factor, e.g., 1
-            factor = 0.05
+            factor = 0.1
             petro_properties_copy[
                 'c' + str(new_comp_id) + '_' + unique_list[k]] = \
             petro_properties_copy[
@@ -5859,6 +5923,86 @@ def add_extra_component(petro_properties, copy_from_id):
     petro_properties_copy['ncomps'] = petro_properties_copy['ncomps'] + 1
     return (petro_properties_copy)
 
+
+def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
+                bw=15, bh=15, fw=15, fh=15, sigma=15, ell_size_factor=2.3,
+                deblend_cont=0.00001, deblend_nthresh=15,minarea=None):
+    """
+    Prepare the imaging data to be modelled.
+
+    This function runs a source extraction, compute basic petrosian properties
+    from the data for each detected source as well shape morphology
+    (e.g. position angle, axis ration, effective intensity and radii).
+    """
+    crop_image = ref_image
+    crop_residual = ref_res
+    if minarea == None:
+        try:
+            minarea = int(beam_area2(crop_image))
+        except:
+            minarea = 50
+    pix_to_pc = pixsize_to_pc(z=z,
+                              cell_size=get_cell_size(crop_image))
+    #     eimshow(crop_image, vmin_factor=5)
+    std_res = mad_std(ctn(crop_residual))
+    _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
+                            iterations=2, rms=std_res)
+    plt.figure()
+
+    _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
+                            iterations=2)
+    masks, indices, seg_maps = sep_source_ext(crop_image, bw=bw, bh=bh,
+                                              fw=fw, fh=fh,
+                                              minarea=minarea,
+                                              segmentation_map=True,
+                                              filter_type='matched', mask=None,
+                                              deblend_nthresh=deblend_nthresh,
+                                              deblend_cont=deblend_cont,
+                                              clean_param=1.0, clean=True,
+                                              sort_by='flux',
+                                              sigma=sigma,
+                                              ell_size_factor=ell_size_factor,
+                                              apply_mask=False)
+
+    data_2D = ctn(crop_image)
+    sigma_level = 3
+    vmin = 3
+    # i = 0 #to be used in indices[0], e.g. first component
+    sources_photometries = {}  # init dict to store values.
+    plt.figure()
+    for i in range(len(indices)):
+        # ii = str(i+1)
+        mask_component = masks[indices[i]]
+        data_component = data_2D * mask_component
+        sources_photometries = compute_petro_source(ctn(crop_image)*mask_component,
+                                                    mask_component=mask_component,
+                                                    sigma_level=1,
+                                                    i=i, plot=True,
+                                                    source_props=sources_photometries)
+    sources_photometries['ncomps'] = len(indices)
+
+    omaj, omin, _, _, _ = beam_shape(crop_image)
+    dilation_size = int(
+        np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+    # psf_size = dilation_size*6
+    # psf_size = (2 * psf_size) // 2 +1
+    psf_size = int(ctn(crop_image).shape[0])
+    print('PSF SIZE is', psf_size)
+    # creates a psf from the beam shape.
+    psf_name = tcreate_beam_psf(crop_image, size=(
+        psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
+    n_components = len(indices)
+    print("# of components to be fitted =", n_components)
+    # sources_photometies_new = sources_photometies
+    # n_components_new = n_components
+    if ids_to_add is not None:
+        for id_to_add in ids_to_add:
+            sources_photometries = add_extra_component(sources_photometries,
+                                                       copy_from_id=id_to_add)
+            n_components = sources_photometries['ncomps']
+            print("# of components to be fitted =", n_components)
+            sources_photometries
+    return (sources_photometries, n_components, psf_name, mask)
 
 def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
