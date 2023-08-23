@@ -5295,6 +5295,23 @@ def ellipse_fit(image, dr):
 
 """
 
+def setup_model_components(n_components=2):
+    """
+        Set up a single sersic component or a composition of sersic components.
+
+        Uses the LMFIT objects to easilly create model components.
+
+        fi_ is just a prefix to distinguish parameter names.
+
+    """
+    if n_components == 1:
+        smodel2D = Model(sersic2D, prefix='f1_') + Model(FlatSky, prefix='s_')
+    if n_components > 1:
+        smodel2D = Model(sersic2D, prefix='f1_')
+        for i in range(2, n_components + 1):
+            smodel2D = smodel2D + Model(sersic2D, prefix='f' + str(i) + '_')
+        smodel2D = smodel2D + Model(FlatSky, prefix='s_')
+    return (smodel2D)
 
 
 def construct_model_parameters(n_components=None, params_values_init=None,
@@ -5332,7 +5349,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
     # parameter values of a individual component
 
     if params_values_init is not None:
-        """This takes the values from an IMFIT config file as init 
+        """This takes the values from an IMFIT config file as init
         params and set number of components.
         """
         for i in range(0, n_components):
@@ -5515,7 +5532,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                                 min=eval(param) - dr * 5,
                                                 max=eval(param) + dr * 5)
 
-        smodel2D.set_param_hint('s_a', value=0.5, min=0.01, max=1.0)
+        smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
     else:
         if init_constraints is not None:
             if constrained == True:
@@ -5544,7 +5561,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             else:
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
-                                    value=0.5, min=0.45, max=8.0)
+                                    value=0.5, min=0.3, max=8.0)
 
                         """
                         Constraining PA and q from the pre-analysis of the image
@@ -5572,9 +5589,9 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             if ell * 2.0 <= 0.6:
                                 ell_max = ell * 2.0
                                 if ell_max <= 0.5:
-                                    ell_max = 0.8
+                                    ell_max = 0.5
                             else:
-                                ell_max = 0.8
+                                ell_max = 0.75
 
 
                             smodel2D.set_param_hint(
@@ -5596,13 +5613,13 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                         if param == 'In':
                             I50 = init_constraints['c' + jj + '_I50']
                             """
-                            A high value of I50 is required because the 
-                            deconvolved model has a higher peak intensity 
-                            (and therefore the same for the I50 region) than the 
-                            convolved model. The PSF convolution atenuates a lot 
+                            A high value of I50 is required because the
+                            deconvolved model has a higher peak intensity
+                            (and therefore the same for the I50 region) than the
+                            convolved model. The PSF convolution atenuates a lot
                             the signal, specially for radio images.
                             """
-                            I50_max = I50 * 20
+                            I50_max = I50 * 50
                             I50_min = I50 * 0.1
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -5612,7 +5629,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             dR = R50 * 0.5
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
-                            R50_max = 2.0*init_constraints['c' + jj + '_R50']
+                            R50_max = 3.0*init_constraints['c' + jj + '_R50']
                             R50_min = R50 * 0.1 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -5724,7 +5741,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 min=y0_min,
                                 max=y0_max)
 
-            smodel2D.set_param_hint('s_a', value=0.5, min=0.01, max=1.0)
+            smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
         else:
             '''
             Run a complete free-optimization.
@@ -5739,7 +5756,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
-                smodel2D.set_param_hint('s_a', value=0.5, min=0.01, max=1.0)
+                smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -5843,51 +5860,91 @@ def add_extra_component(petro_properties, copy_from_id):
     return (petro_properties_copy)
 
 
-def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
-             init_constraints=None, data_2D_=None, residualname=None,
+def do_fit2D(imagename, params_values_init=None, ncomponents=None,
+             init_constraints=None, data_2D_=None, residualdata_2D_=None,
+             residualname=None,
              init_params=0.25, final_params=4.0, constrained=True,
              fix_n=True, fix_value_n=False, dr_fix=2,
              fix_x0_y0=False, psf_name=None, convolution_mode='CPU',
              convolve_cutout=False, cut_size=512, self_bkg=False, rms_map=None,
-             fix_geometry=True,
+             fix_geometry=True, contrain_nelder=False, workers=6,mask_region = None,
              special_name='', method1='least_squares', method2='least_squares',
+             reduce_fcn='neglogcauchy',loss="cauchy",tr_solver="exact",x_scale = 'jac',
+             ftol=1e-14, xtol=1e-14, gtol=1e-14, verbose=2,max_nfev=200000,
+             regularize  = True, f_scale = 0.5,
+             maxiter = 30000, maxfev = 30000, xatol = 1e-14,
+             fatol = 1e-14, return_all = True, disp = True,
+             de_options={'disp': True, 'workers': 6,
+                         'max_nfev': 20000, 'vectorized': True,
+                         # 'strategy': 'randtobest1bin',
+                         'mutation': (0.5, 1.5),
+                         'recombination': [0.2, 0.9],
+                         'init': 'random', 'tol': 0.00001,
+                         'updating': 'deferred',
+                         'popsize': 600},
              save_name_append=''):
+    """
+    Perform a Robust and Fast Multi-Sersic Decomposition with GPU acceleration.
+
+
+    tr_solver:
+
+    """
+
     startTime = time.time()
 
+    FlatSky_level = None
     if data_2D_ is None:
-        data_2D = cp.asarray(pf.getdata(imagename))
+        data_2D = pf.getdata(imagename)
     else:
-        data_2D = cp.asarray(data_2D_)
+        data_2D = data_2D_
 
+    if mask_region is not None:
+        data_2D = data_2D * mask_region
+
+    if convolution_mode == 'GPU':
+        # data_2D_gpu = cp.asarray(data_2D)
+        data_2D_gpu = jnp.array(data_2D)
     if residualname is not None:
         """
         This is important for radio image fitting.
 
-        It uses the shuffled version of the residual cleaned image 
-        originated from the interferometric deconvolution. 
+        It uses the shuffled version of the residual cleaned image
+        originated from the interferometric deconvolution.
 
         This ensures that the best model created here will be on top
-        of that rms noise so that flux conservation is maximized. 
+        of that rms noise so that flux conservation is maximized.
 
-        However, this residual is not added as model + shuffled_residual 
-        only, but instead by a multiplication factor, 
-        e.g. model + const* shuffled_residual, and const will be minimized 
-        as well during the fitting (here, called `s_a`). 
+        However, this residual is not added as model + shuffled_residual
+        only, but instead by a multiplication factor,
+        e.g. model + const* shuffled_residual, and const will be minimized
+        as well during the fitting (here, called `s_a`).
         """
-        residual_2D = pf.getdata(residualname)
+        if residualdata_2D_ is not None:
+            residual_2D = residualdata_2D_
+        else:
+            residual_2D = pf.getdata(residualname)
+
         residual_2D_shuffled = shuffle_2D(residual_2D)
+        FlatSky_level = mad_std(residual_2D)
         print('Using clean background for optmization...')
         #         background = residual_2D #residual_2D_shuffled
-        background = cp.asarray(residual_2D_shuffled)
+        if convolution_mode == 'GPU':
+            FlatSky_level_GPU = jnp.array(FlatSky_level)
+            background = jnp.array(residual_2D_shuffled)
+        else:
+            background = residual_2D_shuffled
 
     else:
+        FlatSky_level = mad_std(data_2D)
         if self_bkg == True:
             if rms_map is not None:
                 print('Using provided RMS map.')
+                background = rms_map
             else:
                 print('No residual/background provided. Using image bkg map...')
                 background_map = sep_background(imagename)
-                background = cp.asarray(background_map.back())
+                background = shuffle_2D(background_map.back())
         else:
             background = 0
             print('Using only flat sky for rms bkg.')
@@ -5901,25 +5958,58 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
         except:
             PSF_BEAM_raw = ctn(psf_name)
 
+        if convolution_mode == 'GPU':
+            print('---------------------------------------')
+            print('<<< PERFORMING CONVOLUTION WITH GPU >>>')
+            print('---------------------------------------')
+            # PSF_BEAM = cp.asarray(PSF_BEAM_raw)
+            PSF_BEAM = jnp.array(PSF_BEAM_raw)
+            # PSF_BEAM_raw_32 = PSF_BEAM_raw.astype(dtype=np.float32, order='C')
+            #
+            # PSF_BEAM = torch.tensor(PSF_BEAM_raw_32, dtype=torch.float32)
+            # kernel_size = PSF_BEAM_raw.shape[0]
+            #
+            # # Pad input array with zeros
+            # pad_size = kernel_size // 2
 
-        PSF_BEAM = cp.asarray(PSF_BEAM_raw)
-
+        if convolution_mode == 'CPU':
+            PSF_BEAM = PSF_BEAM_raw
+        # PSF_BEAM = pf.getdata(
+        #     imagename.replace('-image.cutout.fits', '-beampsf.cutout.fits'))
     else:
         PSF_CONV = False
         PSF_BEAM = None
 
     size = data_2D.shape
-    xy = cp.meshgrid(cp.arange((size[1])), cp.arange((size[0])))
+    if convolution_mode == 'GPU':
+        xy = jnp.meshgrid(jnp.arange((size[1])), jnp.arange((size[0])))
+    else:
+        xy = np.meshgrid(np.arange((size[1])), np.arange((size[0])))
+
+    if convolve_cutout is True:
+        """
+        Instead of convolving the entire image,
+        convolve only a box.
+        Can be 10x faster.
+
+        Issue:
+        It causes the flat sky level to be much higher than the real value.
+        """
+        x0c, y0c = int(size[0] / 2), int(size[1] / 2)
 
     #     FlatSky_level = background#mad_std(data_2D)
-    FlatSky_level = mad_std(data_2D.get())
+
+
+    # if convolution_mode == 'GPU':
+
+    # FlatSky_level = mad_std(data_2D)
     nfunctions = ncomponents
 
     def residual_2D(params):
         dict_model = {}
         model = 0
         for i in range(1, nfunctions + 1):
-            model = model + sersic2D_GPU(xy, params['f' + str(i) + '_x0'],
+            model = model + sersic2D(xy, params['f' + str(i) + '_x0'],
                                      params['f' + str(i) + '_y0'],
                                      params['f' + str(i) + '_PA'],
                                      params['f' + str(i) + '_ell'],
@@ -5928,22 +6018,58 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
                                      params['f' + str(i) + '_Rn'],
                                      params['f' + str(i) + '_cg'], )
         # print(model.shape)
-        model = cp.asarray(model) + cp.asarray(FlatSky(FlatSky_level, params['s_a'])) + background
-        """
-        Experimental convolution with GPU. Faster???
-        """
-        # model_gpu = cp.asarray(model)
-        model_gpu = model
-        # psf_gpu = cp.asarray(PSF_BEAM)
-        model_conv_gpu = cupyx.scipy.signal.fftconvolve(model_gpu,
-                                                        PSF_BEAM,
-                                                        mode='same')
-        cp.cuda.Stream.null.synchronize()
-        MODEL_2D_conv = model_conv_gpu
-        # MODEL_2D_conv = cp.asnumpy(model_conv_gpu)
-        # MODEL_2D_conv = model_conv_gpu.get()
+        model = model + FlatSky_cpu(FlatSky_level, params['s_a'])*background
+        MODEL_2D_conv = scipy.signal.fftconvolve(model, PSF_BEAM, 'same')
         residual = data_2D - MODEL_2D_conv
-        return (residual.get())
+        return np.ravel(residual)
+
+    def residual_2D_GPU(params):
+        dict_model = {}
+        model = 0
+        for i in range(1, nfunctions + 1):
+            model = model + sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
+                                         params['f' + str(i) + '_y0'].value,
+                                         params['f' + str(i) + '_PA'].value,
+                                         params['f' + str(i) + '_ell'].value,
+                                         params['f' + str(i) + '_n'].value,
+                                         params['f' + str(i) + '_In'].value,
+                                         params['f' + str(i) + '_Rn'].value,
+                                         params['f' + str(i) + '_cg'].value, )
+        # print(model.shape)
+        model = model + FlatSky(background,params['s_a'].value)
+        # MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
+        # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
+        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM)
+        residual = data_2D_gpu - MODEL_2D_conv
+        return np.asarray(jnp.ravel(residual)).copy()
+        # return np.asarray(residual).copy()
+
+    if convolution_mode == 'GPU':
+        @jit
+        def convolve_on_gpu(image, psf):
+            # Calculate the new padded shape
+            padded_shape = (image.shape[0] + psf.shape[0] - 1,
+                            image.shape[1] + psf.shape[1] - 1)
+
+            # Pad both image and psf to the new shape
+            # image_padded = pad_for_convolution(image, padded_shape)
+            pad_shape = [(0, ts - s) for s, ts in zip(image.shape, padded_shape)]
+            image_padded = jnp.pad(image, pad_shape, mode='constant')
+            pad_shape = [(0, ts - s) for s, ts in zip(psf.shape, padded_shape)]
+            psf_padded = jnp.pad(psf, pad_shape, mode='constant')
+            # psf_padded = pad_for_convolution(psf, padded_shape)
+            image_fft = jnp.fft.fft2(image_padded)
+            psf_fft = jnp.fft.fft2(psf_padded)
+
+            conv_fft = image_fft * psf_fft
+
+            # Get the real part of the inverse FFT and crop to the original image size
+            result_full = jnp.real(jnp.fft.ifft2(conv_fft))
+            return result_full[psf.shape[0] // 2:image.shape[0] + psf.shape[0] // 2,
+                   psf.shape[1] // 2:image.shape[1] + psf.shape[1] // 2]
+
+        jax_convolve = jit(convolve_on_gpu)
+
 
     smodel2D, params = construct_model_parameters(
         params_values_init=params_values_init, n_components=nfunctions,
@@ -5953,8 +6079,12 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
         init_params=init_params, final_params=final_params,
         constrained=constrained)
 
-    mini = lmfit.Minimizer(residual_2D, params, max_nfev=10000,
-                           nan_policy='omit', reduce_fcn='neglogcauchy')
+    if convolution_mode == 'CPU':
+        mini = lmfit.Minimizer(residual_2D, params, max_nfev=200000,
+                               nan_policy='omit', reduce_fcn=reduce_fcn)
+    if convolution_mode == 'GPU':
+        mini = lmfit.Minimizer(residual_2D_GPU, params, max_nfev=200000,
+                               nan_policy='omit', reduce_fcn=reduce_fcn)
 
     # initial minimization.
 
@@ -5969,94 +6099,141 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
         result_1 = mini.minimize(method='nelder',
                                  #                                  xatol = 1e-12, fatol = 1e-12, disp=True,
                                  #                                  adaptive = True,max_nfev = 30000,
-                                 options={'maxiter': 30000, 'maxfev': 30000,
-                                          'xatol': 1e-12, 'fatol': 1e-12,
-                                          'return_all': True,
-                                          'disp': True}
+                                 options={'maxiter': maxiter, 'maxfev': maxfev,
+                                          'xatol': xatol, 'fatol': fatol,
+                                          'return_all': return_all,
+                                          'disp': disp}
                                  )
 
     if method1 == 'least_squares':
         # faster, but usually not good for first run.
+        print(' >> Using',tr_solver,'for tr solver, with regularize set to True. Loss is',loss)
         result_1 = mini.minimize(method='least_squares',
-                                 max_nfev=30000, x_scale='jac',  # f_scale=0.5,
-                                 tr_solver="exact",
-                                 tr_options={'regularize': True},
-                                 ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,
-                                 loss="cauchy")  # ,f_scale=0.5, max_nfev=5000, verbose=2)
+                                 max_nfev=max_nfev, x_scale=x_scale, f_scale=f_scale,
+                                 tr_solver=tr_solver,
+                                 tr_options={'regularize': regularize,
+#                                              'min_delta':1e-14, 'eta':0.05,
+#                                              'xtol':1e-14, 'gtol':1e-14,
+#                                              'ftol':1e-14
+                                            },
+                                 ftol=ftol, xtol=xtol, gtol=gtol, verbose=verbose,
+                                 loss=loss)  # ,f_scale=0.5, max_nfev=5000, verbose=2)
 
     if method1 == 'differential_evolution':
         # de is giving some issues, I do not know why.
-        result_1 = mini.minimize(method='differential_evolution', popsize=600,
-                                 disp=True,  # init = 'random',
-                                 # mutation=(0.5, 1.5), recombination=[0.2, 0.9],
-                                 max_nfev=20000,
-                                 workers=1, updating='deferred', vectorized=True)
+        result_1 = mini.minimize(method='differential_evolution',
+                                 options={'disp': True, 'workers': workers,
+                                          'max_nfev': max_nfev, 'vectorized': True,
+                                          'strategy': 'randtobest1bin',
+                                          'mutation': (0.5, 1.5),
+                                          'recombination': [0.2, 0.9],
+                                          'init': 'random', 'tol': 0.00001,
+                                          'updating': 'deferred',
+                                          'popsize': 600})
+        # result_1 = mini.minimize(method='differential_evolution', popsize=600,
+        #                          disp=True,  # init = 'random',
+        #                          # mutation=(0.5, 1.5), recombination=[0.2, 0.9],
+        #                          max_nfev=20000,
+        #                          workers=1, updating='deferred', vectorized=True)
 
     print(' >> Using', method2, ' solver for second optimisation run... ')
 
+    second_run_params = result_1.params
+    if (contrain_nelder == True) and (method2 == 'nelder'):
+        """
+        It seems that least_squares is ignoring the best-parameters provided by
+        Nelder-mead, which means that it is lookig the parameter space far away
+        from the optimised Nelder-Mead ones.
+
+        So, with this condition, we force a much smaller searching region, but
+        it assumes that Nelder opt was good (which is not always true).
+
+        YOU MUST CHECK YOUR RESULTS!!!!
+
+        """
+        print('Constraining Nelder-Mead Parameters for method', method2)
+        params_constrained = constrain_nelder_mead_params(result_1.params,
+                                                          max_factor=1.03,
+                                                          min_factor=0.97)
+        # UPDATE THE SECOND RUN PARAMETERS TO BE THE CONSTRAINED ONES.
+        second_run_params = params_constrained
+
     if method2 == 'nelder':
-        result = mini.minimize(method='nelder', params=result_1.params,
-                               options={'maxiter': 30000, 'maxfev': 30000,
-                                        'xatol': 1e-13, 'fatol': 1e-13,
-                                        'disp': True})
+        result = mini.minimize(method='nelder', params=second_run_params,
+                               options={'maxiter': maxiter, 'maxfev': maxfev,
+                                        'xatol': xatol, 'fatol': fatol,
+                                        'disp': disp})
 
     if method2 == 'ampgo':
         # ampgo is not workin well/ takes so long ???
-        result = mini.minimize(method='ampgo', params=result_1.params,
+        result = mini.minimize(method='ampgo', params=second_run_params,
                                maxfunevals=10000, totaliter=30, disp=True,
                                maxiter=5, glbtol=1e-8)
 
     if method2 == 'least_squares':
         # faster, usually converges and provide errors.
         # Very robust if used in second opt from first opt parameters.
-        result = mini.minimize(method='least_squares', params=result_1.params,
-                               max_nfev=30000,
-                               tr_solver="exact",
-                               tr_options={'regularize': True},
-                               x_scale='jac',  # f_scale=0.5,
-                               ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,
-                               loss="cauchy")  # ,f_scale=0.5, max_nfev=5000, verbose=2)
+        result = mini.minimize(method='least_squares', params=second_run_params,
+                               max_nfev=max_nfev,
+                               tr_solver=tr_solver,
+                               tr_options={'regularize': regularize,
+#                                            'min_delta': 1e-14, 'eta': 0.05,
+#                                            'xtol': 1e-14, 'gtol': 1e-14,
+#                                            'ftol': 1e-14
+                                          },
+                               x_scale=x_scale,  f_scale=f_scale,
+                               ftol=ftol, xtol=xtol, gtol=gtol, verbose=verbose,
+                               loss=loss)  # ,f_scale=0.5, max_nfev=5000, verbose=2)
 
     if method2 == 'differential_evolution':
+        # result = mini.minimize(method='differential_evolution',
+        #                        params=second_run_params,
+        #                        options={'maxiter': 30000, 'workers': -1,
+        #                                 'tol': 0.001, 'vectorized': True,
+        #                                 'strategy': 'randtobest1bin',
+        #                                 'updating': 'deferred', 'disp': True,
+        #                                 'seed': 1}
+        #                        )
         result = mini.minimize(method='differential_evolution',
-                               params=result_1.params,
-                               options={'maxiter': 30000, 'workers': -1,
-                                        'tol': 0.001, 'vectorized': True,
-                                        'strategy': 'randtobest1bin',
-                                        'updating': 'deferred', 'disp': True,
-                                        'seed': 1}
+                               params=second_run_params,
+                               options=de_options
                                )
 
     params = result.params
 
-    model_temp = Model(sersic2D_GPU)
+    model_temp = Model(sersic2D)
+    xy = np.meshgrid(np.arange((size[1])), np.arange((size[0])))
     model = 0
-    # size = data_2D.shape
-    # xy = np.meshgrid(np.arange((size[0])), np.arange((size[1])))
     model_dict = {}
     image_results_conv = []
     image_results_deconv = []
     for i in range(1, ncomponents + 1):
-        model_temp = sersic2D(xy, params['f' + str(i) + '_x0'],
-                              params['f' + str(i) + '_y0'],
-                              params['f' + str(i) + '_PA'],
-                              params['f' + str(i) + '_ell'],
-                              params['f' + str(i) + '_n'],
-                              params['f' + str(i) + '_In'],
-                              params['f' + str(i) + '_Rn'],
-                              params['f' + str(i) + '_cg']) + \
-                     background / ncomponents + cp.asarray(FlatSky(
-            FlatSky_level, params['s_a'])) / ncomponents
+        model_temp = sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
+                              params['f' + str(i) + '_y0'].value,
+                              params['f' + str(i) + '_PA'].value,
+                              params['f' + str(i) + '_ell'].value,
+                              params['f' + str(i) + '_n'].value,
+                              params['f' + str(i) + '_In'].value,
+                              params['f' + str(i) + '_Rn'].value,
+                              params['f' + str(i) + '_cg'].value) + \
+                     FlatSky(background, params['s_a'].value) / ncomponents
         #                                  params['f'+str(i)+'_Rn'])+FlatSky(FlatSky_level, params['s_a'])/ncomponents
         # print(model_temp[0])
         model = model + model_temp
         # print(model)
-        model_dict['model_c' + str(i)] = model_temp.get()
+        model_dict['model_c' + str(i)] = np.asarray(model_temp).copy()
 
+        if PSF_CONV == True:
+            if convolution_mode == 'GPU':
+                # model_dict['model_c' + str(i) + '_conv'] = np.asarray(jax_convolve(model_temp, PSF_BEAM)).copy()
+                model_dict['model_c' + str(i) + '_conv'] = np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy())
+            if convolution_mode == 'CPU':
+                model_dict['model_c' + str(i) + '_conv'] = scipy.signal.fftconvolve(
+                    model_temp, PSF_BEAM_raw,
+                    'same')  # + FlatSky(FlatSky_level, params['s_a'])/ncomponents
 
-        model_dict['model_c' + str(i) + '_conv'] = cupyx.scipy.signal.fftconvolve(
-            model_temp, PSF_BEAM,
-            'same').get()  # + FlatSky(FlatSky_level, params['s_a'])/ncomponents
+        else:
+            model_dict['model_c' + str(i) + '_conv'] = model_temp
 
         pf.writeto(imagename.replace('.fits', '') + "_" + str(
             ncomponents) + "C_model_component_" + str(
@@ -6087,15 +6264,23 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
             i) + special_name + save_name_append + '.fits')
 
     #     model = model
-    model_dict['model_total'] = model.get()  # + FlatSky(FlatSky_level, params['s_a'])
+    model_dict['model_total'] = np.asarray(model).copy()  # + FlatSky(FlatSky_level, params['s_a'])
 
-    model_dict['model_total_conv'] = cupyx.scipy.signal.fftconvolve(model,
-                                                              PSF_BEAM_raw,
-                                                              'same').get()  # + FlatSky(FlatSky_level, params['s_a'])
+    if PSF_CONV == True:
+        # model_dict['model_total_conv'] = scipy.signal.fftconvolve(model,
+        #                                                           PSF_BEAM_raw,
+        #                                                           'same')  # + FlatSky(FlatSky_level, params['s_a'])
+        if convolution_mode == 'GPU':
+            # model_dict['model_total_conv'] = np.asarray(jax_convolve(model,
+            #                                                          PSF_BEAM)).copy()
+            model_dict['model_total_conv'] = np.asarray(_fftconvolve_jax(model, PSF_BEAM).copy())
+        if convolution_mode == 'CPU':
+            model_dict['model_total_conv'] = scipy.signal.fftconvolve(model, PSF_BEAM_raw,'same')
+    else:
+        model_dict['model_total_conv'] = model
 
-
-    model_dict['best_residual'] = data_2D.get() - model_dict['model_total']
-    model_dict['best_residual_conv'] = data_2D.get() - model_dict['model_total_conv']
+    model_dict['best_residual'] = data_2D - model_dict['model_total']
+    model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
 
     pf.writeto(imagename.replace('.fits', '') + "_" + str(
         ncomponents) + "C_model" + special_name + save_name_append + '.fits',
@@ -6138,8 +6323,17 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
             ncomponents) + 'C_fit' + special_name + save_name_append + '.pickle'),
               "wb") as f:
         pickle.dump(result, f)
+
+    with open(imagename.replace('.fits', '_' + str(
+            ncomponents) + 'C_fit' + special_name + save_name_append + '_modeldict.pickle'),
+              "wb") as f:
+        pickle.dump(model_dict, f)
+
+
     exec_time = time.time() - startTime
     print('Exec time fitting=', exec_time, 's')
+
+
 
     # save results to csv file.
     try:
@@ -6151,7 +6345,7 @@ def do_fit2D_GPU(imagename, params_values_init=None, ncomponents=None,
         pass
 
     return (result, mini, result_1, result_extra, model_dict, image_results_conv,
-            image_results_deconv)
+            image_results_deconv, smodel2D, model_temp)
 
 
 def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
@@ -6269,6 +6463,254 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
                   "wb") as f:
             pickle.dump(mini_results, f)
     return (model_dict, image_results_conv, image_results_deconv)
+
+
+def run_image_fitting(imagelist, residuallist, sources_photometries,
+                      n_components, mask, comp_ids,
+                      save_name_append='_ls_n0G0G0G', z=None, aspect=None,
+                      convolution_mode='GPU', workers=6,
+                      method1='least_squares', method2='least_squares',
+                      loss="cauchy", tr_solver="exact",
+                      init_params=0.25, final_params=4.0,
+                      fix_n=[True, True, True, True, True, True, False],
+                      fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
+                      dr_fix=[10, 10, 10, 10, 10, 10, 10, 10]):
+    results_fit = []
+    lmfit_results = []
+    lmfit_results_1st_pass = []
+    errors_fit = []
+    models = []
+    list_results_compact_conv_morpho = []
+    list_results_compact_deconv_morpho = []
+    list_results_ext_conv_morpho = []
+    list_results_ext_deconv_morpho = []
+
+    all_comps_ids = np.arange(1, n_components_new + 1).astype('str')
+    mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
+    ext_ids = list(all_comps_ids[~mask_compact_ids])
+
+    for i in range(len(imagelist)):
+        #         model_dict_results = {}
+        try:
+            crop_image = imagelist[i]
+            crop_residual = residuallist[i]
+            print('Fitting', os.path.basename(crop_image))
+            #             dict_results['#imagename'] = crop_image
+            data_2D = ctn(crop_image)
+            res_2D = ctn(crop_residual)
+            rms_std_data = mad_std(data_2D)
+            rms_std_res = mad_std(res_2D)
+            print('rms res = ', rms_std_res / rms_std_data)
+            print('rms data = ', rms_std_data * 1e6,
+                  '; rms res = ', rms_std_res * 1e6,
+                  '; ratio = ', rms_std_res / rms_std_data)
+
+            sigma_level = 3
+            vmin = 3
+            # i = 0 #to be used in indices[0], e.g. first component
+            # omaj, omin, _, _, _ = beam_shape(crop_image)
+            # dilation_size = int(
+            # np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+            _, mask_region = mask_dilation(crop_image,
+                                           rms=rms_std_res,
+                                           sigma=6.0, dilation_size=None,
+                                           iterations=2, PLOT=True)
+            # psf_size = dilation_size*6
+            # psf_size = (2 * psf_size) // 2 +1
+            psf_size = int(ctn(crop_image).shape[0])
+            print('PSF SIZE is', psf_size)
+            # creates a psf from the beam shape.
+            psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
+                                        aspect=aspect,
+                                        # aspect=None,
+                                        )  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
+
+            result_mini, mini, result_1, result_extra, model_dict, \
+                image_results_conv, image_results_deconv, \
+                smodel2D, model_temp = \
+                    do_fit2D(imagename=crop_image,
+                             residualname=crop_residual,
+                             init_constraints=sources_photometries,
+                             psf_name=psf_name,
+                             params_values_init=None,# imfit_conf_values[0:-1],
+                             #fix_n = False,fix_x0_y0=[False,False,False],
+                             ncomponents=n_components, constrained=True,
+                             fix_n=fix_n,# mask_region=mask_region,
+                             fix_value_n=fix_value_n,
+                             fix_x0_y0=[True, True, True, True, True, True, True, True],
+                             dr_fix=dr_fix,
+                             convolution_mode=convolution_mode,
+                             fix_geometry=fix_geometry,
+                             workers=workers,
+                             method1=method1, method2=method2,
+                             loss=loss, tr_solver=tr_solver,
+                             init_params=init_params, final_params=final_params,
+                             save_name_append=save_name_append)
+
+            print(result_mini.params)
+            models.append(model_dict)
+            lmfit_results.append(result_mini.params)
+            lmfit_results_1st_pass.append(result_1.params)
+            special_name = '_' + str(n_components_new) + 'C' + save_name_append
+            compact_model = 0
+            extended_model = 0
+            compact_model_deconv = 0
+            extended_model_deconv = 0
+            for lc in comp_ids:
+                compact_model = (compact_model +
+                                 model_dict['model_c' + lc + '_conv'])
+                compact_model_deconv = (compact_model_deconv +
+                                        model_dict['model_c' + lc])
+            if ext_ids is not None:
+                for le in ext_ids:
+                    extended_model = (extended_model +
+                                      model_dict['model_c' + le + '_conv'])
+                    extended_model_deconv = (extended_model_deconv +
+                                             model_dict['model_c' + le])
+                    nfunctions = None
+            else:
+                extended_model = 0
+                extended_model_deconv = 0
+                nfunctions = 1
+
+            decomp_results = plot_decomp_results(imagename=crop_image,
+                                                 compact=compact_model,
+                                                 extended_model=extended_model,
+                                                 rms=rms_std_res,
+                                                 nfunctions=nfunctions,
+                                                 special_name=special_name)
+            plot_fit_results(crop_image, model_dict, image_results_conv,
+                             sources_photometries,
+                             crop=False, box_size=200,
+                             vmax_factor=0.3, vmin_factor=1.0)
+            # plt.xlim(0,3)
+            plot_slices(ctn(crop_image), ctn(crop_residual), model_dict,
+                        image_results_conv[-2], sources_photometries)
+            parameter_results = result_mini.params.valuesdict().copy()
+            parameter_results['#imagename'] = os.path.basename(crop_image)
+            parameter_results['residualname'] = os.path.basename(crop_residual)
+
+            results_compact_conv_morpho, _ = \
+                shape_measures(imagename=crop_image,
+                               residualname=crop_residual, z=z,
+                               mask_component=None, sigma_mask=1,
+                               last_level=1.0, vmin_factor=1.0,
+                               plot_catalog=False,
+                               data_2D=compact_model * mask * mask_region,
+                               npixels=128, fwhm=81, kernel_size=21,
+                               dilation_size=None,
+                               main_feature_index=0, results_final={},
+                               iterations=2,
+                               fracX=0.10, fracY=0.10, deblend=False,
+                               bkg_sub=False,
+                               bkg_to_sub=None, rms=rms_std_res,
+                               apply_mask=False, do_PLOT=True, SAVE=True,
+                               show_figure=True,
+                               mask=mask, do_measurements='partial',
+                               add_save_name='_compact_conv')
+
+            list_results_compact_conv_morpho.append(results_compact_conv_morpho)
+
+            results_compact_deconv_morpho, _ = \
+                shape_measures(imagename=crop_image,
+                               residualname=crop_residual, z=z,
+                               mask_component=None, sigma_mask=1,
+                               last_level=3.0, vmin_factor=1.0,
+                               plot_catalog=False,
+                               data_2D=compact_model_deconv * mask * mask_region,
+                               npixels=128, fwhm=81, kernel_size=21,
+                               dilation_size=None,
+                               main_feature_index=0, results_final={},
+                               iterations=2,
+                               fracX=0.10, fracY=0.10, deblend=False,
+                               bkg_sub=False,
+                               bkg_to_sub=None, rms=rms_std_res,
+                               apply_mask=False, do_PLOT=True, SAVE=True,
+                               show_figure=True,
+                               mask=mask, do_measurements='partial',
+                               add_save_name='_compact_deconv')
+
+            list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
+
+            if nfunctions == 1:
+                results_ext_conv_morpho, _ = \
+                    shape_measures(imagename=crop_image,
+                                   residualname=crop_residual, z=z,
+                                   mask_component=None, sigma_mask=3,
+                                   last_level=3.0, vmin_factor=3.0,
+                                   plot_catalog=False,
+                                   data_2D=(ctn(crop_image) - compact_model) * mask_region,
+                                   npixels=128, fwhm=81, kernel_size=21,
+                                   dilation_size=None,
+                                   main_feature_index=0, results_final={},
+                                   iterations=2,
+                                   fracX=0.10, fracY=0.10, deblend=False,
+                                   bkg_sub=False,
+                                   bkg_to_sub=None, rms=rms_std_res,
+                                   apply_mask=False, do_PLOT=True, SAVE=True,
+                                   show_figure=True,
+                                   mask=mask, do_measurements='partial',
+                                   add_save_name='_extended_conv')
+
+                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+                results_ext_deconv_morpho = results_ext_conv_morpho
+                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+            else:
+                results_ext_conv_morpho, _ = \
+                    shape_measures(imagename=crop_image,
+                                   residualname=crop_residual, z=z,
+                                   mask_component=None, sigma_mask=1,
+                                   last_level=1.0, vmin_factor=1.0,
+                                   plot_catalog=False,
+                                   data_2D=extended_model * mask * mask_region,
+                                   npixels=128, fwhm=81, kernel_size=21,
+                                   dilation_size=None,
+                                   main_feature_index=0, results_final={},
+                                   iterations=2,
+                                   fracX=0.10, fracY=0.10, deblend=False,
+                                   bkg_sub=False,
+                                   bkg_to_sub=None, rms=rms_std_res / 2,
+                                   apply_mask=False, do_PLOT=True, SAVE=True,
+                                   show_figure=True,
+                                   mask=mask, do_measurements='partial',
+                                   add_save_name='_extended_conv')
+                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+
+                results_ext_deconv_morpho, _ = \
+                    shape_measures(imagename=crop_image,
+                                   residualname=crop_residual, z=z,
+                                   mask_component=None, sigma_mask=1,
+                                   last_level=3.0, vmin_factor=1.0,
+                                   plot_catalog=False,
+                                   data_2D=extended_model_deconv * mask * mask_region,
+                                   npixels=128, fwhm=81, kernel_size=21,
+                                   dilation_size=None,
+                                   main_feature_index=0, results_final={},
+                                   iterations=2,
+                                   fracX=0.10, fracY=0.10, deblend=False,
+                                   bkg_sub=False,
+                                   bkg_to_sub=None, rms=rms_std_res / 2,
+                                   apply_mask=False, do_PLOT=True, SAVE=True,
+                                   show_figure=True,
+                                   mask=mask, do_measurements='partial',
+                                   add_save_name='_extended_deconv')
+
+                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+
+            all_results = {**parameter_results, **decomp_results}
+            results_fit.append(all_results)
+
+        except:
+            print('Error on fitting', os.path.basename(crop_image))
+            errors_fit.append(crop_image)
+
+    return (pd.DataFrame(results_fit),
+            lmfit_results, lmfit_results_1st_pass, errors_fit, models,
+            pd.DataFrame(list_results_compact_conv_morpho),
+            pd.DataFrame(list_results_compact_deconv_morpho),
+            pd.DataFrame(list_results_ext_conv_morpho),
+            pd.DataFrame(list_results_ext_deconv_morpho))
+
 
 
 
