@@ -5238,9 +5238,9 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     from matplotlib.patches import Ellipse
     from skimage.draw import ellipse
 
-    fig, ax = plt.subplots()
     m, s = np.mean(data_sub), np.std(data_sub)
     if show_detection == True:
+        fig, ax = plt.subplots()
         im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
                        vmin=m - s, vmax=m + s, origin='lower')
 
@@ -6051,6 +6051,8 @@ def add_extra_component(petro_properties, copy_from_id):
 def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 bw=51, bh=51, fw=15, fh=15, sigma=15, ell_size_factor=2.0,
                 deblend_cont=1e-7, deblend_nthresh=15,minarea=None,
+                show_detection=True,
+                clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
                 show_petro_plots=False):
     """
     Prepare the imaging data to be modelled.
@@ -6083,12 +6085,13 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                                               filter_type='matched', mask=None,
                                               deblend_nthresh=deblend_nthresh,
                                               deblend_cont=deblend_cont,
-                                              clean_param=1.0, clean=True,
-                                              sort_by='flux',
+                                              clean_param=clean_param, 
+                                              clean=clean,
+                                              sort_by=sort_by,
                                               sigma=sigma,
                                               ell_size_factor=ell_size_factor,
-                                              apply_mask=False,
-                                              show_detection=True)
+                                              apply_mask=apply_mask,
+                                              show_detection=show_detection)
 
     data_2D = ctn(crop_image)
     sigma_level = 3
@@ -8188,7 +8191,6 @@ def plot_interferometric_decomposition(imagename0, imagename,
                                        vmin_factor=3,vmax_factor=0.1,
                                        SPECIAL_NAME='', show_figure=True):
     """
-    Fast plotting of image <> model <> residual images.
 
     """
     fig = plt.figure(figsize=(16, 16))
@@ -8605,7 +8607,7 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
 
     dx = g.shape[0]/2
     try:
-        cell_size = get_cell_size(imagename)
+        cell_size = get_cell_size(reference_image)
         axis_units_label = r'Offset [arcsec]'
     except:
         print('No cell or pixel size information in the image wcs/header. '
@@ -8645,6 +8647,14 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
     ax.contour(g, levels=levels_g[::-1], colors='grey', linewidths=1.0,
                extent=[-dx, dx, -dx, dx],
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    cb1 = plt.colorbar(mappable=plt.gca().images[0],
+                       cax=fig.add_axes([0.91, 0.40, 0.02, 0.19]))
+    cb1.formatter = CustomFormatter(factor=int(1000/vmax_factor), useMathText=True)
+    cb1.update_ticks()
+    cb1.set_label(r'Flux [mJy/beam]', labelpad=1)
+    cb1.ax.xaxis.set_tick_params(pad=1)
+    cb1.ax.tick_params(labelsize=12)
+    cb1.outline.set_linewidth(1)
     """
     # No need for this additional colorbar.
     cb = plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes(
@@ -8715,14 +8725,6 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
     # ax.set_yticks([])
     ax.set_yticklabels([])
     ax.set_title(r'Residual')
-    cb1 = plt.colorbar(mappable=plt.gca().images[0],
-                       cax=fig.add_axes([0.91, 0.40, 0.02, 0.19]))
-    cb1.formatter = CustomFormatter(factor=1000, useMathText=True)
-    cb1.update_ticks()
-    cb1.set_label(r'Flux [mJy/beam]', labelpad=1)
-    cb1.ax.xaxis.set_tick_params(pad=1)
-    cb1.ax.tick_params(labelsize=12)
-    cb1.outline.set_linewidth(1)
     # cb1.dividers.set_color('none')
     if NAME != None:
         plt.savefig(NAME + ext, dpi=300, bbox_inches='tight')
@@ -8861,7 +8863,7 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
 
 
 def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
-            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
+            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',cmap_cont='terrain',
             rms=None, max_factor=None,plot_title=None,apply_mask=False,
             add_contours=True,extent=None,
             vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
@@ -8885,12 +8887,12 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     """
     try:
         import cmasher as cmr
-        print('Imported cmasher for density maps.'
-              'If you would like to use, examples:'
-              'CM = cmr.ember,'
-              'CM = cmr.flamingo,'
-              'CM = cmr.gothic'
-              'CM = cmr.lavender')
+        # print('Imported cmasher for density maps.'
+        #       'If you would like to use, examples:'
+        #       'CM = cmr.ember,'
+        #       'CM = cmr.flamingo,'
+        #       'CM = cmr.gothic'
+        #       'CM = cmr.lavender')
         """
         ... lilac,rainforest,sepia,sunburst,torch.
         Diverging: copper,emergency,fusion,infinity,pride'
@@ -8923,7 +8925,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         if crop == True:
             xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                            center=center, return_='box')
-            g = g[xin:xen, yin:yen]
+            g = g[yin:yen,xin:xen]
             # print('2', g)
             crop = False
 
@@ -8934,7 +8936,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     if crop == True:
         xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                        center=center, return_='box')
-        g = g[xin:xen, yin:yen]
+        g = g[yin:yen,xin:xen]
         # print('4', g)
     #         max_x, max_y = np.where(g == g.max())
     #         xin = max_x[0] - box_size
@@ -9014,7 +9016,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     #     pass
     if add_contours:
         try:
-            ax.contour(g, levels=levels_g[::-1], colors='grey', linewidths=1.0,extent=extent,
+            ax.contour(g, levels=levels_g[::-1], cmap=cmap_cont, linewidths=1.0,extent=extent,
                        alpha=1.0)  # cmap='Reds', linewidths=0.75)
         except:
             pass
@@ -9487,6 +9489,7 @@ def add_ellipse(ax, x0, y0, d_r, q, PA, label=None, show_center=True,
  ___) | (_| |\ V /| | | | | (_| |
 |____/ \__,_| \_/ |_|_| |_|\__, |
                            |___/
+#Saving
 """
 
 
