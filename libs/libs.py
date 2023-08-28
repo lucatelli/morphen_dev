@@ -30,7 +30,14 @@ print('Date',__date__)
 
 
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from matplotlib.text import Text
+from matplotlib.patches import Ellipse
+
+
 import numpy as np
+from sympy import *
 import casatasks
 from casatasks import *
 import casatools
@@ -119,6 +126,20 @@ sys.path.append('../analysis_scripts/')
 z_d = {'VV705': 0.04019,'UGC5101':0.03937,'UGC8696':0.03734, 'VV250':0.03106}
 
 
+# def print_logger_header(title, logger):
+#     separator = "-" * len(title)
+#     logger.info(separator)
+#     logger.info(title)
+#     logger.info(separator)
+
+def print_logger_header(title, logger):
+    width = len(title) + 4  # Add padding to the width
+    top_bottom_border = "+" + "-" * width + "+"
+    side_border = "| " + title + " |"
+
+    logger.info(top_bottom_border)
+    logger.info(side_border)
+    logger.info(top_bottom_border)
 
 """
  __  __       _   _
@@ -280,8 +301,8 @@ def rotation_GPU(PA, x0, y0, x, y):
         x,y: meshgrid arrays
     """
     # gal_center = (x0+0.01,y0+0.01)
-    x0 = x0
-    y0 = y0
+    x0 = x0 #+ 0.25
+    y0 = y0 #+ 0.25
     # convert to radians
     t = (PA * jnp.pi) / 180.0
     return ((x - x0) * jnp.cos(t) + (y - y0) * jnp.sin(t),
@@ -1021,7 +1042,7 @@ def mask_dilation(image, cell_size=None, sigma=5,rms=None,
         ax2.set_title(r'Dilated mask')
         ax2.axis('off')
         ax3 = fig.add_subplot(1, 4, 4)
-        ax3 = fast_plot2(data * data_mask_d, ax=ax3, vmin_factor=0.1)
+        ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.1)
         ax3.set_title(r'Dilated mask $\times$ data')
         #         ax3.imshow(np.log(data*data_mask_d))
         plt.subplots_adjust(wspace=0.1, hspace=0.1)
@@ -1308,6 +1329,29 @@ def pad_psf(imagename,psfnasme):
 #     padded_psf[padding_size:-padding_size, padding_size:-padding_size] = psf_data
     pf.writeto(imagename.replace('.fits','_psf.fits'),padded_psf,overwrite=True)
     return(imagename.replace('.fits','_psf.fits'))
+
+
+def get_frequency(imagename):
+    """
+    Get the frequency of observation from the wcs of a fits image.
+    """
+    from astropy.io import fits
+    from astropy.wcs import WCS
+
+    # Open the FITS file
+    with fits.open(imagename) as hdulist:
+        header = hdulist[0].header
+
+    # Extract WCS information
+    wcs_info = WCS(header)
+
+    for i in range(1, wcs_info.naxis + 1):
+        if 'FREQ' in header.get(f'CTYPE{i}', ''):
+            freq_ref = header.get(f'CRVAL{i}')
+            print(f"Reference Frequency (Axis {i}): {freq_ref/1e9} Hz")
+            frequency = freq_ref/1e9
+    return(frequency)
+
 
 """
  _____ _ _      
@@ -2594,7 +2638,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
              bkg_to_sub=None, rms=None,do_petro=True,
              apply_mask=True, do_PLOT=False, SAVE=True, show_figure=True,
              mask=None,do_measurements='all',compute_A=False,
-             add_save_name=''):
+             add_save_name='',logger=None):
     """
     Main function that perform other function calls responsible for
     all relevant calculations on the images.
@@ -2647,7 +2691,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     add_save_name=add_save_name,
                                     SAVE=SAVE, ext='.jpg')
     levels, fluxes, agrow, plt, \
-        omask2, mask2, results_final = make_flux_vs_std(imagename,
+        omask2, mask2, results_final = compute_image_properties(imagename,
                                                         cell_size=cell_size,
                                                         residual=residualname,
                                                         mask_component=mask_component,
@@ -2662,7 +2706,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                                         show_figure=show_figure,
                                                         bkg_to_sub=bkg_to_sub,
                                                         add_save_name=add_save_name,
-                                                        SAVE=SAVE)
+                                                        SAVE=SAVE,logger=logger)
     # r_list, area_arr, area_beam, p, \
     #     flux_arr, results_final = do_petrofit(imagename, cell_size,
     #                                           mask_component=mask_component,
@@ -2690,7 +2734,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                              fwhm=fwhm, kernel_size=kernel_size,
                                              show_figure=show_figure,
                                              add_save_name=add_save_name,
-                                             npixels=npixels)
+                                             npixels=npixels,logger=logger)
         except:
             error_petro = True
     else:
@@ -3312,21 +3356,22 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     # print('R50_100 >> ', C50_100radii)
     # print('Gaussianity >> ', gaussianity)
     if logger is not None:
-        logger.info("Basic Source Properties")
     # print('Inner Perimeter (%50):', (inner_perimeter))
     # print('Outer Perimeter (%90):', (outer_perimeter90))
     # print('Outer Perimeter (%99):', (outer_perimeter))
-        logger.info(f" ==>  Peak of Flux='{results['peak_of_flux']*1000} [mJy/beam]")
-        logger.info(f" ==>  Total Flux Inside Mask='{results['total_flux_mask']*1000} [mJy]")
-        logger.info(f" ==>  Total Flux Image='{results['total_flux_nomask'] * 1000}' [mJy]")
-        logger.info(f" ==>  Half-Light Radii='{results['C50radii']} [px]")
-        logger.info(f" ==>  Total Source Size='{results['C95radii']} [px]")
-        logger.info(f" ==>  Source Global Axis Ratio='{results['qm']}")
-        logger.info(f" ==>  Source Global PA='{results['PAm']} [degrees]")
-        logger.info(f" ==>  Inner Axis Ratio='{results['qmi']}")
-        logger.info(f" ==>  Outer Axis Ratio='{results['qmo']}")
-        logger.info(f" ==>  Inner PA='{results['PAmi']} [degrees]")
-        logger.info(f" ==>  Outer PA='{results['PAmo']} [degrees]")
+        print_logger_header(title="Basic Source Properties",
+                            logger=logger)
+        logger.debug(f" ==>  Peak of Flux={results['peak_of_flux']*1000:.2f} [mJy/beam]")
+        logger.debug(f" ==>  Total Flux Inside Mask='{results['total_flux_mask']*1000:.2f} [mJy]")
+        logger.debug(f" ==>  Total Flux Image={results['total_flux_nomask'] * 1000:.2f} [mJy]")
+        logger.debug(f" ==>  Half-Light Radii={results['C50radii']:.2f} [px]")
+        logger.debug(f" ==>  Total Source Size={results['C95radii']:.2f} [px]")
+        logger.debug(f" ==>  Source Global Axis Ratio={results['qm']:.2f}")
+        logger.debug(f" ==>  Source Global PA={results['PAm']:.2f} [degrees]")
+        logger.debug(f" ==>  Inner Axis Ratio={results['qmi']:.2f}")
+        logger.debug(f" ==>  Outer Axis Ratio={results['qmo']:.2f}")
+        logger.debug(f" ==>  Inner PA={results['PAmi']:.2f} [degrees]")
+        logger.debug(f" ==>  Outer PA={results['PAmo']:.2f} [degrees]")
 
 
 
@@ -4133,15 +4178,7 @@ def T_B(theta_maj, theta_min, freq, I):
     return brightness_temp/1e5
 
 
-import numpy as np
-from sympy import *
-
-
 def D_Cfit(z):
-    #     a = 1.0/(1+z)
-    h1 = 0.669  # +/- 0.006 >> Plank Collaboration XLVI 2016
-    h2 = 0.732  # +/- 0.017 >> Riess et al. 2016
-    #     h = (h1 + h2)/2
     h = 0.687
     H0 = 100 * h  # km/(s * Mpc)
     c = 299792.458  # km/s
@@ -4306,7 +4343,7 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
                 ) * Lnu_NT_error
         else:
             SFR_error = 0.0
-    print('SFR =', SFR, '+/-', SFR_error, 'Mo/yr')
+    # print('SFR =', SFR, '+/-', SFR_error, 'Mo/yr')
     if return_with_error:
         return (SFR, SFR_error)
     else:
@@ -4589,7 +4626,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
                                  show_figure = True,plot_catalog=False,
                                  segm_reg= 'mask',vmax=0.1,bkg_to_sub=None,
                                  fwhm=121, kernel_size=81, npixels=None,
-                                 add_save_name=''):
+                                 add_save_name='',logger=None):
     # if mask:
     if source_props == None:
         source_props = {}
@@ -6747,7 +6784,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       init_params=0.25, final_params=4.0,
                       fix_n=[True, True, True, True, True, True, False],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
-                      dr_fix=[10, 10, 10, 10, 10, 10, 10, 10]):
+                      dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None):
     results_fit = []
     lmfit_results = []
     lmfit_results_1st_pass = []
@@ -6906,6 +6943,11 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
 
             if nfunctions == 1:
+                """
+                Consider that the single component fitted represents a 
+                compact component. Hence, extended emission is considered
+                to be only the residual after removing that component. 
+                """
                 results_ext_conv_morpho, _ = \
                     shape_measures(imagename=crop_image,
                                    residualname=crop_residual, z=z,
@@ -8147,9 +8189,13 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
     decomp_results['flux_data'] = flux_data
     decomp_results['flux_density_ext'] = flux_density_ext
     decomp_results['flux_density_ext2'] = flux_density_ext2
+    decomp_results['flux_density_ext_self_rms'] = flux_density_ext_self_rms
     decomp_results['flux_density_extended_model'] = flux_density_extended_model
     decomp_results['flux_density_compact'] = flux_density_compact
+    decomp_results['flux_density_model'] = (flux_density_compact +
+                                            flux_density_extended_model)
     decomp_results['flux_res'] = flux_res
+
 
 
     # print('r_half_light (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_half_light, p_copy.r_half_light))
@@ -9458,6 +9504,7 @@ def add_ellipse(ax, x0, y0, d_r, q, PA, label=None, show_center=True,
         Additional arguments that are passed to the Ellipse constructor.
     """
     a = d_r / (1 - q ** 2) ** 0.5
+    # a = d_r
     b = a * q
     theta = np.deg2rad(PA)
     ellipse = Ellipse(xy=(x0, y0), width=a * 2, height=b * 2, angle=PA,
@@ -9480,6 +9527,161 @@ def add_ellipse(ax, x0, y0, d_r, q, PA, label=None, show_center=True,
                     #                     rotation=PA,
                     #                     textcoords='offset pixels'
                     )
+
+
+def eimshow_with_cgrid(image, pix_to_pc, rms=None, dx=400, dy=400, do_cut=False, data_2D=None,
+                       vmin_factor=3.0, vmax_factor=0.1, add_contours=True,
+                       neg_levels=np.asarray([-3]),
+                       centre=None, apply_mask=False, sigma_mask=6, CM='magma_r',
+                       cmap_cont='terrain',
+                       dilation_size=None, iterations=2,
+                       r_d=200, circles=np.asarray([1, 3, 9])):
+    fig = plt.figure(figsize=(4, 4))
+    fig.subplots_adjust(wspace=0, hspace=0)
+    if data_2D is not None:
+        image_data = data_2D
+    else:
+        image_data = ctn(image)
+    cell_size = get_cell_size(image)
+
+    if apply_mask:
+        _, mask_dilated = mask_dilation(image, cell_size=cell_size,
+                                        sigma=sigma_mask,
+                                        dilation_size=dilation_size,
+                                        iterations=iterations, rms=rms,
+                                        PLOT=False)
+        image_data = image_data * mask_dilated
+
+    pos_x, pos_y = nd.maximum_position(image_data)
+
+    ax1 = fig.add_subplot(1, 1, 1)
+    #     rms= mad_std(ctn(residuallist_comb[-1]))
+    if do_cut == True:
+        image_data_plot = image_data[int(pos_x - dx):int(pos_x + dx),
+                          int(pos_y - dy):int(pos_y + dy)]
+        centre_plot = nd.maximum_position(image_data_plot)
+    else:
+        centre_plot = pos_x, pos_y
+        image_data_plot = image_data
+    # im1 = ax1.imshow(deconv_image_cut, cmap='magma', aspect='auto')
+    ax1 = eimshow(image_data_plot, rms=rms, vmin_factor=vmin_factor, ax=ax1, CM=CM,
+                  extent=[-dx, dx, -dx, dx],
+                  neg_levels=neg_levels, cmap_cont=cmap_cont,
+                  add_contours=add_contours, vmax_factor=vmax_factor)
+
+    #     if centre:
+    #     ax1.plot(centre_plot[0]-(pos_x-dx),centre_plot[1]-(pos_x-dx), marker=r'x', color='black',ms=10)
+    ax1.plot(centre_plot[0] * cell_size * 0, centre_plot[1] * cell_size * 0, marker=r'x',
+             color='white', ms=10)
+    #     ax1.set_title('Deconvolved',size=14)
+    ax1 = add_circle_grids(ax=ax1, image=image_data_plot, pix_to_pc=pix_to_pc,
+                           #                            center=centre_plot[::-1],
+                           center=(centre_plot[1] * cell_size, centre_plot[0] * cell_size),
+                           circles=circles, r_d=r_d,  # in pc
+                           add_labels=False)
+
+    xticks = np.linspace(-dx, dx, 5)
+    xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 5)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax1.set_yticks(xticks, [])
+    ax1.set_xticks(xticks, xticklabels)
+
+    ax1.set_xlabel('offset [arcsec]')
+
+    ax1.grid(False)
+    ax1.axis('on')
+    return (ax1, image_data_plot)
+
+
+def add_circle_grids(ax, image, pix_to_pc, r_d=200, add_labels=True,
+                     extent=None, center=None,
+                     circles=np.asarray([1, 3, 6, 12])):
+    # Set the center of the image
+    size_max = int(np.sqrt((0.5 * image.shape[0]) ** 2.0 +
+                           (0.5 * image.shape[1]) ** 2.0))
+    if center is None:
+        center = (image.shape[0] // 2, image.shape[1] // 2)
+
+    # Set the radial distance between circles
+
+    r_d_pix = r_d / pix_to_pc
+    # Ni = int(size_max/r_d)
+    # Create a figure and axis object
+    # fig, ax = plt.subplots()
+    #     ax = eimshow(ctn(imagelist_vla[-1]),vmin_factor=3,rms=rms)
+
+    # Plot the image
+    # ax.imshow(image)
+
+    # Add the circular dashed lines
+    prev_text = None
+    angle = -90
+
+    for i in range(len(circles)):
+        radius = circles[i] * r_d_pix
+        circle = Circle(center, circles[i] * r_d_pix, color='limegreen', lw=2,
+                        linestyle='-.',
+                        fill=False)
+        ax.add_patch(circle)
+        label = f'{circles[i] * r_d} pc'
+        if add_labels:
+            x = center[0] + radius * np.cos(np.deg2rad(angle)) + 50
+            y = center[1] + radius * np.sin(np.deg2rad(angle)) + 50
+            text = Text(x, y, label, ha='center', va='center', color='green')
+            ax.add_artist(text)
+            prev_text = text
+        angle = angle + 90
+    # Show the plot
+    ax.axis(False)
+    return (ax)
+
+
+"""
+
+#Printing
+"""
+
+def print_subcomponent_stats(df_int):
+    total_flux_extended1 = np.mean((df_int['S_R12_py']))
+    total_flux_err1 = np.std((df_int['S_R12_py']))
+    total_flux_extended2 = np.mean((df_int['S_I3_ext_mask_py'] + df_int['S_I3_ext_full_py']) / 2)
+    total_flux_err2 = np.std((df_int['S_I3_ext_mask_py'] + df_int['S_I3_ext_full_py']) / 2)
+    total_flux_extended3 = np.mean((df_int['S_I3_ext_mask_py']))
+    total_flux_err3 = np.std((df_int['S_I3_ext_mask_py']))
+    total_flux_extended4 = np.mean((df_int['S_R12_py'] + df_int['S_I3_res_mask_py']))
+    total_flux_err4 = np.std((df_int['S_R12_py'] + df_int['S_I3_res_mask_py']))
+    print('Flux 1 on Extended Emission=', total_flux_extended1 * 1000, '+/-', total_flux_err1 * 1000, ' mJy')
+    print('Flux 2 on Extended Emission=', total_flux_extended2 * 1000, '+/-', total_flux_err2 * 1000, ' mJy')
+    print('Flux 3 on Extended Emission=', total_flux_extended3 * 1000, '+/-', total_flux_err3 * 1000, ' mJy')
+    print('Flux 4 on Extended Emission=', total_flux_extended4 * 1000, '+/-', total_flux_err4 * 1000, ' mJy')
+    avg_extended = np.mean([total_flux_extended1, total_flux_extended2, total_flux_extended3, total_flux_extended4])
+    avg_extended_err = np.std([total_flux_extended1, total_flux_extended2, total_flux_extended3, total_flux_extended4])
+
+    total_flux_extended_f = np.mean((df_int['S_I3_ext_full_frac_py'] + df_int['S_I3_ext_mask_frac_py']) / 2)
+    total_flux_f_err = np.std((df_int['S_I3_ext_full_frac_py'] + df_int['S_I3_ext_mask_frac_py']) / 2)
+
+    total_flux_source = np.mean(
+        (df_int['S_I2_full_py'] + df_int['S_I2_mask_py'] + df_int['S_I3_full_py'] + df_int['S_I3_mask_py']) / 4)
+    total_flux_source_err = np.std(
+        (df_int['S_I2_full_py'] + df_int['S_I2_mask_py'] + df_int['S_I3_full_py'] + df_int['S_I3_mask_py']) / 4)
+
+    total_flux_comp = np.mean((df_int['S_model_M13_py'] + df_int['S_M12_py']) / 2)
+    total_flux_comp_err = np.std((df_int['S_model_M13_py'] + df_int['S_M12_py']) / 2)
+    print('Flux Extended Fraction=', total_flux_extended_f, '+/-', total_flux_f_err)
+    print('Flux Fraction Ext/Comp=', avg_extended / total_flux_comp, '+/-', avg_extended_err / total_flux_comp)
+    print('Flux Fraction comp/total=', total_flux_comp / total_flux_source, '+/-',
+          total_flux_comp_err / total_flux_source)
+
+    total_flux_res = np.mean((df_int['S_I3_res_full_py'] + df_int['S_I3_res_mask_py']) / 2)
+    total_flux_res_err = np.std((df_int['S_I3_res_full_py'] + df_int['S_I3_res_mask_py']) / 2)
+
+    max_flux = np.mean(df_int['S_I3_full_py'] + df_int['S_I3_mask_py']) / 2
+    print('+++++++++++++++++++++++++++++++++++++++++++')
+    print('Averaged Flux on Extended Emission=', avg_extended * 1000, '+/-', avg_extended_err * 1000, ' mJy')
+    print('Flux on Compact Emission=', total_flux_comp * 1000, '+/-', total_flux_comp_err * 1000, ' mJy')
+    print('Flux on Residual=', total_flux_res * 1000, '+/-', total_flux_res_err * 1000, ' mJy')
+    print('Flux Total=', total_flux_source * 1000, '+/-', total_flux_source_err * 1000, ' mJy')
+    print('Flux max_flux=', max_flux * 1000, ' mJy')
 
 
 """
@@ -9517,3 +9719,28 @@ def save_results_csv(result_mini, save_name, ext='.csv', save_corr=True,
             df.T.to_csv(save_name + '_mini_params' + ext,
                         index_label='parameter')
 
+
+
+"""
+EXPERIMENTAL
+"""
+
+#Pytorch
+def torch_fft_convolve(image_np, psf_np):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # Convert numpy arrays to PyTorch tensors
+    image_tensor = torch.from_numpy(image_np).float().unsqueeze(0).unsqueeze(0).to(device)
+    psf_tensor = torch.from_numpy(psf_np).float().unsqueeze(0).unsqueeze(0).to(device)
+
+    # Zero-pad the PSF to match the image size
+    psf_padded = torch.zeros_like(image_tensor)
+    psf_padded[0, 0, :psf_np.shape[0], :psf_np.shape[1]] = psf_tensor[0, 0]
+
+    # FFT-based convolution
+    image_fft = torch.fft.fft2(image_tensor)
+    psf_fft = torch.fft.fft2(psf_padded)
+    result_fft = image_fft * psf_fft
+    result = torch.fft.ifft2(result_fft).real
+
+    return result.squeeze(0).squeeze(0).cpu().numpy()
