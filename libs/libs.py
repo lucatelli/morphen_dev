@@ -1333,7 +1333,7 @@ def pad_psf(imagename,psfnasme):
 
 def get_frequency(imagename):
     """
-    Get the frequency of observation from the wcs of a fits image.
+    Get the frequency of a radio observation from the wcs of a fits image.
     """
     from astropy.io import fits
     from astropy.wcs import WCS
@@ -1348,7 +1348,6 @@ def get_frequency(imagename):
     for i in range(1, wcs_info.naxis + 1):
         if 'FREQ' in header.get(f'CTYPE{i}', ''):
             freq_ref = header.get(f'CRVAL{i}')
-            print(f"Reference Frequency (Axis {i}): {freq_ref/1e9} Hz")
             frequency = freq_ref/1e9
     return(frequency)
 
@@ -4178,6 +4177,68 @@ def T_B(theta_maj, theta_min, freq, I):
     return brightness_temp/1e5
 
 
+def Tb_source(Snu,freq,theta1,theta2,z):
+    """
+    Compute the brightness temperature, provided the deconvolved model having
+    semi-major and semi-minor axes theta1 and theta2.
+
+    """
+    const = 1.8e9 * (1+z)*1000
+    return(((const * Snu)/(freq*freq*(theta1*1000)*(theta2*1000)))/1e5)
+
+def Olim(Omaj,SNR):
+    Olim_ = Omaj * np.sqrt((4*np.log(2)/np.pi) * np.log(SNR/(SNR-1)))
+    return(Olim_)
+
+def deconv_R50(R50conv,theta12):
+    return(np.sqrt(4*R50conv**2.0 - theta12**2.0 )/2)
+
+def phi_source(OH,SpH,OL,SpL):
+    """
+    ## Source Sizes
+    If the circular Gaussian source is imaged with two different resolutions
+    $\theta_H$ and $\theta_L$, the ratio of the image peak brightnesses is
+    \begin{equation}
+        \frac{S_p^{H}}{S_p^{L}} =
+        \left(
+        1 + \frac{\phi^2}{\theta_L^2}
+        \right)
+        \left(
+        1 + \frac{\phi^2}{\theta_H^2}
+        \right)^{-1}
+    \end{equation}
+    This equation can be solved for the source size
+    \begin{align}
+        \phi =
+        \left[
+            \frac{\theta_L^2 \theta_H^2 (S_p^L - S_p^H)}{\theta_L^2 S_p^H - \theta_H^2 S_p^L}
+        \right]^{1/2}
+    \end{align}
+
+    """
+    nume = ((OL**2) * (OH**2)) * (SpL - SpH)
+    deno = OL*OL*SpH - OH*OH*SpL
+    phi_size = np.sqrt(nume/deno)
+    return(phi_size)
+
+def get_size_params(df,pix_to_pc):
+    Bb = (df['bmin_pc']/pix_to_pc)*df['cell_size']
+    Ba = (df['bmaj_pc']/pix_to_pc)*df['cell_size']
+    max_im = df['max']
+    Bsize = np.sqrt(Bb*Ba)
+    return(Bsize,max_im)
+
+def LT(In,Rn,n):
+    """
+    Total luminosity of a Sersic Function
+
+    """
+    bn = 2*n - 1.0/3.0 + 4/(405*n)
+    num = 2*np.pi*In*Rn*Rn*n*np.exp(bn)*scipy.special.gamma(2*n)
+    den = bn**(2*n)
+    return(num/den)
+
+
 def D_Cfit(z):
     h = 0.687
     H0 = 100 * h  # km/(s * Mpc)
@@ -5530,7 +5591,12 @@ def construct_model_parameters(n_components=None, params_values_init=None,
 
     if params_values_init is not None:
         """This takes the values from an IMFIT config file as init
-        params and set number of components.
+        params and set number of components. This is useful to use results 
+        from IMFIT, for example. 
+        
+        WARNING: This portion of the code was not revised and tested properly 
+        since it was implemented. It will remain here for practical reasons 
+        and for future improvements and experiments. 
         """
         for i in range(0, n_components):
             # x0, y0, PA, ell, n, In, Rn = params_values_init[i]
@@ -5809,7 +5875,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             dR = R50 * 0.5
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
-                            R50_max = 3.0*init_constraints['c' + jj + '_R50']
+                            R50_max = 1.5*init_constraints['c' + jj + '_R50']
                             R50_min = R50 * 0.1 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -6798,7 +6864,8 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
     all_comps_ids = np.arange(1, n_components + 1).astype('str')
     mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
     ext_ids = list(all_comps_ids[~mask_compact_ids])
-
+    print('#######################')
+    print(ext_ids,all_comps_ids)
     for i in range(len(imagelist)):
         #         model_dict_results = {}
         try:
@@ -6871,17 +6938,18 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                  model_dict['model_c' + lc + '_conv'])
                 compact_model_deconv = (compact_model_deconv +
                                         model_dict['model_c' + lc])
-            if ext_ids is not None:
+            # if ext_ids is not None:
+            if ext_ids == []:
+                extended_model = 0
+                extended_model_deconv = 0
+                nfunctions = 1
+            else:
                 for le in ext_ids:
                     extended_model = (extended_model +
                                       model_dict['model_c' + le + '_conv'])
                     extended_model_deconv = (extended_model_deconv +
                                              model_dict['model_c' + le])
                     nfunctions = None
-            else:
-                extended_model = 0
-                extended_model_deconv = 0
-                nfunctions = 1
 
             decomp_results = plot_decomp_results(imagename=crop_image,
                                                  compact=compact_model,
@@ -9477,6 +9545,43 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
     return (plt, ax)
 
 
+def plot_compare_conv_deconv(conv_image, deconv_image):
+    # Create figure and subplots
+    fig, ax = plt.subplots(figsize=(6, 3))
+    img_size_x = conv_image.shape[0]
+    img_size_y = conv_image.shape[1]
+
+    # Plot image on left side
+    im1 = ax.imshow(deconv_image, cmap='viridis', extent=[-500, 0, -500, 500], aspect='auto')
+    ax.contour(deconv_image, extent=[-500, 0, -500, 500],
+               cmap='Greys')  # ,levels=np.geomspace(mad_std(Z1),Z1.max(),3),extent=[-5, 0, -5, 5])
+
+    # Plot image on right side
+    im2 = ax.imshow(conv_image, cmap='plasma', extent=[0, 500, -500, 500], aspect='auto')
+    ax.contour(conv_image, extent=[0, 500, -500, 500],
+               cmap='Greys')  # ,levels=np.geomspace(mad_std(Z1),Z1.max(),3),extent=[-5, 0, -5, 5])
+    # # Draw diagonal line
+    # line = plt.Line2D([0, 5], [-5, 0], color='white', linewidth=2, linestyle='--')
+    # ax.add_line(line)
+
+    # Set axis limits and labels
+    ax.set_xlim([-500, 500])
+    ax.set_ylim([-500, 500])
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    # # Add colorbars
+    # cbar1 = plt.colorbar(im1, ax=ax, shrink=0.7)
+    # cbar1.set_label('Z1')
+    # cbar2 = plt.colorbar(im2, ax=ax, shrink=0.7)
+    # cbar2.set_label('Z2')
+
+    plt.show()
+
+
+
+
+
 def add_ellipse(ax, x0, y0, d_r, q, PA, label=None, show_center=True,
                 label_offset=5, **kwargs):
     """
@@ -9634,6 +9739,44 @@ def add_circle_grids(ax, image, pix_to_pc, r_d=200, add_labels=True,
     # Show the plot
     ax.axis(False)
     return (ax)
+
+
+def add_contours(ax, image, levels, scale, colors='white', linewidths=1.0):
+    """
+    Add contours to a plot with distance labels.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The Axes object to which the contours should be added.
+    image : numpy.ndarray
+        The image data.
+    levels : list or array-like
+        The contour levels to plot.
+    scale : float
+        The scale of the image, in kpc/pixel.
+    colors : str or list or array-like, optional
+        The color(s) to use for the contours.
+    linewidths : float or list or array-like, optional
+        The width(s) of the contour lines.
+    """
+    # Plot the contours
+    cs = ax.contour(image, levels=levels, colors=colors, linewidths=linewidths)
+
+    # Add distance labels
+    for i, level in enumerate(levels):
+        if len(cs.collections) <= i:
+            continue
+        c = cs.collections[i]
+        label = f"{level * scale:.1f} kpc"
+        try:
+            x, y = c.get_paths()[0].vertices.mean(axis=0)
+        except IndexError:
+            continue
+        ax.text(x, y, label, color='red', ha='center', va='center')
+
+    # Add a colorbar
+    ax.figure.colorbar(cs, ax=ax)
 
 
 """
