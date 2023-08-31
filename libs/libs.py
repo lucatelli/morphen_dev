@@ -564,8 +564,7 @@ def beam_shape(image):
     # (0.0520*u.Jy/BA).to(u.K, equivalencies=equiv)
     return (Omaj,Omin,PA,freq,BAarcsec)
 
-
-def sort_list_by_beam_size(imagelist, residuallist,return_df=False):
+def sort_list_by_beam_size(imagelist, residuallist=None,return_df=False):
     """
     Sort a list of images by beam size.
     """
@@ -574,7 +573,12 @@ def sort_list_by_beam_size(imagelist, residuallist,return_df=False):
         beam_sizes = {}
         beam_size_px, _, _ = get_beam_size_px(imagelist[i])
         beam_sizes['imagename'] = imagelist[i]
-        beam_sizes['residualname'] = residuallist[i]
+        if residuallist is not None:
+            beam_sizes['residualname'] = residuallist[i]
+        else:
+            beam_sizes['residualname'] = imagelist[i].replace('/MFS_images/',
+                                                                  '/MFS_residuals/').replace('-MFS-image.',
+                                                                                             '-MFS-residual.')
         beam_sizes['id'] = i
         beam_sizes['B_size_px'] = beam_size_px
         beam_sizes_list.append(beam_sizes)
@@ -4428,7 +4432,7 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
 
 
 def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, npixels=32,
-                main_feature_index=0, sigma_mask=7, dilation_size=10,
+                main_feature_index=0, sigma_mask=7, dilation_size=10,deblend=False,
                 apply_mask=True, PLOT=True, show_figure = True, results=None):
     from petrofit.photometry import order_cat
     from petrofit.photometry import make_radius_list
@@ -4468,7 +4472,7 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
     cat, segm, segm_deblend = make_catalog(
         data_2D,
         threshold=1.0 * std,
-        deblend=False,
+        deblend=deblend,
         kernel_size=kernel_size,
         fwhm=fwhm,
         npixels=npixels,
@@ -5266,7 +5270,7 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
                    segmentation_map=False, clean_param=1.0, clean=True,
                    minarea=20, filter_type='matched', sort_by='flux',
                    bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
-                   apply_mask=False,
+                   apply_mask=False,sigma_mask=6,
                    show_bkg_map=False, show_detection=False):
     """
     Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
@@ -5289,7 +5293,7 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
         if mask is not None:
             data_2D = data_2D * mask
         else:
-            _, mask = mask_dilation(data_2D, sigma=sigma, iterations=iterations,
+            _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
                                     dilation_size=dilation_size)
             data_2D = data_2D * mask
 
