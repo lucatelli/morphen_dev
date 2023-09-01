@@ -206,8 +206,8 @@ def rotation(PA, x0, y0, x, y):
         x,y: meshgrid arrays
     """
     # gal_center = (x0+0.01,y0+0.01)
-    x0 = x0
-    y0 = y0
+    x0 = x0 + 0.25
+    y0 = y0 + 0.25
     # convert to radians
     t = (PA * np.pi) / 180.0
     return ((x - x0) * np.cos(t) + (y - y0) * np.sin(t),
@@ -301,8 +301,8 @@ def rotation_GPU(PA, x0, y0, x, y):
         x,y: meshgrid arrays
     """
     # gal_center = (x0+0.01,y0+0.01)
-    x0 = x0 #+ 0.25
-    y0 = y0 #+ 0.25
+    x0 = x0 + 0.25
+    y0 = y0 + 0.25
     # convert to radians
     t = (PA * jnp.pi) / 180.0
     return ((x - x0) * jnp.cos(t) + (y - y0) * jnp.sin(t),
