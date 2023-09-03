@@ -28,7 +28,6 @@ print('Version',__version__, '('+__codename__+')')
 print('By',__author__)
 print('Date',__date__)
 
-
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
@@ -316,7 +315,7 @@ def FlatSky(data_level, a):
 def _fftconvolve_jax(image, psf):
     """
     2D Image convolution using the analogue of scipy.signal.fftconvolve,
-    buth with Jax. This function is decorated to speed up things.
+    but with Jax. This function is decorated to speed up things.
     """
     return jax.scipy.signal.fftconvolve(image, psf, mode='same')
 
@@ -338,52 +337,35 @@ def _fftconvolve_jax(image, psf):
 
 
 def luminosity_distance_cosmo(z,Om0=0.308):
-    h1 = 0.669  # +/- 0.006 >> Plank Collaboration XLVI 2016
-    h2 = 0.732  # +/- 0.017 >> Riess et al. 2016
-    # h = 100 * (h1 + h2) / 2
     h = 67.8  # * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
-
     D_L = cosmo.luminosity_distance(z=z).value
-    print('D_l = ', D_L)  # 946.9318492873492 Mpc
+    # print('D_l = ', D_L)  # 946.9318492873492 Mpc
     return(D_L)
 
 def angular_distance_cosmo(z, Om0=0.308):
-    h1 = 0.669  # +/- 0.006 >> Plank Collaboration XLVI 2016
-    h2 = 0.732  # +/- 0.017 >> Riess et al. 2016
     h = 67.8# * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
-
     d_A = cosmo.angular_diameter_distance(z=z)
     print('D_a = ', d_A)  # 946.9318492873492 Mpc
     return(d_A)
 
 def arcsec_to_pc(z, cell_size, Om0=0.308):
-    h1 = 0.669  # +/- 0.006 >> Plank Collaboration XLVI 2016
-    h2 = 0.732  # +/- 0.017 >> Riess et al. 2016
     h = 67.8# * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
-
     d_A = cosmo.angular_diameter_distance(z=z)
     print('D_a = ', d_A)  # 946.9318492873492 Mpc
-
     theta = 1 * u.arcsec
     distance_pc = (theta * d_A).to(u.pc, u.dimensionless_angles())
     # unit is Mpc only now
-
     print('Linear Distance = ', distance_pc)  # 3.384745689510495 Mpc
     return (distance_pc)
 
 def pixsize_to_pc(z, cell_size, Om0=0.308):
-    h1 = 0.669  # +/- 0.006 >> Plank Collaboration XLVI 2016
-    h2 = 0.732  # +/- 0.017 >> Riess et al. 2016
-    # h = 100 * (h1 + h2) / 2
     h = 67.8  # * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
-
     d_A = cosmo.angular_diameter_distance(z=z)
     print('D_a = ', d_A)  # 946.9318492873492 Mpc
-
     theta = cell_size * u.arcsec
     distance_pc = (theta * d_A).to(u.pc, u.dimensionless_angles())  # unit is Mpc only now
 
@@ -478,7 +460,6 @@ def normalise_in_log(profile):
 
 
 def shuffle_2D(image):
-#     image = ctn(crop_residual)
     height, width = image.shape
 
     # Reshape the image to a 1D array
@@ -540,7 +521,9 @@ def beam_area2(image, cellsize=None):
 
 def beam_shape(image):
     '''
-    Return the beam shape (bmin,bmaj,pa) given an image.
+    Return the beam shape (bmin,bmaj,pa) from given image.
+    It uses CASA's function `imhead`.
+
     '''
     import numpy as np
     from astropy import units as u
@@ -576,9 +559,9 @@ def sort_list_by_beam_size(imagelist, residuallist=None,return_df=False):
         if residuallist is not None:
             beam_sizes['residualname'] = residuallist[i]
         else:
-            beam_sizes['residualname'] = imagelist[i].replace('/MFS_images/',
-                                                                  '/MFS_residuals/').replace('-MFS-image.',
-                                                                                             '-MFS-residual.')
+            beam_sizes['residualname'] = \
+                imagelist[i].replace('/MFS_images/','/MFS_residuals/')\
+                            .replace('-MFS-image.','-MFS-residual.')
         beam_sizes['id'] = i
         beam_sizes['B_size_px'] = beam_size_px
         beam_sizes_list.append(beam_sizes)
@@ -1149,12 +1132,6 @@ def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
             except:
                 print('Provide a cell size of the image.')
     return (mask, data_mask_d)
-
-
-import numpy as np
-
-import numpy as np
-
 
 
 def split_overlapping_masks(mask1, mask2):
@@ -2656,6 +2633,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     if mask is not None:
         mask = mask
         apply_mask = False
+        omask = None
         print('     >> INFO: Using provided mask.')
 
     if apply_mask == True:
@@ -2720,6 +2698,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     #                                           kernel_size=kernel_size,
     #                                           results=results_final,
     #                                           apply_mask=apply_mask)
+    omask = omask2.copy()
     error_petro = False
     if do_petro == True:
         try:
@@ -2828,7 +2807,6 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     df.to_csv(imagename.replace('.fits', add_save_name + '_stats.csv'),
               header=True,
               index=False)
-
     return (results_final, mask, omask)
 
 
@@ -3364,17 +3342,28 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     # print('Outer Perimeter (%99):', (outer_perimeter))
         print_logger_header(title="Basic Source Properties",
                             logger=logger)
-        logger.debug(f" ==>  Peak of Flux={results['peak_of_flux']*1000:.2f} [mJy/beam]")
-        logger.debug(f" ==>  Total Flux Inside Mask='{results['total_flux_mask']*1000:.2f} [mJy]")
-        logger.debug(f" ==>  Total Flux Image={results['total_flux_nomask'] * 1000:.2f} [mJy]")
-        logger.debug(f" ==>  Half-Light Radii={results['C50radii']:.2f} [px]")
-        logger.debug(f" ==>  Total Source Size={results['C95radii']:.2f} [px]")
-        logger.debug(f" ==>  Source Global Axis Ratio={results['qm']:.2f}")
-        logger.debug(f" ==>  Source Global PA={results['PAm']:.2f} [degrees]")
-        logger.debug(f" ==>  Inner Axis Ratio={results['qmi']:.2f}")
-        logger.debug(f" ==>  Outer Axis Ratio={results['qmo']:.2f}")
-        logger.debug(f" ==>  Inner PA={results['PAmi']:.2f} [degrees]")
-        logger.debug(f" ==>  Outer PA={results['PAmo']:.2f} [degrees]")
+        logger.debug(f" ==>  Peak of Flux="
+                     f"{results['peak_of_flux']*1000:.2f} [mJy/beam]")
+        logger.debug(f" ==>  Total Flux Inside Mask='"
+                     f"{results['total_flux_mask']*1000:.2f} [mJy]")
+        logger.debug(f" ==>  Total Flux Image="
+                     f"{results['total_flux_nomask'] * 1000:.2f} [mJy]")
+        logger.debug(f" ==>  Half-Light Radii="
+                     f"{results['C50radii']:.2f} [px]")
+        logger.debug(f" ==>  Total Source Size="
+                     f"{results['C95radii']:.2f} [px]")
+        logger.debug(f" ==>  Source Global Axis Ratio="
+                     f"{results['qm']:.2f}")
+        logger.debug(f" ==>  Source Global PA="
+                     f"{results['PAm']:.2f} [degrees]")
+        logger.debug(f" ==>  Inner Axis Ratio="
+                     f"{results['qmi']:.2f}")
+        logger.debug(f" ==>  Outer Axis Ratio="
+                     f"{results['qmo']:.2f}")
+        logger.debug(f" ==>  Inner PA="
+                     f"{results['PAmi']:.2f} [degrees]")
+        logger.debug(f" ==>  Outer PA="
+                     f"{results['PAmo']:.2f} [degrees]")
 
 
 
@@ -3457,7 +3446,8 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
         ax2.contour(g, levels=levels_95, colors='#56B4E9', linewidths=2.0,
                     linestyles='dashdot',
                     alpha=1.0)  # cmap='Reds', linewidths=0.75)
-        #         ax2.contour(g, levels=levels_3sigma,colors='#D55E00',linewidths=1.5,alpha=1.0)#cmap='Reds', linewidths=0.75)
+        #         ax2.contour(g, levels=levels_3sigma,colors='#D55E00',
+        #         linewidths=1.5,alpha=1.0)#cmap='Reds', linewidths=0.75)
         ax2.contour(g, levels=[last_level * std], colors='cyan', linewidths=0.6,
                     alpha=1.0,
                     linestyles='dashed')  # cmap='Reds', linewidths=0.75)
@@ -3484,6 +3474,225 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     else:
         plt.close()
     return (levels, fluxes, agrow, plt, omask, mask, results)
+
+
+def structural_morphology(imagelist, residuallist,
+                          indices, masks_deblended,
+                          zd, big_mask, data_2D=None,
+                          sigma_loop_init=6.0, do_measurements='all'):
+    """
+    From the emission  of a given souce and its deblended components,
+    run in each component the morphometry analysis.
+
+    A list of images is accepted with a common deblended mask for all.
+
+    This was originally entended to be used with multi-resolution images.
+    First, a common-representative image is processed with a source detection and
+    deblending algorithm. Then, those detection regions are used to run a forced
+    morphometry on all images.
+
+    << Finish documentation >>
+
+    """
+    results_conc = []
+    missing_data_im = []
+    missing_data_re = []
+    for i in tqdm(range(len(imagelist))):
+        try:
+            crop_image = imagelist[i]
+            data_2D = ctn(crop_image)
+
+            if residuallist is not None:
+                crop_residual = residuallist[i]
+                residual_2D = ctn(crop_residual)
+                std = mad_std(residual_2D)
+                print('Using RMS from residual')
+            else:
+                crop_residual = None
+                residual_2D = None
+                std = mad_std(data_2D)
+                print('Using RMS from data ')
+            #         crop_residual = residuallist[i]
+            cell_size = get_cell_size(crop_image)
+            std = mad_std(data_2D)
+            #             residual_2D = ctn(crop_residual)
+
+
+
+            processing_results_source = {}  # store calculations only for source
+            processing_results_source['#imagename'] = os.path.basename(
+                crop_image)
+            processing_results_source['comp_ID'] = str(0)
+
+            # first, run the analysis for the entire source structure
+            processing_results_source, mask, _ = measures(imagename=crop_image,
+                                                          residualname=crop_residual,
+                                                          z=zd, deblend=False,
+                                                          apply_mask=True,
+                                                          results_final=processing_results_source,
+                                                          plot_catalog=False,
+                                                          rms=std,
+                                                          bkg_sub=False,
+                                                          bkg_to_sub=None,
+                                                          mask_component=None,
+                                                          npixels=500, fwhm=121,
+                                                          kernel_size=121,
+                                                          sigma_mask=6.0,
+                                                          last_level=3.0,
+                                                          iterations=2,
+                                                          dilation_size=None,
+                                                          do_measurements=do_measurements,
+                                                          do_PLOT=True,
+                                                          show_figure=True,
+                                                          add_save_name='')
+
+            results_conc.append(processing_results_source)
+            # bkg_ = sep_background(crop_image, apply_mask=True, mask=None, bw=11,
+            #                       bh=11, fw=12, fh=12)
+
+            omaj, omin, _, _, _ = beam_shape(crop_image)
+            dilation_size = int(
+                np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+            print('dilation_size=', dilation_size)
+
+            if len(indices) > 1:
+                for j in range(len(indices)):
+                    # ii = str(i+1)
+                    sigma_loop = sigma_loop_init  # reset the loop
+                    processing_results_components = {}  # store calculation only for individual components of the soruce
+                    processing_results_components[
+                        '#imagename'] = os.path.basename(crop_image)
+
+                    mask_component = masks_deblended[j]
+                    data_component = data_2D
+                    add_save_name = 'comp_' + str(j + 1)
+                    processing_results_components['comp_ID'] = str(j + 1)
+
+                    try:
+                        _, mask_new = \
+                            mask_dilation_from_mask(ctn(crop_image),
+                                                    mask_component,
+                                                    sigma=sigma_loop,
+                                                    PLOT=True,iterations=2,
+                                                    dilation_size=dilation_size,
+                                                    show_figure=True)
+
+                        # dilated masks must not overlap >> non conservation of flux
+                        for l in range(len(indices)):
+                            if l != j:
+                                mask_new[masks_deblended[l]] = False
+                            else:
+                                pass
+                        processing_results_components, mask, _ = \
+                            measures(crop_image, crop_residual, z=zd,
+                                     deblend=False, apply_mask=False,
+                                     plot_catalog=False, bkg_sub=False,
+                                     mask_component=mask_new, rms=std,
+                                     iterations=2, npixels=1000, fwhm=121,
+                                     kernel_size=121, sigma_mask=sigma_loop,
+                                     last_level=3.0,
+                                     # bkg_to_sub = bkg_.back(),
+                                     dilation_size=dilation_size,
+                                     add_save_name=add_save_name,
+                                     do_measurements=do_measurements,
+                                     do_PLOT=True, show_figure=True,
+                                     results_final=processing_results_components)
+                        flag_subcomponent = 0
+                        processing_results_components[
+                            'flag_subcomponent'] = flag_subcomponent
+                    except:
+                        try:
+                            error_mask = True
+                            while error_mask and sigma_loop > 1.0:
+                                try:
+                                    _, mask_new = \
+                                        mask_dilation_from_mask(ctn(crop_image),
+                                                                mask_component,
+                                                                rms=std,
+                                                                sigma=sigma_loop,
+                                                                iterations=2,
+                                                                PLOT=True,
+                                                                dilation_size=dilation_size,
+                                                                show_figure=True)
+
+                                    if sigma_loop >= 3.0:
+                                        last_level = 3.0
+                                    if sigma_loop < 3.0:
+                                        last_level = sigma_loop - 1.0
+
+                                    (processing_results_components, mask,
+                                     _) = measures(crop_image, crop_residual,
+                                                   z=zd, deblend=False,
+                                                   apply_mask=False,
+                                                   plot_catalog=False,
+                                                   bkg_sub=False,
+                                                   mask_component=mask_new,
+                                                   rms=std, iterations=2,
+                                                   npixels=1000, fwhm=121,
+                                                   kernel_size=121,
+                                                   sigma_mask=sigma_loop,
+                                                   last_level=last_level,
+                                                   add_save_name=add_save_name,
+                                                   dilation_size=dilation_size,
+                                                   do_measurements=do_measurements,
+                                                   do_PLOT=True,
+                                                   show_figure=True,
+                                                   results_final=processing_results_components)
+
+                                    processing_results_components[
+                                        'subreg_sigma'] = sigma_loop
+                                    error_mask = False
+                                    flag_subcomponent = 1
+                                    processing_results_components[
+                                        'flag_subcomponent'] = flag_subcomponent
+                                except Exception as e:
+                                    # Handle the error, and decrease p by 0.5
+                                    print(
+                                        f"Error occurred with sigma={sigma_loop}: {e}")
+                                    sigma_loop -= 0.5
+                                    print("Reducing sigma to=", sigma_loop)
+
+                            if not error_mask:
+                                print("Function call successful with p=",
+                                      sigma_loop)
+                            else:
+                                print(
+                                    "Unable to call function with any value of p.")
+
+                        except:
+                            print(
+                                'Last attempt to perform morphometry, '
+                                'with mininum threshold allowed.')
+                            processing_results_components, mask, _ = measures(
+                                crop_image, crop_residual, z=zd, deblend=False,
+                                apply_mask=False,
+                                plot_catalog=False, bkg_sub=False,
+                                # bkg_to_sub = bkg_.back(),
+                                mask_component=mask_new, rms=std,
+                                dilation_size=dilation_size, iterations=2,
+                                npixels=int(beam_area2(crop_image)),
+                                fwhm=81, kernel_size=81, sigma_mask=2.0,
+                                last_level=0.5,
+                                add_save_name=add_save_name,
+                                do_measurements=do_measurements,
+                                do_PLOT=True, show_figure=True,
+                                results_final=processing_results_components)
+                            processing_results_components['subreg_sigma'] = 1.0
+                            flag_subcomponent = 1
+                            processing_results_components[
+                                'flag_subcomponent'] = flag_subcomponent
+
+                    results_conc.append(processing_results_components)
+                processing_results_source['ncomps'] = len(indices)
+            else:
+                processing_results_source['ncomps'] = 1
+        except:
+            print('Some imaging data is missing!')
+            missing_data_im.append(os.path.basename(crop_image))
+            missing_data_re.append(os.path.basename(crop_residual))
+            pass
+    return (results_conc, processing_results_source, missing_data_im)
+
 
 
 make_flux_vs_std = deprecated("make_flux_vs_std",
@@ -5869,7 +6078,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             convolved model. The PSF convolution atenuates a lot
                             the signal, specially for radio images.
                             """
-                            I50_max = I50 * 50
+                            I50_max = I50 * 100
                             I50_min = I50 * 0.1
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -5880,7 +6089,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
                             R50_max = 1.5*init_constraints['c' + jj + '_R50']
-                            R50_min = R50 * 0.1 #should be small.
+                            R50_min = R50 * 0.01 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=R50, min=R50_min, max=R50_max)
@@ -6898,8 +7107,14 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                            iterations=2, PLOT=True)
             # psf_size = dilation_size*6
             # psf_size = (2 * psf_size) // 2 +1
-            psf_size = int(ctn(crop_image).shape[0])
-            print('PSF SIZE is', psf_size)
+
+            psf_beam_zise = int(get_beam_size_px(crop_image)[0])
+            psf_size = psf_beam_zise * 5
+            # psf_size = int(data_2D.shape[0])
+            print('PSF BEAM SIZE is >=> ', psf_beam_zise)
+
+            # psf_size = int(ctn(crop_image).shape[0])
+            print('PSF SIZE is >=> ', psf_size)
             # creates a psf from the beam shape.
             psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
                                         aspect=aspect,
