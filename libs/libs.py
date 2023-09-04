@@ -680,11 +680,18 @@ def do_cutout(image, box_size=300, center=None, return_='data'):
                                  st['maxpos'][1] - box_size, st['maxpos'][
                                      1] + box_size
         except:
-            max_x, max_y = np.where(ctn(image) == ctn(image).max())
-            xin = max_x[0] - box_size
-            xen = max_x[0] + box_size
-            yin = max_y[0] - box_size
-            yen = max_y[0] + box_size
+            try:
+                max_x, max_y = np.where(ctn(image) == ctn(image).max())
+                xin = max_x[0] - box_size
+                xen = max_x[0] + box_size
+                yin = max_y[0] - box_size
+                yen = max_y[0] + box_size
+            except:
+                max_x, max_y = np.where(image == image.max())
+                xin = max_x[0] - box_size
+                xen = max_x[0] + box_size
+                yin = max_y[0] - box_size
+                yen = max_y[0] + box_size
     else:
         xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, center[1] - box_size, center[1] + box_size
     if return_ == 'data':
@@ -3481,15 +3488,15 @@ def structural_morphology(imagelist, residuallist,
                           zd, big_mask, data_2D=None,
                           sigma_loop_init=6.0, do_measurements='all'):
     """
-    From the emission  of a given souce and its deblended components,
+    From the emission  of a given source and its deblended components,
     run in each component the morphometry analysis.
 
     A list of images is accepted with a common deblended mask for all.
 
-    This was originally entended to be used with multi-resolution images.
+    This was originally intended to be used with multi-resolution images.
     First, a common-representative image is processed with a source detection and
-    deblending algorithm. Then, those detection regions are used to run a forced
-    morphometry on all images.
+    deblending algorithm. Then, those detected/deblended regions are used to
+    run a forced morphometry on all multi-resolution images.
 
     << Finish documentation >>
 
@@ -5493,9 +5500,9 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     from matplotlib import rcParams
 
     data_2D = fitsio.read(imagename)
+    if len(data_2D.shape) == 4:
+        data_2D = data_2D[0][0]
     m, s = np.mean(data_2D), mad_std(data_2D)
-
-
     bkg = sep.Background(data_2D)
 
     if apply_mask:
@@ -7109,7 +7116,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             # psf_size = (2 * psf_size) // 2 +1
 
             psf_beam_zise = int(get_beam_size_px(crop_image)[0])
-            psf_size = psf_beam_zise * 5
+            psf_size = psf_beam_zise * 10
             # psf_size = int(data_2D.shape[0])
             print('PSF BEAM SIZE is >=> ', psf_beam_zise)
 
@@ -9196,17 +9203,21 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
 
 
 def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
-            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',cmap_cont='terrain',
-            rms=None, max_factor=None,plot_title=None,apply_mask=False,
-            add_contours=True,extent=None,
+            vmax=None,
+            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
+            cmap_cont='terrain',
+            rms=None, max_factor=None, plot_title=None, apply_mask=False,
+            add_contours=True, extent=None, projection='offset', add_beam=False,
             vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
+            show_axis='on',
+            source_distance=None, scalebar_length=250 * u.pc,
             ax=None):
     """
-    Fast plotting of an astronomical image with/or without a wcs header.
-    neg_levels=np.asarray([-3])
+    Enhanced plotting of an astronomical image with/or without a wcs header.
     imagename:
         str or 2d array.
-        If str (the image file name), it will attempt to read the wcs and plot the coordinates axes.
+        If str (the image file name with a wcs), it will attempt to read the wcs
+        and plot the coordinates axes.
 
         If 2darray, will plot the data with generic axes.
 
@@ -9216,6 +9227,13 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
                      However, it does not read header/wcs.
                      Note: THis function only works inside CASA environment.
+
+        <<finish documentation>>
+        -- changes:
+            - added scalebar plot
+            - change colors to a better colorblind friendly colormap
+            - added option to plot a beam
+            - added option to plot a colorbar
 
     """
     try:
@@ -9237,12 +9255,10 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
               'CM = cmr.flamingo')
     if ax == None:
         fig = plt.figure(figsize=figsize)
-    #     ax = fig.add_subplot(1,1,1)
-    #     try:
     if isinstance(imagename, str) == True:
+
         if with_wcs == True:
             hdu = pf.open(imagename)
-            #         hdu=pf.open(img)
             ww = WCS(hdu[0].header, naxis=2)
             try:
                 if len(np.shape(hdu[0].data) == 2):
@@ -9253,30 +9269,35 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 g = ctn(imagename)
         if with_wcs == False:
             g = ctn(imagename)
-            # print('1', g)
 
         if crop == True:
             xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                            center=center, return_='box')
-            g = g[yin:yen,xin:xen]
-            # print('2', g)
+            g = g[yin:yen, xin:xen]
             crop = False
+
+        if apply_mask == True:
+            _, mask_d = mask_dilation(imagename, cell_size=None,
+                                      sigma=6, rms=None,
+                                      dilation_size=None,
+                                      iterations=3, dilation_type='disk',
+                                      PLOT=False, show_figure=False)
+            print('Masking emission....')
+            g = g * mask_d[yin:yen, xin:xen]
+
 
     else:
         g = imagename
+        mask_d = 1
         # print('3', g)
 
     if crop == True:
         xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                        center=center, return_='box')
-        g = g[yin:yen,xin:xen]
-        # print('4', g)
-    #         max_x, max_y = np.where(g == g.max())
-    #         xin = max_x[0] - box_size
-    #         xen = max_x[0] + box_size
-    #         yin = max_y[0] - box_size
-    #         yen = max_y[0] + box_size
-    #         g = g[xin:xen, yin:yen]
+        g = g[yin:yen, xin:xen]
+        if apply_mask == True:
+            print('Masking emission....')
+            g = g * mask_d[yin:yen, xin:xen]
     if rms is not None:
         std = rms
     else:
@@ -9294,95 +9315,240 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         else:
             std = mad_std(g)
 
-    if ax == None:
-        if with_wcs == True and isinstance(imagename, str) == True:
-            ax = fig.add_subplot(projection=ww.celestial)
-            ax.set_xlabel('RA')
-            ax.set_ylabel('DEC')
-        else:
-            ax = fig.add_subplot()
-            ax.set_xlabel('x pix')
-            ax.set_ylabel('y pix')
+    try:
+        cell_size = get_cell_size(imagename)
+        axis_units_label = r'Offset [arcsec]'
+    except:
+        print(
+            'No cell or pixel size information in the image wcs/header. '
+            'Setting cell/pixel size = 1.')
+        cell_size = 1
+        axis_units_label = r'Offset [px]'
 
-    if apply_mask == True:
-        _, mask_d = mask_dilation(imagename, cell_size=None,
-                                  sigma=6, rms=None,
-                                  dilation_size=None,
-                                  iterations=3, dilation_type='disk',
-                                  PLOT=False, show_figure=False)
-        g = g * mask_d
+    if ax == None:
+        if isinstance(imagename, str) == False:
+            projection = 'px'
+
+        if (projection == 'celestial') and (with_wcs == True) and (isinstance(
+                imagename, str) == True):
+            ax = fig.add_subplot(projection=ww.celestial)
+            ax.set_xlabel('RA', fontsize=14)
+            ax.set_ylabel('DEC', fontsize=14)
+            dx = g.shape[0] / 2
+
+        if projection == 'offset':
+            ax = fig.add_subplot()
+            dx = g.shape[0] / 2
+            axis_units_label = r'Offset [arcsec]'
+            ax.set_xlabel(axis_units_label, fontsize=14)
+
+        dx = g.shape[0] / 2
+        if projection == 'px':
+            ax = fig.add_subplot()
+            cell_size = 1
+            dx = g.shape[0] / 2
+            ax.set_xlabel('x pix')
+            # ax.set_ylabel('y pix')
+            axis_units_label = r'Offset [px]'
+            ax.set_xlabel(axis_units_label, fontsize=14)
+
+    xticks = np.linspace(-dx, dx, 4)
+    xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 4)
+    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    ax.set_yticks(xticks, xticklabels)
+    ax.set_xticks(xticks, xticklabels)
+
+    ax.tick_params(axis='y', which='both', labelsize=16, color='black',
+                   pad=5)
+    ax.tick_params(axis='x', which='both', labelsize=16, color='black',
+                   pad=5)
+    # ax2_x.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    # ax3_y.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    if projection != 'celestial':
+        ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
+                alpha=0.7)
+        ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
+                alpha=0.7)
+    else:
+        ax.grid()
+    ax.axis(show_axis)
+    ax.axis(show_axis)
 
     vmin = vmin_factor * std
+    if extent == None:
+        extent = [-dx, dx, -dx, dx]
 
     #     print(g)
     if max_factor is not None:
-        vmax = vmax_factor * max_factor
+        if vmax is not None:
+            vmax = vmax
+        else:
+            vmax = vmax_factor * max_factor
     else:
-        vmax = vmax_factor * g.max()
+        if vmax is not None:
+            vmax = vmax
+        else:
+            vmax = 0.95 * g.max()
 
     norm = simple_norm(g, stretch='sqrt', asinh_a=0.02, min_cut=vmin,
                        max_cut=vmax)
 
-    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0,extent=extent,
+    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0, extent=extent,
                         norm=norm,
                         aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
-    if plot_title is not None:
-        ax.set_title(plot_title)
 
-    levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 9)
-
-    #     x = np.geomspace(1.5*mad_std(g),10*mad_std(g),4)
+    levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 5)
     levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 7)
-    #     xneg = np.geomspace(5*mad_std(g),vmin_factor*mad_std(g),2)
-    #     y = -xneg[::-1]
-    #     levels_black = np.append(y,x)
     levels_neg = neg_levels * std
-    #     levels_white = np.geomspace(g.max(),10*mad_std(g),7)
     levels_white = np.geomspace(g.max(), 0.1 * g.max(), 5)
-
-    #     cg.show_contour(data, colors='black',levels=levels_black,linestyle='.-',linewidths=0.2,alpha=1.0)
-    #     cg.show_contour(data, colors='#009E73',levels=levels_white[::-1],linewidths=0.2,alpha=1.0)
-    # try:
-    #     ax.contour(g, levels=levels_black, colors='grey', linewidths=0.2,
-    #                alpha=1.0)  # cmap='Reds', linewidths=0.75)
-    # except:
-    #     pass
     if add_contours:
         try:
-            ax.contour(g, levels=levels_g[::-1], cmap=cmap_cont, linewidths=1.0,extent=extent,
-                       alpha=1.0)  # cmap='Reds', linewidths=0.75)
+            from matplotlib.colors import LinearSegmentedColormap
+
+            # Define the "magma_r" colormap
+            cmap_magma_r = plt.cm.get_cmap(CM)
+
+            # Create a custom contour color palette with a continuous transition from white to black
+            contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
+
+            # Create a custom colormap with reversed colors
+            colors_reversed = cmap_magma_r(np.linspace(1, 0, 256))
+            cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed",
+                                                              colors_reversed)
+
+            # Create a contour plot using the reversed "magma_r" colormap and custom contour colors
+            # plt.contourf(X, Y, Z, cmap=cmap_reversed, levels=15)
+            # plt.colorbar()
+            # contour = plt.contour(X, Y, Z, colors=contour_palette, levels=6)
+            # plt.clabel(contour, inline=1, fontsize=10)
+
+            # plt.show()
+
+            contour = ax.contour(g, levels=levels_g[::-1],
+                                 colors=contour_palette,
+                                 linewidths=1.5, extent=extent,
+                                 alpha=1.0)
+            # ax.clabel(contour, inline=1, fontsize=10)
         except:
             pass
         try:
-            ax.contour(g, levels=levels_neg[::-1], colors='k', linewidths=1.0,extent=extent,
+            ax.contour(g, levels=levels_neg[::-1], colors='k',
+                       linewidths=1.0, extent=extent,
                        alpha=1.0)
         except:
             pass
-    #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
     if plot_colorbar:
         try:
             cb = plt.colorbar(mappable=plt.gca().images[0],
-                              cax=fig.add_axes([0.91, 0.08, 0.05, 0.84]))
-            cb.set_label(r"Flux Density [Jy/Beam]")
+                              cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
+            cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
+            cb.formatter = CustomFormatter(factor=1000, useMathText=True)
+            cb.update_ticks()
+
+            cb.ax.yaxis.set_tick_params(labelleft=True, labelright=False,
+                                        tick1On=False, tick2On=False)
+            cb.ax.yaxis.tick_right()
+            # cb.set_ticks(levels_colorbar2)
+            # cb.set_label(r'Flux [mJy/beam]', labelpad=10, fontsize=16)
+            #         cbar.ax.xaxis.set_tick_params(pad=0.1,labelsize=10)
+            cb.ax.tick_params(labelsize=16)
+            cb.outline.set_linewidth(1)
+            # cbar.dividers.set_color(None)
+
+            # Make sure the color bar has ticks and labels at the top, since the bar is on the top as well.
+            cb.ax.xaxis.set_ticks_position('top')
+            cb.ax.xaxis.set_label_position('top')
         except:
             pass
-    # if ax==None:
-    #     if plot_colorbar==True:
-    #         # cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([0.91,0.08,0.05,0.82]))
-    #         cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([0.91,0.08,0.05,0.32]))
-    #         # cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))
-    #         cb.set_label(r"Flux [Jy/Beam]")
+
+    if plot_title is not None:
+        ax.set_title(plot_title)
+
+    if add_beam == True:
+
+        if isinstance(imagename, str) == True:
+            try:
+                from matplotlib.patches import Ellipse
+                imhd = imhead(imagename)
+                a = imhd['restoringbeam']['major']['value']
+                b = imhd['restoringbeam']['minor']['value']
+                pa = imhd['restoringbeam']['positionangle']['value']
+                if projection == 'px':
+                    el = Ellipse((-dx * 0.85, -dx * 0.85), b, a, angle=pa,
+                                 facecolor='black', alpha=1.0)
+                else:
+                    el = Ellipse((-dx * 0.85, -dx * 0.85), b / cell_size,
+                                 a / cell_size,
+                                 angle=pa, facecolor='black', alpha=1.0)
+
+                ax.add_artist(el, )
+
+                Oa = '{:.2f}'.format(a)
+                Ob = '{:.2f}'.format(b)
+
+                blabel_pos_x, blabel_pos_y = g.shape
+                blabel_pos_x = blabel_pos_x + dx
+                blabel_pos_y = blabel_pos_y + dx
+
+                ax.annotate(r'$' + Oa + '\\times' + Ob + '$',
+                            xy=(0.70, 0.06), xycoords='axes fraction',
+                            fontsize=15,
+                            bbox=dict(boxstyle='round', facecolor='white',
+                                      alpha=0.9),
+                            color='red')
+
+                el.set_clip_box(ax.bbox)
+            except:
+                print('Error adding beam.')
+
+    if source_distance is not None:
+        try:
+            ww.wcs.radesys = 'icrs'
+            radesys = ww.wcs.radesys
+            # distance = source_distance * u.Mpc
+            distance = angular_distance_cosmo(source_distance)
+            scalebar_loc = (0.99, 0.99)  # y, x
+            left_side = coordinates.SkyCoord(
+                *ww.celestial.wcs_pix2world(
+                    g.shape[0],
+                    g.shape[1],
+                    0) * u.deg,
+                frame=radesys.lower())
+
+            length = (scalebar_length / distance).to(u.arcsec,
+                                                     u.dimensionless_angles())
+
+            scale_bar_length_pixels = length.value / cell_size
+            scale_bar_position = (-dx * 0.5, -dx * 0.9)
+
+            ax.annotate('',
+                        xy=(scale_bar_position[0] + scale_bar_length_pixels / 2,
+                            scale_bar_position[1]),
+                        # xy=(0.1, 0.1), ##
+                        xytext=scale_bar_position,
+                        arrowprops=dict(arrowstyle='-',
+                                        color='red', lw=2))
+
+            ax.text(scale_bar_position[0] + scale_bar_length_pixels / 4,
+                    scale_bar_position[1] + scale_bar_length_pixels / 20,
+                    f'{scalebar_length}', fontsize=16, color='red', ha='center',
+                    va='bottom')
+        except:
+            print('Error adding scalebar.')
     return (ax)
 
 
 def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
                center=None, rms=None, add_inset='auto', add_beam=True,
                vmin_factor=3, max_percent_lowlevel=99.0,
-               max_percent_highlevel=99.9999,
+               levels_neg_factors=np.asarray([-3]),
+               max_percent_highlevel=99.9999, vmax=None,
                do_cut=False, CM='magma_r', cbar_axes=[0.03, 0.11, 0.05, 0.77],
                # cbar_axes=[0.9, 0.15, 0.04, 0.7],
                source_distance=None, save_name=None, special_name='',
+               scalebar_length=1.0 * u.kpc,
                show_axis='on', plot_color_bar=True, figsize=(5, 5),
+               cmap_cont='terrain',
                projection='offset'):
     import cmasher as cmr
     import astropy.io.fits as fits
@@ -9398,14 +9564,14 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         if center == None:
             st = imstat(image)
             print('  >> Center --> ', st['maxpos'])
-            xin, xen, yin, yen = st['maxpos'][0] - box_size, st['maxpos'][
+            yin, yen, xin, xen = st['maxpos'][0] - box_size, st['maxpos'][
                 0] + box_size, st['maxpos'][1] - box_size, \
                                  st['maxpos'][1] + box_size
         else:
-            xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, \
+            yin, yen, xin, xen = center[0] - box_size, center[0] + box_size, \
                                  center[1] - box_size, center[1] + box_size
     else:
-        xin, xen, yin, yen = 0, -1, 0, -1
+        yin, yen, xin, xen = 0, -1, 0, -1
 
     #     cmr is a package for additional density plot maps, if you would like to use
     #        >> https://cmasher.readthedocs.io/user/sequential/rainforest.html#rainforest
@@ -9423,8 +9589,11 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
 
     # if projection == 'celestial':
     ax = fig.add_subplot(projection=ww.celestial)
-    extent = None
 
+    #     xoffset_in = (xen_cut-xin_cut) * pixel_scale / 2
+    #     yoffset_in = (yen_cut-yin_cut) * pixel_scale / 2
+
+    extent = [xin, xen, yin, yen]
     # improve image visualization with normalizations
     norm = visualization.simple_norm(
         hdu[0].data.squeeze()[xin:xen, yin:yen] * scalling, stretch='linear',
@@ -9448,13 +9617,16 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         else:
             std = mad_std(data_range)
         vmin = vmin_factor * std
-    vmax = 1.0 * data_range.max()
+    if vmax is not None:
+        vmax = vmax
+    else:
+        vmax = 1.0 * data_range.max()
 
     # set second normalization
     norm2 = simple_norm(abs(hdu[0].data.squeeze())[xin:xen, yin:yen] * scalling,
                         min_cut=vmin,
                         max_cut=vmax, stretch='asinh',
-                        asinh_a=0.01)  # , max_percent=max_percent_highlevel)
+                        asinh_a=0.05)  # , max_percent=max_percent_highlevel)
     norm2.vmin = vmin
 
     # this is what is actually shown on the final plot, better contrast.
@@ -9462,27 +9634,27 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
                    origin='lower',
                    norm=norm2, cmap=cm, aspect='auto', extent=extent)
 
-    levels_colorbar = np.geomspace(1.0 * data_range.max(), 5 * std,
+    levels_colorbar = np.geomspace(2.0 * vmax, 5 * std,
                                    8)  # draw contours only until 5xstd level.
-    levels_neg = np.asarray([-3 * std])
-    levels_low = np.asarray([3 * std])
+    levels_neg = np.asarray(levels_neg_factors * std)
+    levels_low = np.asarray([4 * std, 3 * std])
     #     levels_neg = np.asarray([])
     #     levels_low = np.asarray([])
 
     #     levels_colorbar = np.append(levels_neg,levels_pos)
 
-    levels_colorbar2 = np.geomspace(1.0 * data_range.max(), 3 * std,
+    levels_colorbar2 = np.geomspace(1.0 * vmax, 3 * std,
                                     5)  # draw contours only until 5xstd level.
-    ax.contour(hdu[0].data.squeeze()[xin:xen, yin:yen],
-               levels=levels_colorbar[::-1], colors='grey',
-               linewidths=1.0)  # ,alpha=0.6)
+    ax.contour(hdu[0].data.squeeze()[xin:xen, yin:yen], extent=extent,
+               levels=levels_colorbar[::-1], cmap=cmap_cont,
+               linewidths=1.25)  # ,alpha=0.6)
 
     ax.contour(hdu[0].data.squeeze()[xin:xen, yin:yen], levels=levels_low[::-1],
-               colors='brown', linestyle='dashdot',
-               linewidths=1.0, alpha=0.6)
-    ax.contour(hdu[0].data.squeeze()[xin:xen, yin:yen], levels=levels_neg[::-1],
-               colors='k',
+               colors='brown', linestyles=['dashed', 'dashdot'], extent=extent,
                linewidths=1.0, alpha=0.5)
+    ax.contour(hdu[0].data.squeeze()[xin:xen, yin:yen], levels=levels_neg[::-1],
+               colors='gray', extent=extent,
+               linewidths=1.5, alpha=1.0)
 
     ww.wcs.radesys = 'icrs'
     radesys = ww.wcs.radesys
@@ -9490,8 +9662,8 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         # distance = source_distance * u.Mpc
         distance = angular_distance_cosmo(source_distance)  # * u.Mpc
         img = hdu[0].data.squeeze()[xin:xen, yin:yen]
-        scalebar_length = 1.0 * u.kpc
-        scalebar_loc = (0.80, 0.1)  # y, x
+        #         scalebar_length = scalebar_length
+        scalebar_loc = (0.82, 0.1)  # y, x
         left_side = coordinates.SkyCoord(
             *ww.celestial[xin:xen, yin:yen].wcs_pix2world(
                 scalebar_loc[1] * img.shape[1],
@@ -9501,23 +9673,14 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
 
         length = (scalebar_length / distance).to(u.arcsec,
                                                  u.dimensionless_angles())
-        make_scalebar(ax, left_side, length, color='purple', linestyle='-',
+        make_scalebar(ax, left_side, length, color='red', linestyle='-',
                       label=f'{scalebar_length:0.1f}',
-                      text_offset=0.1 * u.arcsec, fontsize=20)
+                      text_offset=0.1 * u.arcsec, fontsize=24)
 
     #     _ = ax.set_xlabel(f"Right Ascension {radesys}")
     #     _ = ax.set_ylabel(f"Declination {radesys}")
     _ = ax.set_xlabel(f"Right Ascension")
     _ = ax.set_ylabel(f"Declination")
-
-    freq = '{:.2f}'.format(imhd['refval'][2] / 1e9)
-    label_pos_x, label_pos_y = hdu[0].data.squeeze()[xin:xen, yin:yen].shape
-    #     ax.annotate(r'' + freq + 'GHz', xy=(0.35, 0.05),  xycoords='figure fraction', fontsize=14,
-    #                 color='red')
-    ax.annotate(r'' + freq + 'GHz',
-                xy=(label_pos_x * 0.20, label_pos_y * (0.02)), xycoords='data',
-                fontsize=14,
-                color='red')
 
     if projection == 'celestial':
         ra = ax.coords['ra']
@@ -9545,15 +9708,14 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         However, this assumes that the source is at the center of the image. 
         """
         ax.axis('off')
-        xoffset = hdu[0].data.shape[0] * pixel_scale / 2
-        yoffset = hdu[0].data.shape[1] * pixel_scale / 2
+        xoffset = (hdu[0].data.shape[0] - xin * 2) * pixel_scale / 2
+        yoffset = (hdu[0].data.shape[1] - yin * 2) * pixel_scale / 2
         ax2_x = ax.twinx()
         ax3_y = ax2_x.twiny()
         ax2_x.set_ylabel('Offset [arcsec]', fontsize=14)
         ax3_y.set_xlabel('Offset [arcsec]', fontsize=14)
-        ax2_x.yaxis.set_ticks(np.linspace(-xoffset, xoffset, 6))
-        ax3_y.xaxis.set_ticks(np.linspace(-yoffset, yoffset, 6))
-
+        ax2_x.yaxis.set_ticks(np.linspace(-xoffset, xoffset, 7))
+        ax3_y.xaxis.set_ticks(np.linspace(-yoffset, yoffset, 7))
 
         ax2_x.tick_params(axis='y', which='both', labelsize=16, color='black',
                           pad=-30)
@@ -9562,14 +9724,25 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         ax2_x.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
         ax3_y.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
         ax2_x.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                   alpha=0.5)
+                   alpha=0.7)
         ax3_y.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                   alpha=0.5)
+                   alpha=0.7)
         ax2_x.axis(show_axis)
         ax3_y.axis(show_axis)
 
-    if plot_color_bar == True:
+    freq = '{:.2f}'.format(imhd['refval'][2] / 1e9)
+    label_pos_x, label_pos_y = hdu[0].data.squeeze()[xin:xen, yin:yen].shape
+    label_pos_x = label_pos_x + xin
+    label_pos_y = label_pos_y + yin
+    #     ax.annotate(r'' + freq + 'GHz', xy=(0.35, 0.05),  xycoords='figure fraction', fontsize=14,
+    #                 color='red')
+    ax.annotate(r'' + freq + 'GHz',
+                xy=(0.55, 0.82), xycoords='axes fraction',
+                fontsize=18,
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+                color='red')
 
+    if plot_color_bar == True:
         def format_func(value, tick_number, scale_density='mJy'):
             # Use the custom formatter for the colorbar ticks
             mantissa = value * 1000
@@ -9577,14 +9750,21 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
 
         cax = fig.add_axes(cbar_axes)
 
-
         cbar = fig.colorbar(im, cax=cax, orientation='vertical',
                             shrink=1, aspect='auto', pad=10, fraction=1.0,
                             drawedges=False, ticklocation='left')
-
+        #         cbar.ax.yaxis.set_major_formatter(FuncFormatter(format_func))
+        #         cbar.formatter = mticker.ScalarFormatter(useMathText=True)
         cbar.formatter = CustomFormatter(factor=1000, useMathText=True)
         cbar.update_ticks()
 
+        #         cbar.update_ticks()
+        # cbar_axes = [0.12, 0.95, 0.78, 0.06]
+        # cax = fig.add_axes(cbar_axes)
+        #
+        # cbar = fig.colorbar(im, cax=cax, orientation='horizontal', format='%.0e',
+        #                     shrink=1.0, aspect='auto', pad=0.1, fraction=1.0, drawedges=False
+        #                     )
         cbar.ax.yaxis.set_tick_params(labelleft=True, labelright=False,
                                       tick1On=False, tick2On=False)
         cbar.ax.yaxis.tick_left()
@@ -9651,6 +9831,110 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
     #         axins_re.axis('off')
 
     if add_inset == True:
+        st = imstat(image)
+        print('  >> Center --> ', st['maxpos'])
+        # sub region of the original image
+        yin_cut, yen_cut, xin_cut, xen_cut = st['maxpos'][0] - box_size_inset, \
+                                             st['maxpos'][0] + box_size_inset, \
+                                             st['maxpos'][1] - box_size_inset, \
+                                             st['maxpos'][1] + box_size_inset
+
+        axins = inset_axes(ax, width="40%", height="40%", loc='lower left',
+                           bbox_to_anchor=(0.05, -0.05, 1.0, 1.0),
+                           bbox_transform=ax.transAxes)
+
+        xoffset_in = (xen_cut - xin_cut) * pixel_scale / 2
+        yoffset_in = (yen_cut - yin_cut) * pixel_scale / 2
+
+        extent_inset = [-xoffset_in, xoffset_in, -yoffset_in, yoffset_in]
+
+        Z2 = hdu[0].data.squeeze()[xin_cut:xen_cut, yin_cut:yen_cut]
+
+        vmax_inset = np.max(Z2)
+        vmin_inset = 1 * np.std(Z2)
+
+        norm_inset = visualization.simple_norm(Z2, stretch='linear',
+                                               max_percent=max_percent_lowlevel)
+
+        norm2_inset = simple_norm(abs(Z2), min_cut=vmin,
+                                  max_cut=vmax_inset, stretch='asinh',
+                                  asinh_a=0.008)  # , max_percent=max_percent_highlevel)
+        norm2_inset.vmin = vmin
+
+        axins.imshow(Z2, cmap=CM, norm=norm_inset, alpha=0.2,
+                     extent=extent_inset,
+                     aspect='auto', origin='lower')
+        axins.imshow(Z2, norm=norm2_inset, extent=extent_inset,
+                     cmap=cm,
+                     origin="lower", alpha=1.0, aspect='auto')
+
+        axins.set_ylabel('', fontsize=10)
+        axins.set_xlabel('', fontsize=10)
+        axins.xaxis.set_ticks(np.linspace(-xoffset_in, xoffset_in, 4))
+        axins.yaxis.set_ticks(np.linspace(-yoffset_in, yoffset_in, 4))
+        axins.tick_params(axis='y', which='both', labelsize=14, color='black')
+        axins.tick_params(axis='x', which='both', labelsize=14, color='black')
+        axins.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        axins.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+
+        axins.grid(True, alpha=0.9)
+        levels_inset = np.geomspace(3.0 * Z2.max(), 5 * std,
+                                    6)  # draw contours only until 5xstd level.
+        levels_inset_neg = np.asarray([-3 * std])
+        levels_inset_low = np.asarray([4 * std, 3 * std])
+
+        csi = axins.contour(Z2, levels=levels_colorbar[::-1], cmap=cmap_cont,
+                            extent=extent_inset,
+                            linewidths=1.25, alpha=1.0)
+        #         axins.clabel(csi, inline=False, fontsize=8, manual=False, zorder=99)
+        axins.contour(Z2, levels=levels_inset_low[::-1], colors='brown',
+                      extent=extent_inset, linestyles=['dashed', 'dashdot'],
+                      linewidths=1.0, alpha=1.0)
+        axins.contour(Z2, levels=levels_inset_neg[::-1], colors='gray',
+                      extent=extent_inset,
+                      linewidths=1.5, alpha=1.0)
+
+        # inset zoom box is not working properly, so I am doing it manually.
+        import matplotlib.patches as patches
+        from matplotlib.patches import FancyArrowPatch
+        rect = patches.Rectangle((yin_cut, xin_cut),
+                                 xen_cut - xin_cut, yen_cut - yin_cut,
+                                 linewidth=2, edgecolor='black',
+                                 facecolor='none', alpha=0.5)
+        ax.add_patch(rect)
+        arrow_start = (yin_cut / 2, xin_cut / 2)
+        arrow_end = (yin_cut / 2 + 50, xin_cut / 2 + 50)
+        arrow = FancyArrowPatch(arrow_start, arrow_end, arrowstyle='->',
+                                mutation_scale=24, linewidth=1.5, color='black')
+        ax.add_patch(arrow)
+
+        # manually add lines to connect the rectangle and arrow
+        x1, y1 = rect.get_xy()
+        x2, y2 = arrow_end
+        ax.plot([x1 + 10, x2 + 100], [y1 + 10, y2 + 100], linestyle='--',
+                color='black')
+        #         ax.indicate_inset_zoom(axins)
+        axins.axis(show_axis)
+
+        if add_beam == True:
+            from matplotlib.patches import Ellipse
+            a_s = imhd['restoringbeam']['major']['value']
+            b_s = imhd['restoringbeam']['minor']['value']
+            pa_s = imhd['restoringbeam']['positionangle']['value']
+            el_s = Ellipse((xoffset_in + 10, yoffset_in + 10), b_s,
+                           a_s, angle=pa_s,
+                           facecolor='r', alpha=0.5)
+            axins.add_artist(el_s)
+            el_s.set_clip_box(axins.bbox)
+
+    #         axins.set_xlim(x1, x2)
+    #         axins.set_ylim(y1, y2)
+    #         axins.set_xticklabels([])
+    #         axins.set_yticklabels([])
+    #         ax.indicate_inset_zoom(axins, edgecolor="black")
+
+    add_inset2 = False
+    if add_inset2 == True:
         #         ax.axis(show_axis)
 
         st = imstat(image)
@@ -9668,28 +9952,30 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         vmin_inset = 1 * np.std(Z2)
 
         axins = inset_axes(ax, width="40%", height="40%", loc='lower left',
-                              bbox_to_anchor=(0.00, -0.10, 1.0, 1.0),
-                              bbox_transform=ax.transAxes)
-
+                           bbox_to_anchor=(0.00, -0.10, 1.0, 1.0),
+                           bbox_transform=ax.transAxes)
+        # axins = ax.inset_axes([0.00, 0.1, 0.35, 0.4], transform=ax.transData)
+        # axins = ax.inset_axes([0.00, 0.1, 0.35, 0.4], transform=ax.transAxes)
         x1, x2, y1, y2 = xin_cut, xen_cut, yin_cut, yen_cut
         print(xen_cut - xin_cut)
-        extent = [xin_cut,#*pixel_scale/2,
-                  xen_cut,#*pixel_scale/2,
-                  yin_cut,#*pixel_scale/2,
-                  yen_cut#*pixel_scale/2
-                  ]
-        # xoffset_in = (xin_cut - xen_cut) * pixel_scale / 2
-        # yoffset_in = (yin_cut - yen_cut) * pixel_scale / 2
-        xoffset_in = (xin_cut - xen_cut) * pixel_scale / 2
-        yoffset_in = (yin_cut - yen_cut) * pixel_scale / 2
+        extent = np.asarray([xin_cut,
+                             xen_cut,
+                             yin_cut,
+                             yen_cut
+                             ]) * pixel_scale / 2
+
+        xoffset_in = (xen_cut - xin_cut)  # * pixel_scale / 2
+        yoffset_in = (yen_cut - yin_cut)  # * pixel_scale / 2
+        #         xoffset_in = (xin_cut - xen_cut)
+        #         yoffset_in = (yin_cut - yen_cut)
         # extent_arcsec = [-xoffset_in, xoffset_in, -yoffset_in, yoffset_in]
         extent_arcsec = extent
         #         extent_arcsec= [xin_cut* pixel_scale, xen_cut* pixel_scale,
         #                         yin_cut* pixel_scale, yen_cut* pixel_scale]
-        norm_inset = visualization.simple_norm(Z2 , stretch='linear',
+        norm_inset = visualization.simple_norm(Z2, stretch='linear',
                                                max_percent=max_percent_lowlevel)
 
-        norm2_inset = simple_norm(abs(Z2) , min_cut=vmin,
+        norm2_inset = simple_norm(abs(Z2), min_cut=vmin,
                                   max_cut=vmax_inset, stretch='asinh',
                                   asinh_a=0.05)  # , max_percent=max_percent_highlevel)
         norm2_inset.vmin = vmin
@@ -9701,27 +9987,18 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
                      cmap=cm,
                      origin="lower", alpha=1.0, aspect='auto')
 
+        axins.grid(True, alpha=0.3)
         levels_inset = np.geomspace(3.0 * Z2.max(), 5 * std,
-                                       8)  # draw contours only until 5xstd level.
+                                    8)  # draw contours only until 5xstd level.
         levels_inset_neg = np.asarray([-3 * std])
 
-        csi = axins.contour(Z2, levels=levels_inset[::-1], colors='grey',
+        csi = axins.contour(Z2, levels=levels_colorbar[::-1], colors='grey',
                             extent=extent_arcsec,
-                      linewidths=1.0, alpha=1.0)
+                            linewidths=1.0, alpha=1.0)
+        axins.clabel(csi, inline=False, fontsize=8, manual=False, zorder=99)
         axins.contour(Z2, levels=levels_inset_neg[::-1], colors='k',
                       extent=extent_arcsec,
                       linewidths=1.0, alpha=1.0)
-
-        axins.clabel(csi, inline=False, fontsize=8, manual=False)
-
-
-        axins.xaxis.set_ticks(np.linspace(-xoffset_in, xoffset_in, 4))
-        axins.yaxis.set_ticks(np.linspace(-yoffset_in, yoffset_in, 4))
-
-
-        axins.axis('on')
-        ax.indicate_inset_zoom(axins)
-        axins.grid(True)
 
         if add_beam == True:
             from matplotlib.patches import Ellipse
@@ -9746,9 +10023,29 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
         a = imhd['restoringbeam']['major']['value']
         b = imhd['restoringbeam']['minor']['value']
         pa = imhd['restoringbeam']['positionangle']['value']
-        el = Ellipse((40, 40), b / pixel_scale, a / pixel_scale, angle=pa,
-                     facecolor='r', alpha=0.5)
-        ax.add_artist(el)
+        el = Ellipse((hdu[0].data.shape[0] - 60 - xin, 60 + xin),
+                     b / pixel_scale, a / pixel_scale, angle=pa,
+                     facecolor='black', alpha=1.0)
+        ax.add_artist(el, )
+
+        Oa = '{:.2f}'.format(a)
+        Ob = '{:.2f}'.format(b)
+
+        blabel_pos_x, blabel_pos_y = hdu[0].data.squeeze()[xin:xen,
+                                     yin:yen].shape
+        blabel_pos_x = blabel_pos_x + xin
+        blabel_pos_y = blabel_pos_y + yin
+
+        #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
+        #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
+        #                     fontsize=15,bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+        #                     color='red')
+        ax.annotate(r'$' + Oa + '\\times' + Ob + '$',
+                    xy=(0.55, 0.12), xycoords='axes fraction',
+                    fontsize=15,
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+                    color='red')
+
         el.set_clip_box(ax.bbox)
 
     #     plt.tight_layout()
