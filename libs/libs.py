@@ -1036,7 +1036,7 @@ def mask_dilation(image, cell_size=None, sigma=5,rms=None,
         ax2.set_title(r'Dilated mask')
         ax2.axis('off')
         ax3 = fig.add_subplot(1, 4, 4)
-        ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.1)
+        ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.01)
         ax3.set_title(r'Dilated mask $\times$ data')
         #         ax3.imshow(np.log(data*data_mask_d))
         plt.subplots_adjust(wspace=0.1, hspace=0.1)
@@ -6458,7 +6458,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
 
 def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
-             residualname=None,
+             residualname=None,which_residual='shuffled',
              init_params=0.25, final_params=4.0, constrained=True,
              fix_n=True, fix_value_n=False, dr_fix=2,
              fix_x0_y0=False, psf_name=None, convolution_mode='CPU',
@@ -6478,7 +6478,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                          'init': 'random', 'tol': 0.00001,
                          'updating': 'deferred',
                          'popsize': 600},
-             save_name_append=''):
+             save_name_append='',logger=None):
     """
     Perform a Robust and Fast Multi-Sersic Decomposition with GPU acceleration.
 
@@ -6521,29 +6521,37 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         else:
             residual_2D = pf.getdata(residualname)
 
-        residual_2D_shuffled = shuffle_2D(residual_2D)
+        if which_residual == 'shuffled':
+            residual_2D_to_use = shuffle_2D(residual_2D)
+        if which_residual == 'natural':
+            residual_2D_to_use = residual_2D
+        
         FlatSky_level = mad_std(residual_2D)
-        print('Using clean background for optmization...')
-        #         background = residual_2D #residual_2D_shuffled
+        if logger is not None:
+            logger.debug(f" ==> Using clean background for optmization... ")
+        #         background = residual_2D #residual_2D_to_use
         if convolution_mode == 'GPU':
             FlatSky_level_GPU = jnp.array(FlatSky_level)
-            background = jnp.array(residual_2D_shuffled)
+            background = jnp.array(residual_2D_to_use)
         else:
-            background = residual_2D_shuffled
+            background = residual_2D_to_use
 
     else:
         FlatSky_level = mad_std(data_2D)
         if self_bkg == True:
             if rms_map is not None:
-                print('Using provided RMS map.')
+                if logger is not None:
+                    logger.debug(f" ==> Using provided RMS map. ")
                 background = rms_map
             else:
-                print('No residual/background provided. Using image bkg map...')
+                if logger is not None:
+                    logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
                 background_map = sep_background(imagename)
                 background = shuffle_2D(background_map.back())
         else:
             background = 0
-            print('Using only flat sky for rms bkg.')
+            if logger is not None:
+                logger.warning(f" ==> Using only flat sky for rms bkg.")
 
     if psf_name is not None:
         PSF_CONV = True
@@ -6555,18 +6563,11 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
             PSF_BEAM_raw = ctn(psf_name)
 
         if convolution_mode == 'GPU':
-            print('---------------------------------------')
-            print('<<< PERFORMING CONVOLUTION WITH GPU >>>')
-            print('---------------------------------------')
-            # PSF_BEAM = cp.asarray(PSF_BEAM_raw)
+            if logger is not None:
+                logger.debug(f"---------------------------------------")
+                logger.debug(f" <<< PERFORMING CONVOLUTION WITH GPU >>> ")
+                logger.debug(f"---------------------------------------")
             PSF_BEAM = jnp.array(PSF_BEAM_raw)
-            # PSF_BEAM_raw_32 = PSF_BEAM_raw.astype(dtype=np.float32, order='C')
-            #
-            # PSF_BEAM = torch.tensor(PSF_BEAM_raw_32, dtype=torch.float32)
-            # kernel_size = PSF_BEAM_raw.shape[0]
-            #
-            # # Pad input array with zeros
-            # pad_size = kernel_size // 2
 
         if convolution_mode == 'CPU':
             PSF_BEAM = PSF_BEAM_raw
@@ -7063,7 +7064,8 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
 
 def run_image_fitting(imagelist, residuallist, sources_photometries,
                       n_components, comp_ids, mask= None,
-                      save_name_append='_ls_n0G0G0G', z=None, aspect=None,
+                      which_residual='shuffled',
+                      save_name_append='', z=None, aspect=None,
                       convolution_mode='GPU', workers=6,
                       method1='least_squares', method2='least_squares',
                       loss="cauchy", tr_solver="exact",
@@ -7099,8 +7101,8 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             rms_std_res = mad_std(res_2D)
             print('rms res = ', rms_std_res / rms_std_data)
             print('rms data = ', rms_std_data * 1e6,
-                  '; rms res = ', rms_std_res * 1e6,
-                  '; ratio = ', rms_std_res / rms_std_data)
+                    '; rms res = ', rms_std_res * 1e6,
+                    '; ratio = ', rms_std_res / rms_std_data)
 
             sigma_level = 3
             vmin = 3
@@ -7109,9 +7111,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             # dilation_size = int(
             # np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
             _, mask_region = mask_dilation(crop_image,
-                                           rms=rms_std_res,
-                                           sigma=6.0, dilation_size=None,
-                                           iterations=2, PLOT=True)
+                                            rms=rms_std_res,
+                                            sigma=6.0, dilation_size=None,
+                                            iterations=2, PLOT=True)
             # psf_size = dilation_size*6
             # psf_size = (2 * psf_size) // 2 +1
 
@@ -7132,23 +7134,24 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                 image_results_conv, image_results_deconv, \
                 smodel2D, model_temp = \
                     do_fit2D(imagename=crop_image,
-                             residualname=crop_residual,
-                             init_constraints=sources_photometries,
-                             psf_name=psf_name,
-                             params_values_init=None,# imfit_conf_values[0:-1],
-                             #fix_n = False,fix_x0_y0=[False,False,False],
-                             ncomponents=n_components, constrained=True,
-                             fix_n=fix_n,# mask_region=mask_region,
-                             fix_value_n=fix_value_n,
-                             fix_x0_y0=[True, True, True, True, True, True, True, True],
-                             dr_fix=dr_fix,
-                             convolution_mode=convolution_mode,
-                             fix_geometry=fix_geometry,
-                             workers=workers,
-                             method1=method1, method2=method2,
-                             loss=loss, tr_solver=tr_solver,
-                             init_params=init_params, final_params=final_params,
-                             save_name_append=save_name_append)
+                                residualname=crop_residual,
+                                which_residual=which_residual,
+                                init_constraints=sources_photometries,
+                                psf_name=psf_name,
+                                params_values_init=None,# imfit_conf_values[0:-1],
+                                #fix_n = False,fix_x0_y0=[False,False,False],
+                                ncomponents=n_components, constrained=True,
+                                fix_n=fix_n,# mask_region=mask_region,
+                                fix_value_n=fix_value_n,
+                                fix_x0_y0=[True, True, True, True, True, True, True, True],
+                                dr_fix=dr_fix,
+                                convolution_mode=convolution_mode,
+                                fix_geometry=fix_geometry,
+                                workers=workers,
+                                method1=method1, method2=method2,
+                                loss=loss, tr_solver=tr_solver,
+                                init_params=init_params, final_params=final_params,
+                                save_name_append=save_name_append,logger=logger)
 
             print(result_mini.params)
             models.append(model_dict)
@@ -7161,7 +7164,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             extended_model_deconv = 0
             for lc in comp_ids:
                 compact_model = (compact_model +
-                                 model_dict['model_c' + lc + '_conv'])
+                                    model_dict['model_c' + lc + '_conv'])
                 compact_model_deconv = (compact_model_deconv +
                                         model_dict['model_c' + lc])
             # if ext_ids is not None:
@@ -7172,21 +7175,21 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             else:
                 for le in ext_ids:
                     extended_model = (extended_model +
-                                      model_dict['model_c' + le + '_conv'])
+                                        model_dict['model_c' + le + '_conv'])
                     extended_model_deconv = (extended_model_deconv +
-                                             model_dict['model_c' + le])
+                                                model_dict['model_c' + le])
                     nfunctions = None
 
             decomp_results = plot_decomp_results(imagename=crop_image,
-                                                 compact=compact_model,
-                                                 extended_model=extended_model,
-                                                 rms=rms_std_res,
-                                                 nfunctions=nfunctions,
-                                                 special_name=special_name)
+                                                    compact=compact_model,
+                                                    extended_model=extended_model,
+                                                    rms=rms_std_res,
+                                                    nfunctions=nfunctions,
+                                                    special_name=special_name)
             plot_fit_results(crop_image, model_dict, image_results_conv,
-                             sources_photometries,
-                             crop=False, box_size=200,
-                             vmax_factor=0.3, vmin_factor=1.0)
+                                sources_photometries,
+                                crop=False, box_size=200,
+                                vmax_factor=0.3, vmin_factor=1.0)
             # plt.xlim(0,3)
             plot_slices(ctn(crop_image), ctn(crop_residual), model_dict,
                         image_results_conv[-2], sources_photometries)
@@ -7196,43 +7199,43 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
 
             results_compact_conv_morpho, _ = \
                 shape_measures(imagename=crop_image,
-                               residualname=crop_residual, z=z,
-                               mask_component=None, sigma_mask=1,
-                               last_level=1.0, vmin_factor=1.0,
-                               plot_catalog=False,
-                               data_2D=compact_model * mask * mask_region,
-                               npixels=128, fwhm=81, kernel_size=21,
-                               dilation_size=None,
-                               main_feature_index=0, results_final={},
-                               iterations=2,
-                               fracX=0.10, fracY=0.10, deblend=False,
-                               bkg_sub=False,
-                               bkg_to_sub=None, rms=rms_std_res,
-                               apply_mask=False, do_PLOT=True, SAVE=True,
-                               show_figure=True,
-                               mask=mask, do_measurements='partial',
-                               add_save_name='_compact_conv')
+                                residualname=crop_residual, z=z,
+                                mask_component=None, sigma_mask=1,
+                                last_level=1.0, vmin_factor=1.0,
+                                plot_catalog=False,
+                                data_2D=compact_model * mask * mask_region,
+                                npixels=128, fwhm=81, kernel_size=21,
+                                dilation_size=None,
+                                main_feature_index=0, results_final={},
+                                iterations=2,
+                                fracX=0.10, fracY=0.10, deblend=False,
+                                bkg_sub=False,
+                                bkg_to_sub=None, rms=rms_std_res,
+                                apply_mask=False, do_PLOT=True, SAVE=True,
+                                show_figure=True,
+                                mask=mask, do_measurements='partial',
+                                add_save_name='_compact_conv')
 
             list_results_compact_conv_morpho.append(results_compact_conv_morpho)
 
             results_compact_deconv_morpho, _ = \
                 shape_measures(imagename=crop_image,
-                               residualname=crop_residual, z=z,
-                               mask_component=None, sigma_mask=1,
-                               last_level=3.0, vmin_factor=1.0,
-                               plot_catalog=False,
-                               data_2D=compact_model_deconv * mask * mask_region,
-                               npixels=128, fwhm=81, kernel_size=21,
-                               dilation_size=None,
-                               main_feature_index=0, results_final={},
-                               iterations=2,
-                               fracX=0.10, fracY=0.10, deblend=False,
-                               bkg_sub=False,
-                               bkg_to_sub=None, rms=rms_std_res,
-                               apply_mask=False, do_PLOT=True, SAVE=True,
-                               show_figure=True,
-                               mask=mask, do_measurements='partial',
-                               add_save_name='_compact_deconv')
+                                residualname=crop_residual, z=z,
+                                mask_component=None, sigma_mask=1,
+                                last_level=3.0, vmin_factor=1.0,
+                                plot_catalog=False,
+                                data_2D=compact_model_deconv * mask * mask_region,
+                                npixels=128, fwhm=81, kernel_size=21,
+                                dilation_size=None,
+                                main_feature_index=0, results_final={},
+                                iterations=2,
+                                fracX=0.10, fracY=0.10, deblend=False,
+                                bkg_sub=False,
+                                bkg_to_sub=None, rms=rms_std_res,
+                                apply_mask=False, do_PLOT=True, SAVE=True,
+                                show_figure=True,
+                                mask=mask, do_measurements='partial',
+                                add_save_name='_compact_deconv')
 
             list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
 
@@ -7244,22 +7247,22 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                 """
                 results_ext_conv_morpho, _ = \
                     shape_measures(imagename=crop_image,
-                                   residualname=crop_residual, z=z,
-                                   mask_component=None, sigma_mask=3,
-                                   last_level=3.0, vmin_factor=3.0,
-                                   plot_catalog=False,
-                                   data_2D=(ctn(crop_image) - compact_model) * mask_region,
-                                   npixels=128, fwhm=81, kernel_size=21,
-                                   dilation_size=None,
-                                   main_feature_index=0, results_final={},
-                                   iterations=2,
-                                   fracX=0.10, fracY=0.10, deblend=False,
-                                   bkg_sub=False,
-                                   bkg_to_sub=None, rms=rms_std_res,
-                                   apply_mask=False, do_PLOT=True, SAVE=True,
-                                   show_figure=True,
-                                   mask=mask, do_measurements='partial',
-                                   add_save_name='_extended_conv')
+                                    residualname=crop_residual, z=z,
+                                    mask_component=None, sigma_mask=3,
+                                    last_level=3.0, vmin_factor=3.0,
+                                    plot_catalog=False,
+                                    data_2D=(ctn(crop_image) - compact_model) * mask_region,
+                                    npixels=128, fwhm=81, kernel_size=21,
+                                    dilation_size=None,
+                                    main_feature_index=0, results_final={},
+                                    iterations=2,
+                                    fracX=0.10, fracY=0.10, deblend=False,
+                                    bkg_sub=False,
+                                    bkg_to_sub=None, rms=rms_std_res,
+                                    apply_mask=False, do_PLOT=True, SAVE=True,
+                                    show_figure=True,
+                                    mask=mask, do_measurements='partial',
+                                    add_save_name='_extended_conv')
 
                 list_results_ext_conv_morpho.append(results_ext_conv_morpho)
                 results_ext_deconv_morpho = results_ext_conv_morpho
@@ -7267,42 +7270,42 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             else:
                 results_ext_conv_morpho, _ = \
                     shape_measures(imagename=crop_image,
-                                   residualname=crop_residual, z=z,
-                                   mask_component=None, sigma_mask=1,
-                                   last_level=1.0, vmin_factor=1.0,
-                                   plot_catalog=False,
-                                   data_2D=extended_model * mask * mask_region,
-                                   npixels=128, fwhm=81, kernel_size=21,
-                                   dilation_size=None,
-                                   main_feature_index=0, results_final={},
-                                   iterations=2,
-                                   fracX=0.10, fracY=0.10, deblend=False,
-                                   bkg_sub=False,
-                                   bkg_to_sub=None, rms=rms_std_res / 2,
-                                   apply_mask=False, do_PLOT=True, SAVE=True,
-                                   show_figure=True,
-                                   mask=mask, do_measurements='partial',
-                                   add_save_name='_extended_conv')
+                                    residualname=crop_residual, z=z,
+                                    mask_component=None, sigma_mask=1,
+                                    last_level=1.0, vmin_factor=1.0,
+                                    plot_catalog=False,
+                                    data_2D=extended_model * mask * mask_region,
+                                    npixels=128, fwhm=81, kernel_size=21,
+                                    dilation_size=None,
+                                    main_feature_index=0, results_final={},
+                                    iterations=2,
+                                    fracX=0.10, fracY=0.10, deblend=False,
+                                    bkg_sub=False,
+                                    bkg_to_sub=None, rms=rms_std_res / 2,
+                                    apply_mask=False, do_PLOT=True, SAVE=True,
+                                    show_figure=True,
+                                    mask=mask, do_measurements='partial',
+                                    add_save_name='_extended_conv')
                 list_results_ext_conv_morpho.append(results_ext_conv_morpho)
 
                 results_ext_deconv_morpho, _ = \
                     shape_measures(imagename=crop_image,
-                                   residualname=crop_residual, z=z,
-                                   mask_component=None, sigma_mask=1,
-                                   last_level=3.0, vmin_factor=1.0,
-                                   plot_catalog=False,
-                                   data_2D=extended_model_deconv * mask * mask_region,
-                                   npixels=128, fwhm=81, kernel_size=21,
-                                   dilation_size=None,
-                                   main_feature_index=0, results_final={},
-                                   iterations=2,
-                                   fracX=0.10, fracY=0.10, deblend=False,
-                                   bkg_sub=False,
-                                   bkg_to_sub=None, rms=rms_std_res / 2,
-                                   apply_mask=False, do_PLOT=True, SAVE=True,
-                                   show_figure=True,
-                                   mask=mask, do_measurements='partial',
-                                   add_save_name='_extended_deconv')
+                                    residualname=crop_residual, z=z,
+                                    mask_component=None, sigma_mask=1,
+                                    last_level=3.0, vmin_factor=1.0,
+                                    plot_catalog=False,
+                                    data_2D=extended_model_deconv * mask * mask_region,
+                                    npixels=128, fwhm=81, kernel_size=21,
+                                    dilation_size=None,
+                                    main_feature_index=0, results_final={},
+                                    iterations=2,
+                                    fracX=0.10, fracY=0.10, deblend=False,
+                                    bkg_sub=False,
+                                    bkg_to_sub=None, rms=rms_std_res / 2,
+                                    apply_mask=False, do_PLOT=True, SAVE=True,
+                                    show_figure=True,
+                                    mask=mask, do_measurements='partial',
+                                    add_save_name='_extended_deconv')
 
                 list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
 
@@ -8229,7 +8232,9 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
 
     ncomponents = sources_photometies['ncomps']
     if sources_photometies is not None:
-        plotlim =  2.0 * sources_photometies['c'+str(int(ncomponents))+'_rlast']
+        plotlim =  2.5 * sources_photometies['c'+str(int(ncomponents))+'_rlast']
+        if plotlim > data_2D.shape[0]/2:
+            plotlim = data_2D.shape[0]/2
         # plotlim = 0
         # for i in range(ncomponents):
         #     plotlim = plotlim + sources_photometies['c' + str(i + 1) + '_rlast']
@@ -9202,21 +9207,18 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
     #         plt.close()
 
 
-def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
-            vmax=None,
-            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
-            cmap_cont='terrain',
-            rms=None, max_factor=None, plot_title=None, apply_mask=False,
-            add_contours=True, extent=None, projection='offset', add_beam=False,
-            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
-            show_axis='on',
-            source_distance=None, scalebar_length=250 * u.pc,
+def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax=None,
+            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',cmap_cont='terrain',
+            rms=None, max_factor=None,plot_title=None,apply_mask=False,
+            add_contours=True,extent=None,projection = 'offset',add_beam = False,
+            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,show_axis='on',
+            source_distance = None,scalebar_length=250 * u.pc,
             ax=None):
     """
-    Enhanced plotting of an astronomical image with/or without a wcs header.
+    Fast plotting of an astronomical image with/or without a wcs header.
     imagename:
         str or 2d array.
-        If str (the image file name with a wcs), it will attempt to read the wcs
+        If str (the image file name with a wcs), it will attempt to read the wcs 
         and plot the coordinates axes.
 
         If 2darray, will plot the data with generic axes.
@@ -9227,13 +9229,13 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
                      However, it does not read header/wcs.
                      Note: THis function only works inside CASA environment.
-
+                     
         <<finish documentation>>
         -- changes:
             - added scalebar plot
             - change colors to a better colorblind friendly colormap
             - added option to plot a beam
-            - added option to plot a colorbar
+            - added option to plot a colorbars
 
     """
     try:
@@ -9257,6 +9259,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         fig = plt.figure(figsize=figsize)
     if isinstance(imagename, str) == True:
 
+        
         if with_wcs == True:
             hdu = pf.open(imagename)
             ww = WCS(hdu[0].header, naxis=2)
@@ -9273,18 +9276,18 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         if crop == True:
             xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                            center=center, return_='box')
-            g = g[yin:yen, xin:xen]
+            g = g[yin:yen,xin:xen]
             crop = False
 
         if apply_mask == True:
             _, mask_d = mask_dilation(imagename, cell_size=None,
-                                      sigma=6, rms=None,
-                                      dilation_size=None,
-                                      iterations=3, dilation_type='disk',
-                                      PLOT=False, show_figure=False)
+                                    sigma=6, rms=None,
+                                    dilation_size=None,
+                                    iterations=3, dilation_type='disk',
+                                    PLOT=False, show_figure=False)
             print('Masking emission....')
-            g = g * mask_d[yin:yen, xin:xen]
-
+            g = g * mask_d[yin:yen,xin:xen]
+            
 
     else:
         g = imagename
@@ -9294,10 +9297,10 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     if crop == True:
         xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                        center=center, return_='box')
-        g = g[yin:yen, xin:xen]
+        g = g[yin:yen,xin:xen]
         if apply_mask == True:
             print('Masking emission....')
-            g = g * mask_d[yin:yen, xin:xen]
+            g = g * mask_d[yin:yen,xin:xen]
     if rms is not None:
         std = rms
     else:
@@ -9325,78 +9328,91 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         cell_size = 1
         axis_units_label = r'Offset [px]'
 
+    dx = g.shape[0] / 2
     if ax == None:
         if isinstance(imagename, str) == False:
             projection = 'px'
-
+            
         if (projection == 'celestial') and (with_wcs == True) and (isinstance(
                 imagename, str) == True):
             ax = fig.add_subplot(projection=ww.celestial)
-            ax.set_xlabel('RA', fontsize=14)
-            ax.set_ylabel('DEC', fontsize=14)
-            dx = g.shape[0] / 2
-
+            ax.set_xlabel('RA',fontsize=14)
+            ax.set_ylabel('DEC',fontsize=14)
+            
+                
+            
         if projection == 'offset':
             ax = fig.add_subplot()
-            dx = g.shape[0] / 2
+            # dx = g.shape[0] / 2
             axis_units_label = r'Offset [arcsec]'
-            ax.set_xlabel(axis_units_label, fontsize=14)
-
+            ax.set_xlabel(axis_units_label,fontsize=14)
+            
         dx = g.shape[0] / 2
         if projection == 'px':
             ax = fig.add_subplot()
             cell_size = 1
-            dx = g.shape[0] / 2
+            # dx = g.shape[0] / 2
             ax.set_xlabel('x pix')
             # ax.set_ylabel('y pix')
             axis_units_label = r'Offset [px]'
-            ax.set_xlabel(axis_units_label, fontsize=14)
+            ax.set_xlabel(axis_units_label,fontsize=14)
+        
 
     xticks = np.linspace(-dx, dx, 4)
-    xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 4)
+    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 4)
     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
-    ax.set_yticks(xticks, xticklabels)
-    ax.set_xticks(xticks, xticklabels)
+    ax.set_yticks(xticks,xticklabels)
+    ax.set_xticks(xticks,xticklabels)
+    
 
     ax.tick_params(axis='y', which='both', labelsize=16, color='black',
-                   pad=5)
+                        pad=5)
     ax.tick_params(axis='x', which='both', labelsize=16, color='black',
-                   pad=5)
+                        pad=5)
     # ax2_x.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     # ax3_y.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     if projection != 'celestial':
         ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                alpha=0.7)
+                    alpha=0.7)
         ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                alpha=0.7)
+                    alpha=0.7)
     else:
         ax.grid()
+        
     ax.axis(show_axis)
     ax.axis(show_axis)
+
 
     vmin = vmin_factor * std
     if extent == None:
         extent = [-dx, dx, -dx, dx]
-
     #     print(g)
-    if max_factor is not None:
-        if vmax is not None:
+    
+    if vmax is not None:
             vmax = vmax
-        else:
-            vmax = vmax_factor * max_factor
     else:
-        if vmax is not None:
-            vmax = vmax
+        if vmax_factor is not None:
+            vmax = vmax_factor * g.max()
         else:
-            vmax = 0.95 * g.max()
+            vmax = 0.95*g.max()
+        
+
+    norm0 = simple_norm(g, stretch='linear',max_percent=99.0)
+    # # plot the first normalization (low level, transparent)
+    im_plot = ax.imshow(g, origin='lower',
+                   cmap='gray', norm=norm0, alpha=0.5, extent=extent)
+
+    # cm = copy.copy(plt.cm.get_cmap(CM))
+    # cm.set_under((0, 0, 0, 0))
+
 
     norm = simple_norm(g, stretch='sqrt', asinh_a=0.02, min_cut=vmin,
                        max_cut=vmax)
 
-    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0, extent=extent,
+    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0,extent=extent,
                         norm=norm,
                         aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
-
+    
     levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 5)
     levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 7)
     levels_neg = neg_levels * std
@@ -9413,8 +9429,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
             # Create a custom colormap with reversed colors
             colors_reversed = cmap_magma_r(np.linspace(1, 0, 256))
-            cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed",
-                                                              colors_reversed)
+            cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed", colors_reversed)
 
             # Create a contour plot using the reversed "magma_r" colormap and custom contour colors
             # plt.contourf(X, Y, Z, cmap=cmap_reversed, levels=15)
@@ -9423,28 +9438,31 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             # plt.clabel(contour, inline=1, fontsize=10)
 
             # plt.show()
-
-            contour = ax.contour(g, levels=levels_g[::-1],
-                                 colors=contour_palette,
-                                 linewidths=1.5, extent=extent,
-                                 alpha=1.0)
+            
+            contour=ax.contour(g, levels=levels_g[::-1], colors=contour_palette, 
+                       linewidths=1.5,extent=extent,
+                       alpha=1.0)
             # ax.clabel(contour, inline=1, fontsize=10)
         except:
             pass
         try:
-            ax.contour(g, levels=levels_neg[::-1], colors='k',
-                       linewidths=1.0, extent=extent,
+            ax.contour(g, levels=levels_neg[::-1], colors='k', 
+                       linewidths=1.0,extent=extent,
                        alpha=1.0)
         except:
             pass
     if plot_colorbar:
         try:
-            cb = plt.colorbar(mappable=plt.gca().images[0],
+            # cb = plt.colorbar(mappable=plt.gca().images[0],
+            #                   cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
+            
+            cb = plt.colorbar(im_plot, ax=ax,
                               cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
-            cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
+            
+            cb.set_label(r"Flux Density [mJy/Beam]",labelpad=10, fontsize=16)
             cb.formatter = CustomFormatter(factor=1000, useMathText=True)
             cb.update_ticks()
-
+            
             cb.ax.yaxis.set_tick_params(labelleft=True, labelright=False,
                                         tick1On=False, tick2On=False)
             cb.ax.yaxis.tick_right()
@@ -9461,11 +9479,17 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         except:
             pass
 
+        
+
+    
     if plot_title is not None:
         ax.set_title(plot_title)
 
-    if add_beam == True:
 
+    
+    
+    if add_beam == True:
+        
         if isinstance(imagename, str) == True:
             try:
                 from matplotlib.patches import Ellipse
@@ -9474,39 +9498,43 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 b = imhd['restoringbeam']['minor']['value']
                 pa = imhd['restoringbeam']['positionangle']['value']
                 if projection == 'px':
-                    el = Ellipse((-dx * 0.85, -dx * 0.85), b, a, angle=pa,
-                                 facecolor='black', alpha=1.0)
+                    el = Ellipse((-dx*0.85, -dx*0.85), b  , a  , angle=pa,
+                                    facecolor='black', alpha=1.0)
                 else:
-                    el = Ellipse((-dx * 0.85, -dx * 0.85), b / cell_size,
-                                 a / cell_size,
-                                 angle=pa, facecolor='black', alpha=1.0)
+                    el = Ellipse((-dx*0.85, -dx*0.85), b / cell_size , a / cell_size , 
+                                angle=pa,facecolor='black', alpha=1.0)
 
-                ax.add_artist(el, )
+                ax.add_artist(el,)
 
                 Oa = '{:.2f}'.format(a)
                 Ob = '{:.2f}'.format(b)
-
+                
                 blabel_pos_x, blabel_pos_y = g.shape
                 blabel_pos_x = blabel_pos_x + dx
                 blabel_pos_y = blabel_pos_y + dx
-
-                ax.annotate(r'$' + Oa + '\\times' + Ob + '$',
+                
+            #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
+            #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
+            #                     fontsize=15,bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+            #                     color='red')
+                ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
                             xy=(0.70, 0.06), xycoords='axes fraction',
-                            fontsize=15,
-                            bbox=dict(boxstyle='round', facecolor='white',
-                                      alpha=0.9),
+                            fontsize=15,bbox=dict(boxstyle='round', facecolor='white', 
+                                                alpha=0.9),
                             color='red')
-
+                
                 el.set_clip_box(ax.bbox)
             except:
                 print('Error adding beam.')
+    
 
     if source_distance is not None:
         try:
             ww.wcs.radesys = 'icrs'
             radesys = ww.wcs.radesys
             # distance = source_distance * u.Mpc
-            distance = angular_distance_cosmo(source_distance)
+            distance = angular_distance_cosmo(source_distance)  # * u.Mpc
+    #         scalebar_length = scalebar_length
             scalebar_loc = (0.99, 0.99)  # y, x
             left_side = coordinates.SkyCoord(
                 *ww.celestial.wcs_pix2world(
@@ -9516,23 +9544,22 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 frame=radesys.lower())
 
             length = (scalebar_length / distance).to(u.arcsec,
-                                                     u.dimensionless_angles())
+                                                    u.dimensionless_angles())
+            
 
             scale_bar_length_pixels = length.value / cell_size
-            scale_bar_position = (-dx * 0.5, -dx * 0.9)
-
-            ax.annotate('',
-                        xy=(scale_bar_position[0] + scale_bar_length_pixels / 2,
+            scale_bar_position = (-dx*0.5, -dx*0.9)
+            
+            ax.annotate('', 
+                        xy=(scale_bar_position[0] + scale_bar_length_pixels/2, 
                             scale_bar_position[1]),
                         # xy=(0.1, 0.1), ##
-                        xytext=scale_bar_position,
-                        arrowprops=dict(arrowstyle='-',
-                                        color='red', lw=2))
-
-            ax.text(scale_bar_position[0] + scale_bar_length_pixels / 4,
+                        xytext=scale_bar_position, arrowprops=dict(arrowstyle='-', 
+                                                                color='red', lw=2))
+            
+            ax.text(scale_bar_position[0]  + scale_bar_length_pixels / 4, 
                     scale_bar_position[1] + scale_bar_length_pixels / 20,
-                    f'{scalebar_length}', fontsize=16, color='red', ha='center',
-                    va='bottom')
+            f'{scalebar_length}', fontsize=16, color='red', ha='center', va='bottom')
         except:
             print('Error adding scalebar.')
     return (ax)
