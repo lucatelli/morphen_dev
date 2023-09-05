@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.text import Text
 from matplotlib.patches import Ellipse
-
+from matplotlib.colors import LinearSegmentedColormap
 
 import numpy as np
 from sympy import *
@@ -236,6 +236,40 @@ def sersic2D(xy, x0, y0, PA, ell, n, In, Rn,cg=0.0):
 
 def FlatSky(data_level, a):
     return (a * data_level)
+
+
+def deconvolve_fft(image, psf):
+    """
+    Simple deconvolution in input array image. 
+    
+    CAUTION: This is just indented to simulate how a convolved residual map 
+    would look like as deconvolved. It is not a real deconvolution.
+    
+    This was designed to provide a residual map to be used as input for the 
+    Sersic fitting. Instead of providing the convolved residual map, it is 
+    more correct to provide a deconvolved residual map.
+    
+    """
+    padded_shape = (image.shape[0] + psf.shape[0] - 1,
+                    image.shape[1] + psf.shape[1] - 1)
+
+    # Pad both image and psf to the new shape
+    pad_shape = [(0, ts - s) for s, ts in zip(image.shape, padded_shape)]
+    image_padded = np.pad(image, pad_shape, mode='constant')
+    pad_shape = [(0, ts - s) for s, ts in zip(psf.shape, padded_shape)]
+    psf_padded = np.pad(psf, pad_shape, mode='constant')
+    
+    
+    image_fft = scipy.fftpack.fft2(image_padded)
+    psf_fft = scipy.fftpack.fft2(psf_padded)
+    deconvolved_fft_full = image_fft / psf_fft
+    
+    deconvolved_fft = deconvolved_fft_full[psf.shape[0] // 2:image.shape[0] + psf.shape[0] // 2,
+            psf.shape[1] // 2:image.shape[1] + psf.shape[1] // 2]
+    deconvolved = np.abs(scipy.fftpack.ifft2(deconvolved_fft))
+    deconvolved_norm = deconvolved/np.sum(deconvolved)
+    deconvolved_scaled = (image/np.mean(image)) * deconvolved_norm
+    return deconvolved_scaled, deconvolved_norm
 
 """
  __  __       _   _
@@ -1338,6 +1372,87 @@ def get_frequency(imagename):
             freq_ref = header.get(f'CRVAL{i}')
             frequency = freq_ref/1e9
     return(frequency)
+
+
+
+def convolve_2D_smooth(imagename, imagename2=None,
+                       mode='same', add_prefix='_convolve2D'):
+    """
+    CASA's way of convolving images.
+    Very slow, but accurate.
+
+    This function will be removed in the future, as all convolution operations
+    will be migrated into pure python tasks.
+
+    Parameters
+    ----------
+        imagename (str): The name of the image to convolve.
+        imagename2 (str): The name of the image to use as the restoring beam.
+        mode (str): The mode of convolution. Can be 'same' or 'transfer'.
+        add_prefix (str): The prefix to add to the output image name.
+
+    """
+    if mode == 'same':
+        imhd = imhead(imagename)
+        imsmooth(imagename=imagename,
+                 outfile=imagename.replace('.fits', '_convolved2D.fits'), overwrite=True,
+                 major=imhd['restoringbeam']['major'],
+                 minor=imhd['restoringbeam']['minor'],
+                 pa=imhd['restoringbeam']['positionangle'])
+        return (imagename.replace('.fits', '_convolved2D.fits'))
+
+    if mode == 'transfer' and imagename2 != None:
+        '''
+        Use restoring beam from image1 to convolve image2.
+        '''
+        imhd = imhead(imagename2)
+        outfile = imagename2.replace('.fits', add_prefix + '.fits')
+        imsmooth(imagename=imagename,
+                 outfile=outfile, overwrite=True,
+                 major=imhd['restoringbeam']['major'],
+                 minor=imhd['restoringbeam']['minor'],
+                 pa=imhd['restoringbeam']['positionangle'])
+        return (outfile)
+
+
+
+def run_analysis_list(my_list,ref_residual,ref_image,z,mask_=None,rms=None):
+    results_conc_compact = []
+    missing_data_im = []
+    missing_data_re = []
+#     z_d = {'VV705': 0.04019,'UGC5101':0.03937,'UGC8696':0.03734, 'VV250':0.03106}
+    if rms is None:
+        rms = mad_std(ctn(ref_residual))
+    if mask_ is None:
+        _, mask_ = mask_dilation(ref_image,#imagelist_vla[k],
+                                 sigma=6, iterations=2,
+                                    dilation_size=None, PLOT=True)
+
+    for i in tqdm(range(len(my_list))):
+    # for i in tqdm(range(0,3)):
+        crop_image = my_list[i]
+        crop_residual = ref_residual#residuallist_vla[k]
+        processing_results_model_compact = {} #store calculations only for source
+        processing_results_model_compact['#modelname'] = os.path.basename(crop_image)
+
+    #     processing_results_source,mask= measures(crop_image,crop_residual,z=zd,deblend=False,apply_mask=True,
+    #                            results_final = processing_results_source,
+    #                    plot_catalog = False,bkg_sub=False,bkg_to_sub = None,mask_component=None,
+    #                    npixels=500,fwhm=121,kernel_size=121,sigma_mask=7.0,last_level=3.0,
+    #                                              iterations=3,dilation_size=7,
+    #                    do_PLOT=True,show_figure=True,add_save_name='')
+        processing_results_model_compact, _, _ = measures(imagename=crop_image,
+                                                residualname=crop_residual,
+                                                z=z,rms=rms,
+                                                mask = mask_,
+#                                                 mask_component=mask_,
+                                                do_petro=False,
+                                                results_final=processing_results_model_compact,
+                                                do_PLOT=True,dilation_size=None,
+                                                apply_mask=False)
+        results_conc_compact.append(processing_results_model_compact)
+#     return(results_conc_compact)
+    return(processing_results_model_compact)
 
 
 """
@@ -6481,9 +6596,113 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              save_name_append='',logger=None):
     """
     Perform a Robust and Fast Multi-Sersic Decomposition with GPU acceleration.
-
-
     tr_solver:
+
+    Parameters
+    ----------
+    imagename: str
+        Name of the image to be fitted.
+    params_values_init: list
+        Initial parameters values for the model.
+    ncomponents: int
+        Number of components to be fitted.
+    init_constraints: dict
+        Initial constraints for the model.
+    data_2D_: 2D array
+        Image to be fitted.
+    residualdata_2D_: 2D array
+        Residual image to be fitted.
+    residualname: str
+        Name of the residual image to be fitted.
+    which_residual: str
+        Which residual to be used for the fitting.
+        Options: 'shuffled' or 'natural'.
+    init_params: float
+        Initial parameters for the model.
+    final_params: float
+        Final parameters for the model.
+    constrained: bool
+        If True, use initial constraints for the model.
+    fix_n: bool
+        If True, fix the Sersic index of the model.
+    fix_value_n: float
+        If True, fix the Sersic index of the model to this value.
+    dr_fix: float
+        If True, fix the centre position of the model.
+    fix_x0_y0: bool
+        If True, fix the centre position of the model.
+    psf_name: str
+        Name of the PSF image to be used for the convolution.
+    convolution_mode: str
+        If 'GPU', use GPU acceleration for the convolution.
+    convolve_cutout: bool
+        If True, convolve the image cutout with the PSF.
+    cut_size: int
+        Size of the cutout image.
+    self_bkg: bool
+        If True, use the image background as the residual background.
+    rms_map: 2D array
+        RMS map to be used for the fitting.
+    fix_geometry: bool
+        If True, fix the geometry of the model.
+    contrain_nelder: bool
+        If True, constrain the Nelder-Mead optimised parameters.
+    workers: int
+        Number of workers to be used for the fitting.
+    mask_region: 2D array
+        Mask to be used for the fitting.
+    special_name: str
+        Special name to be used for the output files.
+    method1: str
+        Method to be used for the fitting.
+    method2: str
+        Method to be used for the fitting.
+    reduce_fcn: str
+
+    loss: str
+
+    tr_solver: str
+
+    x_scale: str
+
+    ftol: float
+
+    xtol: float
+
+    gtol: float
+
+    verbose: int
+
+    max_nfev: int
+
+    regularize: bool
+        If True, regularize the model.
+    f_scale: float
+
+    maxiter: int
+
+    maxfev: int
+
+    xatol: float
+
+    fatol: float
+
+    return_all: bool
+
+    disp: bool
+
+    de_options: dict
+
+    save_name_append: str
+
+    logger: logger
+
+
+    returns
+    -------
+    result: dict
+        Dictionary containing the results of the fitting.
+
 
     """
 
@@ -6501,58 +6720,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     if convolution_mode == 'GPU':
         # data_2D_gpu = cp.asarray(data_2D)
         data_2D_gpu = jnp.array(data_2D)
-    if residualname is not None:
-        """
-        This is important for radio image fitting.
-
-        It uses the shuffled version of the residual cleaned image
-        originated from the interferometric deconvolution.
-
-        This ensures that the best model created here will be on top
-        of that rms noise so that flux conservation is maximized.
-
-        However, this residual is not added as model + shuffled_residual
-        only, but instead by a multiplication factor,
-        e.g. model + const* shuffled_residual, and const will be minimized
-        as well during the fitting (here, called `s_a`).
-        """
-        if residualdata_2D_ is not None:
-            residual_2D = residualdata_2D_
-        else:
-            residual_2D = pf.getdata(residualname)
-
-        if which_residual == 'shuffled':
-            residual_2D_to_use = shuffle_2D(residual_2D)
-        if which_residual == 'natural':
-            residual_2D_to_use = residual_2D
         
-        FlatSky_level = mad_std(residual_2D)
-        if logger is not None:
-            logger.debug(f" ==> Using clean background for optmization... ")
-        #         background = residual_2D #residual_2D_to_use
-        if convolution_mode == 'GPU':
-            FlatSky_level_GPU = jnp.array(FlatSky_level)
-            background = jnp.array(residual_2D_to_use)
-        else:
-            background = residual_2D_to_use
-
-    else:
-        FlatSky_level = mad_std(data_2D)
-        if self_bkg == True:
-            if rms_map is not None:
-                if logger is not None:
-                    logger.debug(f" ==> Using provided RMS map. ")
-                background = rms_map
-            else:
-                if logger is not None:
-                    logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
-                background_map = sep_background(imagename)
-                background = shuffle_2D(background_map.back())
-        else:
-            background = 0
-            if logger is not None:
-                logger.warning(f" ==> Using only flat sky for rms bkg.")
-
     if psf_name is not None:
         PSF_CONV = True
         try:
@@ -6576,6 +6744,69 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     else:
         PSF_CONV = False
         PSF_BEAM = None
+        
+    if residualname is not None:
+        """
+        This is important for radio image fitting.
+
+        It uses the shuffled version of the residual cleaned image
+        originated from the interferometric deconvolution.
+
+        This ensures that the best model created here will be on top
+        of that rms noise so that flux conservation is maximized.
+
+        However, this residual is not added as model + shuffled_residual
+        only, but instead by a multiplication factor,
+        e.g. model + const* shuffled_residual, and const will be minimized
+        as well during the fitting (here, called `s_a`).
+        """
+        if residualdata_2D_ is not None:
+            residual_2D = residualdata_2D_
+        else:
+            residual_2D = pf.getdata(residualname)
+
+        if which_residual == 'shuffled':
+            if logger is not None:
+                logger.debug(f" ==> Using clean shuffled background for optmization... ")
+            residual_2D_to_use = shuffle_2D(residual_2D)
+        if which_residual == 'natural':
+            if logger is not None:
+                logger.debug(f" ==> Using clean background for optmization... ")
+            """            
+            if psf_name is not None:
+                if logger is not None:
+                    logger.debug(f" ====> Deconvolving residual map... ")
+                residual_2D_to_use, _ = deconvolve_fft(residual_2D,
+                                                            PSF_BEAM_raw/PSF_BEAM_raw.sum())
+            else:
+                residual_2D_to_use = residual_2D
+            """
+            residual_2D_to_use = residual_2D
+            
+        FlatSky_level = mad_std(residual_2D)
+        #         background = residual_2D #residual_2D_to_use
+        if convolution_mode == 'GPU':
+            FlatSky_level_GPU = jnp.array(FlatSky_level)
+            background = jnp.array(residual_2D_to_use)
+        else:
+            background = residual_2D_to_use
+
+    else:
+        FlatSky_level = mad_std(data_2D)
+        if self_bkg == True:
+            if rms_map is not None:
+                if logger is not None:
+                    logger.debug(f" ==> Using provided RMS map. ")
+                background = rms_map
+            else:
+                if logger is not None:
+                    logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
+                background_map = sep_background(imagename)
+                background = shuffle_2D(background_map.back())
+        else:
+            background = 0
+            if logger is not None:
+                logger.warning(f" ==> Using only flat sky for rms bkg.")
 
     size = data_2D.shape
     if convolution_mode == 'GPU':
@@ -6644,12 +6875,15 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     if convolution_mode == 'GPU':
         @jit
         def convolve_on_gpu(image, psf):
+            """
+            This was before jax.scipy implementing fftconvolve.
+            It provides the same result, at the same speed. 
+            """
             # Calculate the new padded shape
             padded_shape = (image.shape[0] + psf.shape[0] - 1,
                             image.shape[1] + psf.shape[1] - 1)
 
             # Pad both image and psf to the new shape
-            # image_padded = pad_for_convolution(image, padded_shape)
             pad_shape = [(0, ts - s) for s, ts in zip(image.shape, padded_shape)]
             image_padded = jnp.pad(image, pad_shape, mode='constant')
             pad_shape = [(0, ts - s) for s, ts in zip(psf.shape, padded_shape)]
@@ -7196,6 +7430,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             parameter_results = result_mini.params.valuesdict().copy()
             parameter_results['#imagename'] = os.path.basename(crop_image)
             parameter_results['residualname'] = os.path.basename(crop_residual)
+            parameter_results['beam_size_px'] = psf_beam_zise
 
             results_compact_conv_morpho, _ = \
                 shape_measures(imagename=crop_image,
@@ -7818,7 +8053,37 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
                                           imagelist_vla, residuallist_vla,
                                           idx_em, idx_vla, idxs_em, z,
-                                          std_factor=10.0, ref_mask=None):
+                                          std_factor=0.5, ref_mask=None):
+
+    """
+    Perform interferometric decomposition of the images in the list.
+
+    Parameters
+    ----------
+    imagelist_em : list
+        List of e-merlin images.
+    imagelist_comb : list
+        List of combined images.
+    imagelist_vla : list
+        List of jvla images.
+    residuallist_vla : list
+        List of jvla residual images.
+    idx_em : int
+        Index of the e-merlin image.
+    idx_vla : int
+        Index of the jvla image.
+    idxs_em : list
+        List of indices of the e-merlin images.
+    z : float
+        Redshift of the source.
+    std_factor : float; default = 0.5
+        Factor to multiply the standard deviation of the image.
+        Do not modify this parameter, unless you know what you are doing. See
+        Fig. 5 in the paper for more details.
+    ref_mask : array
+        Reference mask.
+
+    """
     int_results = []
     R12_MASK_LIST = []
     R12_LIST = []
@@ -7839,77 +8104,77 @@ def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
     COMP_VLA_PROPS = []
     for l in range(0, len(imagelist_em_short)):
         for j in tqdm(range(0, len(imagelist_comb))):
-            try:
+            # try:
                 #                 i = idx_em # e-merlin image
-                k = idx_vla  # almost pure jvla image, but needs to have the same cellsize as of the e-merlin one
-                result_mini, results, results_short, Imask, I1mask_name, I1mask_2, R12, R12conv, M12, \
-                    M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name, I3comp_name, I3_residual_23_name = image_decomposition(
-                    #                 image1 = imagelist_comb[2],
-                    image1=imagelist_em_short[l],
-                    image2=imagelist_comb[j],
-                    image3=imagelist_vla[k],
-                    std_factor=std_factor, dilation_size=None, iterations=2,
-                    ref_mask=ref_mask,
-                )
-                int_results.append(results)
-                R12_MASK_LIST.append(R12conv)
-                M12_LIST.append(M12)
-                R12_LIST.append(R12)
-                M123_LIST.append(M123_opt)
-                M23_Mext_opt_LIST.append(Mext_opt)
-                M13_Mcomp_opt_LIST.append(Mcomp_opt)
-                I3RE_RT_LIST.append(I3re_name)
-                I3EXT_LIST.append(I3ext_name)
+            k = idx_vla  # almost pure jvla image, but needs to have the same cellsize as of the e-merlin one
+            result_mini, results, results_short, Imask, I1mask_name, I1mask_2, R12, R12conv, M12, \
+                M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name, I3comp_name, I3_residual_23_name = image_decomposition(
+                #                 image1 = imagelist_comb[2],
+                image1=imagelist_em_short[l],
+                image2=imagelist_comb[j],
+                image3=imagelist_vla[k],
+                std_factor=std_factor, dilation_size=None, iterations=2,
+                ref_mask=ref_mask,
+            )
+            int_results.append(results)
+            R12_MASK_LIST.append(R12conv)
+            M12_LIST.append(M12)
+            R12_LIST.append(R12)
+            M123_LIST.append(M123_opt)
+            M23_Mext_opt_LIST.append(Mext_opt)
+            M13_Mcomp_opt_LIST.append(Mcomp_opt)
+            I3RE_RT_LIST.append(I3re_name)
+            I3EXT_LIST.append(I3ext_name)
 
-                rms_i = mad_std(ctn(imagelist_em_short[l]))
-                rms_j = mad_std(ctn(R12))
+            rms_i = mad_std(ctn(imagelist_em_short[l]))
+            rms_j = mad_std(ctn(R12))
 
-                _, mask_extended = mask_dilation(imagelist_comb[j],
-                                                 # imagelist_vla[k],
-                                                 sigma=6, iterations=2,
-                                                 dilation_size=None, PLOT=True)
-                #                 _, mask_extended_2nd = mask_dilation(I3ext_name,#imagelist_vla[k],
-                #                              sigma=6, iterations=2,
-                #                                 dilation_size=None, PLOT=True)
+            _, mask_extended = mask_dilation(imagelist_comb[j],
+                                             # imagelist_vla[k],
+                                             sigma=6, iterations=2,
+                                             dilation_size=None, PLOT=True)
+            #                 _, mask_extended_2nd = mask_dilation(I3ext_name,#imagelist_vla[k],
+            #                              sigma=6, iterations=2,
+            #                                 dilation_size=None, PLOT=True)
 
-                _, mask_compact = mask_dilation(M12, rms=rms,
-                                                # we have to give a rms for model-based images
-                                                sigma=6, iterations=2,
-                                                dilation_size=None, PLOT=True)
-                results_extended = run_analysis_list([R12], residuallist_vla[k],
+            _, mask_compact = mask_dilation(M12, rms=rms,
+                                            # we have to give a rms for model-based images
+                                            sigma=6, iterations=2,
+                                            dilation_size=None, PLOT=True)
+            results_extended = run_analysis_list([R12], residuallist_vla[k],
+                                                 imagelist_vla[k],
+                                                 z,
+                                                 mask_extended, rms_j)
+            results_extended_2nd = run_analysis_list([I3ext_name],
+                                                     residuallist_vla[k],
                                                      imagelist_vla[k],
                                                      z,
-                                                     mask_extended, rms_j)
-                results_extended_2nd = run_analysis_list([I3ext_name],
-                                                         residuallist_vla[k],
-                                                         imagelist_vla[k],
-                                                         z,
-                                                         ref_mask, rms)
+                                                     ref_mask, rms)
 
-                results_compact = run_analysis_list([M12], residuallist_vla[k],
+            results_compact = run_analysis_list([M12], residuallist_vla[k],
+                                                imagelist_vla[k],
+                                                z,
+                                                mask_compact, rms_j)
+            results_compact_vla = run_analysis_list([Mcomp_opt],
+                                                    residuallist_vla[k],
                                                     imagelist_vla[k],
                                                     z,
-                                                    mask_compact, rms_j)
-                results_compact_vla = run_analysis_list([Mcomp_opt],
-                                                        residuallist_vla[k],
-                                                        imagelist_vla[k],
-                                                        z,
-                                                        ref_mask, rms)
+                                                    ref_mask, rms)
 
-                results_compact_EM = run_analysis_list([I1mask_name],
-                                                       residuallist_vla[k],
-                                                       imagelist_vla[k],
-                                                       z,
-                                                       mask_compact, rms_i)
-                EXTENDED_PROPS.append(results_extended)
-                EXTENDED_2nd_PROPS.append(results_extended_2nd)
-                COMP_EM_PROPS.append(results_compact_EM)
-                COMP_PROPS.append(results_compact)
-                COMP_VLA_PROPS.append(results_compact_vla)
+            results_compact_EM = run_analysis_list([I1mask_name],
+                                                   residuallist_vla[k],
+                                                   imagelist_vla[k],
+                                                   z,
+                                                   mask_compact, rms_i)
+            EXTENDED_PROPS.append(results_extended)
+            EXTENDED_2nd_PROPS.append(results_extended_2nd)
+            COMP_EM_PROPS.append(results_compact_EM)
+            COMP_PROPS.append(results_compact)
+            COMP_VLA_PROPS.append(results_compact_vla)
 
-            except:
-                print('Error on minimising image:', imagelist_comb[j])
-                IMAGELIST_ERROR.append(imagelist_comb[j])
+            # except:
+            #     print('Error on minimising image:', imagelist_comb[j])
+            #     IMAGELIST_ERROR.append(imagelist_comb[j])
     return (
     int_results, EXTENDED_PROPS, EXTENDED_2nd_PROPS, COMP_PROPS, COMP_EM_PROPS,
     COMP_VLA_PROPS,
@@ -8596,30 +8861,33 @@ def plot_interferometric_decomposition(imagename0, imagename,
     vmin_m = 1 * mad_std(m)  # vmin#0.01*std_m#0.5*m.min()#
     vmax_m = m.max()  # vmax#0.5*m.max()
 
-    levels_I1 = np.geomspace(2*I1.max(), 1.5 * np.std(I1), 7)
-    levels_g = np.geomspace(2*g.max(), 3 * std, 7)
-    levels_m = np.geomspace(2*m.max(), 20 * std_m, 7)
-    levels_r = np.geomspace(2*r.max(), 3 * std_r, 7)
+    levels_I1 = np.geomspace(2*I1.max(), 1.5 * np.std(I1), 6)
+    levels_g = np.geomspace(2*g.max(), 3 * std, 6)
+    levels_m = np.geomspace(2*m.max(), 20 * std_m, 6)
+    levels_r = np.geomspace(2*r.max(), 3 * std_r, 6)
     levels_neg = np.asarray([-3]) * std
+    script_R = "\u211B"
     if run_phase == '1st':
-        title_labels = [r'$I_1^{\rm mask}$',
-                        r'$I_2$',
-                        r'$I_{1}^{\rm mask} * \theta_2$',
-                        r'$R_{12} = I_2 - I_{1}^{\rm mask} * \theta_2 $'
+        title_labels = [r"$I_1^{\rm mask}$",
+                        r"$I_2$",
+                        r"$I_{1}^{\rm mask} * \theta_2$",
+                        r""+script_R+r"$_{12} = I_2 - I_{1}^{\rm mask} * "
+                                     r"\theta_2 $"
                         ]
 
     if run_phase == '2nd':
-        title_labels = [r'$R_{12}$',
-                        r'$I_3$',
-                        r'$I_{1}^{\rm mask} * \theta_3 + R_{12} * \theta_3$',
-                        r'$R_{T}$'
+        title_labels = [r""+script_R+r"$_{12}$",
+                        r"$I_3$",
+                        r"$I_{1}^{\rm mask} * \theta_3 + $"+script_R+r"$_{12} "
+                                                                     r"* \theta_3$",
+                        r""+script_R+r"$_{T}$"
                         ]
 
     if run_phase == 'compact':
-        title_labels = [r'$R_{12}$',
-                        r'$I_3$',
-                        r'$I_{1}^{\rm mask} * \theta_3$',
-                        r'$I_3 - I_{1}^{\rm mask} * \theta_3$'
+        title_labels = [r""+script_R+r"$_{12}$",
+                        r"$I_3$",
+                        r"$I_{1}^{\rm mask} * \theta_3$",
+                        r"$I_3 - I_{1}^{\rm mask} * \theta_3$"
                         ]
 
     # colors = [(0, 0, 0), (1, 1, 1)]
@@ -8646,9 +8914,17 @@ def plot_interferometric_decomposition(imagename0, imagename,
 
     ax.set_title(title_labels[0])
 
-    ax.contour(I1, levels=levels_I1[::-1], colors=cm,
+    cmap_magma_r = plt.cm.get_cmap('magma_r')
+    # contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
+    # contour_palette = ['#000000', '#222222', '#444444', '#666666', '#888888',
+    #                    '#AAAAAA', '#CCCCCC', '#EEEEEE', '#FFFFFF']
+    contour_palette = ['#000000', '#444444', '#666666', '#EEEEEE', '#EEEEEE',
+                       '#FFFFFF']
+
+
+    ax.contour(I1, levels=levels_I1[::-1], colors=contour_palette,
                extent=[-dx1, dx1, -dx1, dx1],
-               linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
+               linewidths=1.2, alpha=1.0)  # cmap='Reds', linewidths=0.75)
 
     cell_size = get_cell_size(imagename0)
 
@@ -8671,8 +8947,10 @@ def plot_interferometric_decomposition(imagename0, imagename,
 
     ax.set_title(title_labels[1])
 
-    ax.contour(g, levels=levels_g[::-1], colors=cm,extent=[-dx,dx,-dx,dx],
-               linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
+
+    ax.contour(g, levels=levels_g[::-1], colors=contour_palette,
+               extent=[-dx,dx,-dx,dx],
+               linewidths=1.2, alpha=1.0)  # cmap='Reds', linewidths=0.75)
 
     # cb = plt.colorbar(mappable=plt.gca().images[0],
     #                   cax=fig.add_axes([-0.0, 0.40, 0.02,0.19]))  # ,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
@@ -8686,7 +8964,7 @@ def plot_interferometric_decomposition(imagename0, imagename,
     cb.update_ticks()
 #     print('++++++++++++++++++++++')
 #     print(plt.gca().images[0])
-    cb.set_label(r'Flux [mJy/beam]', labelpad=1)
+    cb.set_label(r'Flux Density [mJy/beam]', labelpad=1)
     cb.ax.xaxis.set_tick_params(pad=1)
     cb.ax.tick_params(labelsize=12)
     cb.outline.set_linewidth(1)
@@ -8707,8 +8985,10 @@ def plot_interferometric_decomposition(imagename0, imagename,
     im_plot = ax.imshow(m, cmap='magma_r',extent=[-dx,dx,-dx,dx],
                         origin='lower', alpha=1.0, norm=norm2)
     ax.set_title(title_labels[2])
-    ax.contour(m, levels=levels_g[::-1], colors=cm,extent=[-dx,dx,-dx,dx],
-               linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    ax.contour(m, levels=levels_g[::-1],
+               colors=contour_palette,
+               extent=[-dx,dx,-dx,dx],
+               linewidths=1.2, alpha=1.0)  # cmap='Reds', linewidths=0.75)
     #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.08,0.3,0.02,0.4]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
 
     cell_size = get_cell_size(modelname)
@@ -8730,9 +9010,10 @@ def plot_interferometric_decomposition(imagename0, imagename,
               cmap='magma_r', alpha=1.0, norm=norm2)
     #     ax.imshow(r, cmap='magma_r',norm=norm,alpha=0.3,origin='lower')
 
-    ax.contour(r, levels=levels_r[::-1],extent=[-dx,dx,-dx,dx],
-               colors=cm,#colors='grey',
-               linewidths=0.8, alpha=1.0)  # cmap='Reds', linewidths=0.75)
+    ax.contour(r, levels=levels_r[::-1],
+               extent=[-dx,dx,-dx,dx],
+               colors=contour_palette,
+               linewidths=1.2, alpha=1.0)  # cmap='Reds', linewidths=0.75)
     ax.contour(r, levels=levels_neg[::-1],extent=[-dx,dx,-dx,dx],
                colors='k', linewidths=1.0,
                alpha=1.0)
@@ -9413,10 +9694,10 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
                         norm=norm,
                         aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
     
-    levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 5)
-    levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 7)
+    levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 6)
+    levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 6)
     levels_neg = neg_levels * std
-    levels_white = np.geomspace(g.max(), 0.1 * g.max(), 5)
+    levels_white = np.geomspace(g.max(), 0.1 * g.max(), 6)
     if add_contours:
         try:
             from matplotlib.colors import LinearSegmentedColormap
@@ -9425,11 +9706,12 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
             cmap_magma_r = plt.cm.get_cmap(CM)
 
             # Create a custom contour color palette with a continuous transition from white to black
-            contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
-
+            # contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
+            contour_palette = ['#000000', '#444444', '#666666', '#EEEEEE',
+                               '#EEEEEE', '#FFFFFF']
             # Create a custom colormap with reversed colors
-            colors_reversed = cmap_magma_r(np.linspace(1, 0, 256))
-            cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed", colors_reversed)
+            # colors_reversed = cmap_magma_r(np.linspace(1, 0, 256))
+            # cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed", colors_reversed)
 
             # Create a contour plot using the reversed "magma_r" colormap and custom contour colors
             # plt.contourf(X, Y, Z, cmap=cmap_reversed, levels=15)
@@ -9440,7 +9722,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
             # plt.show()
             
             contour=ax.contour(g, levels=levels_g[::-1], colors=contour_palette, 
-                       linewidths=1.5,extent=extent,
+                       linewidths=1.2,extent=extent,
                        alpha=1.0)
             # ax.clabel(contour, inline=1, fontsize=10)
         except:
