@@ -27,6 +27,9 @@ print(__doc__)
 print('Version',__version__, '('+__codename__+')')
 print('By',__author__)
 print('Date',__date__)
+import os
+import sys
+# sys.path.append("/mirror/scratch/lucatelli/app/miniconda3/envs/casa6/lib/python3.8/site-packages/")
 
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
@@ -60,7 +63,7 @@ import matplotlib as mpl_
 import glob
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS
-import os
+
 from astropy.stats import mad_std
 from scipy.ndimage import gaussian_filter
 from astropy import visualization
@@ -77,6 +80,7 @@ from scipy.signal import savgol_filter
 from astropy.cosmology import FlatLambdaCDM
 import numpy as np
 from astropy import units as u
+from astropy import coordinates
 import pandas as pd
 import sys
 import pickle
@@ -91,13 +95,15 @@ from sklearn.neighbors import KNeighborsClassifier
 
 
 # import pymc3 as pm
-
-from petrofit.photometry import make_radius_list
-from petrofit.petrosian import Petrosian
-from petrofit.photometry import source_photometry
-from petrofit.segmentation import make_catalog, plot_segments
-from petrofit.segmentation import plot_segment_residual
-from petrofit.photometry import order_cat
+# try:
+from petrofit import make_radius_list
+from petrofit import Petrosian
+from petrofit import source_photometry
+from petrofit import make_catalog, plot_segments
+from petrofit import plot_segment_residual
+from petrofit import order_cat
+# except:
+#     pass
 import copy
 # from copy import copy
 import astropy.io.fits as fits
@@ -116,8 +122,31 @@ except:
     print('Jax/GPU Libraries not imported.')
     pass
 #setting the GPU memory fraction to be used of 25% should be fine!
-os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.25'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.12'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+# os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=6'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
+#if you are using GPU, you MUST limit the number of CPU threads to be used.
+"""
+If you have a machine with multiple cores (e.g. > 16), using all will slow things 
+down, since the communication between all distributed processes with the GPU 
+will take longer...
+"""
+
+os.environ["NUM_CPUS"] = "6"  # Set the desired number of CPU threads here
+# os.environ["XLA_FLAGS"] = "--xla_cpu_threads=2"
+os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=6"  # Set the desired number of CPU
+# threads here
+
+# os.environ['MKL_NUM_THREADS']='6'
+# os.environ['OPENBLAS_NUM_THREADS']='6'
+# os.environ["NUM_INTER_THREADS"]="6"
+# os.environ["NUM_INTRA_THREADS"]="6"
+#
+# os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
+#                            "intra_op_parallelism_threads=6")
+
+
 # sys.path.append('../../scripts/analysis_scripts/')
 sys.path.append('../analysis_scripts/')
 
@@ -388,22 +417,22 @@ def arcsec_to_pc(z, cell_size, Om0=0.308):
     h = 67.8# * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
     d_A = cosmo.angular_diameter_distance(z=z)
-    print('D_a = ', d_A)  # 946.9318492873492 Mpc
+    # print('D_a = ', d_A)  # 946.9318492873492 Mpc
     theta = 1 * u.arcsec
     distance_pc = (theta * d_A).to(u.pc, u.dimensionless_angles())
     # unit is Mpc only now
-    print('Linear Distance = ', distance_pc)  # 3.384745689510495 Mpc
+    # print('Linear Distance = ', distance_pc)  # 3.384745689510495 Mpc
     return (distance_pc)
 
 def pixsize_to_pc(z, cell_size, Om0=0.308):
     h = 67.8  # * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
     d_A = cosmo.angular_diameter_distance(z=z)
-    print('D_a = ', d_A)  # 946.9318492873492 Mpc
+    # print('D_a = ', d_A)  # 946.9318492873492 Mpc
     theta = cell_size * u.arcsec
     distance_pc = (theta * d_A).to(u.pc, u.dimensionless_angles())  # unit is Mpc only now
 
-    print('Linear Distance = ', distance_pc)  # 3.384745689510495 Mpc
+    # print('Linear Distance = ', distance_pc)  # 3.384745689510495 Mpc
     return (distance_pc.value)
 
 
@@ -820,9 +849,9 @@ def tcreate_beam_psf(imname, cellsize=None,size=(128,128),app_name='',
     freq = str(imhd['refval'][2] / 1e9) + 'GHz'
     if aspect=='equal':
         print('WARNING: Using circular Gaussian for Gaussian beam convolution.')
-        minoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
-            imhd['restoringbeam']['minor']['unit'])
-        majoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
+        minoraxis = str(imhd['restoringbeam']['major']['value']) + str(
+            imhd['restoringbeam']['major']['unit'])
+        majoraxis = str(imhd['restoringbeam']['major']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
 
     else:
@@ -1009,8 +1038,8 @@ def get_cell_size(imagename):
     cell_size =  pixel_scale.copy()
     return(cell_size)
 
-def mask_dilation(image, cell_size=None, sigma=5,rms=None,
-                  dilation_size=None,iterations=3, dilation_type='disk',
+def mask_dilation(image, cell_size=None, sigma=6,rms=None,
+                  dilation_size=None,iterations=2, dilation_type='disk',
                   PLOT=False,show_figure=True):
 
 
@@ -1057,20 +1086,20 @@ def mask_dilation(image, cell_size=None, sigma=5,rms=None,
     if PLOT == True:
         fig = plt.figure(figsize=(15, 4))
         ax0 = fig.add_subplot(1, 4, 1)
-        ax0.imshow((mask3), origin='lower')
-        ax0.set_title(r'Mask above' + str(3) + '$\sigma$')
+        ax0.imshow((mask3), origin='lower',cmap='magma')
+        ax0.set_title(r'Mask above ' + str(3) + '$\sigma_{\mathrm{mad}}$')
         ax0.axis('off')
         ax1 = fig.add_subplot(1, 4, 2)
         #         ax1.legend(loc='lower left')
-        ax1.imshow((mask), origin='lower')
-        ax1.set_title(r'Mask above' + str(sigma) + '$\sigma$')
+        ax1.imshow((mask), origin='lower',cmap='magma')
+        ax1.set_title(r'Mask above ' + str(sigma) + '$\sigma_{\mathrm{mad}}$')
         ax1.axis('off')
         ax2 = fig.add_subplot(1, 4, 3)
-        ax2.imshow(data_mask_d, origin='lower')
+        ax2.imshow(data_mask_d, origin='lower',cmap='magma')
         ax2.set_title(r'Dilated mask')
         ax2.axis('off')
         ax3 = fig.add_subplot(1, 4, 4)
-        ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.01)
+        ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.01,CM='magma')
         ax3.set_title(r'Dilated mask $\times$ data')
         #         ax3.imshow(np.log(data*data_mask_d))
         plt.subplots_adjust(wspace=0.1, hspace=0.1)
@@ -1416,7 +1445,8 @@ def convolve_2D_smooth(imagename, imagename2=None,
 
 
 
-def run_analysis_list(my_list,ref_residual,ref_image,z,mask_=None,rms=None):
+def run_analysis_list(my_list,ref_residual,ref_image,z,mask_=None,rms=None,
+                      sigma=6):
     results_conc_compact = []
     missing_data_im = []
     missing_data_re = []
@@ -1425,7 +1455,7 @@ def run_analysis_list(my_list,ref_residual,ref_image,z,mask_=None,rms=None):
         rms = mad_std(ctn(ref_residual))
     if mask_ is None:
         _, mask_ = mask_dilation(ref_image,#imagelist_vla[k],
-                                 sigma=6, iterations=2,
+                                 sigma=sigma, iterations=2,
                                     dilation_size=None, PLOT=True)
 
     for i in tqdm(range(len(my_list))):
@@ -2349,7 +2379,7 @@ def level_statistics(img, cell_size=None, mask_component=None,
                     box_size=256, bkg_to_sub=None, apply_mask=True,
                     mask=None,rms=None,
                     results=None, dilation_size=None, iterations=2,
-                    add_save_name='', SAVE=True, show_figure=False, ext='.jpg'):
+                    add_save_name='', SAVE=False, show_figure=False, ext='.jpg'):
     """
     Function old name: plot_values_std
 
@@ -2358,8 +2388,8 @@ def level_statistics(img, cell_size=None, mask_component=None,
 
         1. Inner region: peak intensity -> 0.1 * peak intensity
         2. Mid region: 0.1 * peak intensity -> 10 * rms
-        3. Low region: 10 * rms -> 5 * rms
-        4. Uncertain region: 5 * rms -> 3 * rms
+        3. Low region: 10 * rms -> 6 * rms
+        4. Uncertain region: 6 * rms -> 3 * rms
 
     """
     if cell_size is None:
@@ -2423,8 +2453,8 @@ def level_statistics(img, cell_size=None, mask_component=None,
         except:
             levels_mid = np.asarray([0])
         try:
-            levels_low = np.geomspace(10 * std, (5.0  * std + dl), 2)
-            levels_uncertain = np.geomspace(5.0 * std, (3.0 * std + dl), 3)
+            levels_low = np.geomspace(10 * std, (6.0  * std + dl), 2)
+            levels_uncertain = np.geomspace(6.0 * std, (3.0 * std + dl), 3)
         except:
             levels_low = np.asarray([0])
             levels_uncertain = np.asarray([0])
@@ -2439,8 +2469,8 @@ def level_statistics(img, cell_size=None, mask_component=None,
             except:
                 levels_mid = np.asarray([0])
             try:
-                levels_low = np.geomspace(10 * std, (5.0 * std + dl), 2)
-                levels_uncertain = np.geomspace(3 * std, (1.0 * std + dl), 3)
+                levels_low = np.geomspace(10 * std, (6.0 * std + dl), 2)
+                levels_uncertain = np.geomspace(6 * std, (6.0 * std + dl), 3)
             except:
                 levels_low = np.asarray([0])
                 levels_uncertain = np.asarray([0])
@@ -2733,11 +2763,12 @@ def shape_measures(imagename, residualname, z, mask_component=None, sigma_mask=6
 
 
 def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
-             last_level=3.0, vmin_factor=1.0, plot_catalog=False,data_2D=None,
+             last_level=1.0, vmin_factor=1.0, plot_catalog=False,data_2D=None,
              npixels=128, fwhm=81, kernel_size=21, dilation_size=None,
              main_feature_index=0, results_final={}, iterations=2,
              fracX=0.10, fracY=0.10, deblend=False, bkg_sub=False,
              bkg_to_sub=None, rms=None,do_petro=True,
+             crop=False, box_size=256,
              apply_mask=True, do_PLOT=False, SAVE=True, show_figure=True,
              mask=None,do_measurements='all',compute_A=False,
              add_save_name='',logger=None):
@@ -2795,12 +2826,13 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     SAVE=SAVE, ext='.jpg')
     levels, fluxes, agrow, plt, \
         omask2, mask2, results_final = compute_image_properties(imagename,
-                                                        cell_size=cell_size,
                                                         residual=residualname,
+                                                        cell_size=cell_size,
                                                         mask_component=mask_component,
                                                         last_level=last_level,
                                                         sigma_mask=sigma_mask,
                                                         apply_mask=False,
+                                                        crop=crop,box_size=box_size,
                                                         mask=mask,
                                                         rms=rms,
                                                         data_2D=data_2D,
@@ -2954,11 +2986,11 @@ def deprecated(old_name, new_name):
         return wrapper
     return decorator
 
-def compute_image_properties(img, cell_size, residual, mask_component=None,
-                             aspect=1, last_level=3.0, mask=None, data_2D=None,
-                             dilation_size=2, iterations=None,
+def compute_image_properties(img, residual, cell_size=None, mask_component=None,
+                             aspect=1, last_level=1.0, mask=None, data_2D=None,
+                             dilation_size=None, iterations=2,
                              dilation_type='disk',
-                             sigma_mask=5, rms=None, results=None, bkg_to_sub=None,
+                             sigma_mask=6, rms=None, results=None, bkg_to_sub=None,
                              apply_mask=True, vmin_factor=3, vmax_factor=0.5,
                              crop=False, box_size=256,
                              SAVE=True, add_save_name='', show_figure=True,
@@ -2992,6 +3024,13 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     ####################################################################
     ############## CASA COMPONENT  #####################################
     ####################################################################
+
+    if cell_size is None:
+        try:
+            cell_size = get_cell_size(img)
+        except:
+            cell_size = 1.0
+
     g_hd = imhead(img)                                      ############
     freq = g_hd['refval'][2] / 1e9                          ############
     print(freq)                                             ############
@@ -3490,12 +3529,12 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
 
 
 
-    fig = plt.figure(figsize=(12, 5))
+    fig = plt.figure(figsize=(10, 4))
     ax1 = fig.add_subplot(1, 2, 1)
     # total_flux = 0.013
     # ax1.scatter(levels[:],np.cumsum(fluxes)/total_flux)
-    ax1.scatter(levels[:], np.cumsum(fluxes) / np.sum(fluxes),
-                label='Levels Norm Flux')
+    # ax1.scatter(levels[:], np.cumsum(fluxes) / np.sum(fluxes),
+    #             label='Levels Norm Flux')
     ax1.scatter(levels[:], np.cumsum(fluxes) / results['total_flux_mask'],
                 label='Mask Norm Flux')
     print('Sum of fluxes = ', np.sum(fluxes))
@@ -3505,25 +3544,30 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     # ax1.axvline(g.max()*0.5,label=r'$0.5\times \max$',color='purple')
     # ax1.axvline(g.max()*0.1,label=r'$0.1\times \max$',color='#E69F00')
     ax1.axvline(sigma_50,
-                label=r'Half-Flux $\sim$ {:0.2f}"'.format(C50radii*cell_size),
+                label=r"$R_{50}\sim $"f"{C50radii*cell_size:0.2f}''",
                 ls='-.', color='lime')
     ax1.axhline(L50_norm, ls='-.', color='lime')
     ax1.axvline(sigma_95,
-                label=r'95$\%$-Flux $\sim$ {:0.2f}"'.format(C95radii*cell_size),
-                ls='dashdot', color='#56B4E9')
-    ax1.axvline(std * 6, label=r'6.0$\times$ std', color='black')
+                label=r"$R_{95}\sim $"f"{C95radii*cell_size:0.2f}''",
+                # ls='--', 
+                color='#56B4E9')
+    ax1.axvline(std * 6, label=r"6.0$\times \sigma_{\mathrm{mad}}$", color='black')
     if last_level<3:
-        ax1.axvline(std * 3, label=r'3.0$\times$ std', color='brown')
+        ax1.axvline(std * 3, label=r"3.0$\times \sigma_{\mathrm{mad}}$", color='brown')
 
-    ax1.set_title('Total Flux '
-                  '($\sigma$ levels) = {:0.2f} mJy'.format(1000*np.sum(fluxes)))
+    ax1.set_title("Total Integrated Flux Density \n "
+                  r"($\sigma_{\mathrm{mad}}$ levels) = "
+                  f"{1000*np.sum(fluxes):.2f} mJy")
     #     ax1.axvline(mad_std(g)*1,label=r'$1.0\times$ std',color='gray')
-    ax1.axvline(levels[-1], label=r'' + str(last_level) + '$\\times$ std',
+    ax1.axvline(levels[-1], label=r"Mask Dilation",
                 color='cyan')
+    # ax1.axvline(levels[-1], label=r"" + str(float(last_level)) + "$\\times \sigma_{\mathrm{mad}}$",
+    #             color='cyan')
     #     plt.legend()
     ax1.set_xlabel('Levels [Jy/Beam]')
     # plt.ylabel('Integrated Flux per level [Jy]')
-    ax1.set_ylabel('Fraction of Integrated Flux per level')
+    # ax1.set_ylabel("Fraction of Integrated\nFlux Density per level")
+    ax1.set_ylabel("Fraction of Integrated Flux per level")
     ax1.semilogx()
     ax1.grid(alpha=0.5)
     # plt.xlim(1e-6,)
@@ -3553,7 +3597,7 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
             except:
                 pass
 
-    im_plot = ax2.imshow((g), cmap='magma_r', origin='lower', alpha=1.0,
+    im_plot = ax2.imshow(g, cmap='magma_r', origin='lower', alpha=1.0,
                          norm=norm,
                          aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
 
@@ -3562,26 +3606,30 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
     try:
         ax2.contour(g, levels=levels_50, colors='lime', linewidths=2.5,
                     alpha=1.0)  # cmap='Reds', linewidths=0.75)
-        ax2.contour(g, levels=levels_90, colors='white', linewidths=2.0,
-                    linestyles='dashdot',
-                    alpha=1.0)  # cmap='Reds', linewidths=0.75)
+        # ax2.contour(g, levels=levels_90, colors='white', linewidths=2.0,
+        #             # linestyles='--',
+        #             alpha=1.0)  # cmap='Reds', linewidths=0.75)
         ax2.contour(g, levels=levels_95, colors='#56B4E9', linewidths=2.0,
-                    linestyles='dashdot',
+                    # linestyles='--',
                     alpha=1.0)  # cmap='Reds', linewidths=0.75)
         #         ax2.contour(g, levels=levels_3sigma,colors='#D55E00',
         #         linewidths=1.5,alpha=1.0)#cmap='Reds', linewidths=0.75)
         ax2.contour(g, levels=[last_level * std], colors='cyan', linewidths=0.6,
                     alpha=1.0,
-                    linestyles='dashed')  # cmap='Reds', linewidths=0.75)
+                    # linestyles='--'
+                    )  # cmap='Reds', linewidths=0.75)
         ax2.contour(g, levels=[6.0 * std], colors='black', linewidths=1.5,
                     alpha=0.9,
-                    linestyles='dashed')  # cmap='Reds', linewidths=0.75)
-        ax2.contour(g, levels=[4.0 * std], colors='brown', linewidths=1.2,
+                    # linestyles='--'
+                    )  # cmap='Reds', linewidths=0.75)
+        ax2.contour(g, levels=[3.0 * std], colors='brown', linewidths=1.2,
                     alpha=0.9,
-                    linestyles='dashed')  # cmap='Reds', linewidths=0.75)
-        ax2.contour(g, levels=[5.0 * std], colors='brown', linewidths=0.6,
-                    alpha=0.3,
-                    linestyles='dashed')  # cmap='Reds', linewidths=0.75)
+                    # linestyles='--'
+                    )  # cmap='Reds', linewidths=0.75)
+        # ax2.contour(g, levels=[5.0 * std], colors='brown', linewidths=0.6,
+        #             alpha=0.3,
+        #             # linestyles='--'
+        #             )  # cmap='Reds', linewidths=0.75)
 
     except:
         print('Not plotting contours!')
@@ -3600,7 +3648,7 @@ def compute_image_properties(img, cell_size, residual, mask_component=None,
 
 def structural_morphology(imagelist, residuallist,
                           indices, masks_deblended,
-                          zd, big_mask, data_2D=None,
+                          zd, big_mask, data_2D=None,sigma_mask=6.0,
                           sigma_loop_init=6.0, do_measurements='all'):
     """
     From the emission  of a given source and its deblended components,
@@ -3659,7 +3707,7 @@ def structural_morphology(imagelist, residuallist,
                                                           mask_component=None,
                                                           npixels=500, fwhm=121,
                                                           kernel_size=121,
-                                                          sigma_mask=6.0,
+                                                          sigma_mask=sigma_mask,
                                                           last_level=3.0,
                                                           iterations=2,
                                                           dilation_size=None,
@@ -4710,6 +4758,11 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
         Lnu_NT, Lnu_NT_error = compute_Lnu(flux, z,
                                            alpha)  # 0.0014270422727500343
         SFR = 6.64 * (1e-29) * ((frequency) ** (-alpha_NT)) * Lnu_NT
+        if flux_error is not None:
+            Lnu_NT_error, Lnu_NT_error2 = compute_Lnu(flux_error, z, alpha)
+            SFR_error = 6.64 * (1e-29) * ((frequency) ** (-alpha_NT)) * Lnu_NT_error
+        else:
+            SFR_error = 0.0
 
     if calibration_kind == 'Tabatabaei2017':
         '''
@@ -4719,6 +4772,7 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
                                            alpha)  # 0.0014270422727500343
         SFR = 1.11 * 1e-37 * 1e9 * frequency * Lnu_NT
         if flux_error is not None:
+            Lnu_NT_error, Lnu_NT_error2 = compute_Lnu(flux_error, z, alpha)
             SFR_error = 1.11 * 1e-37 * 1e9 * frequency * Lnu_NT_error
         else:
             SFR_error = 0.0
@@ -4765,13 +4819,13 @@ def compute_SFR_NT(flux, frequency, z, alpha, alpha_NT=-0.85, flux_error=None,
 def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, npixels=32,
                 main_feature_index=0, sigma_mask=7, dilation_size=10,deblend=False,
                 apply_mask=True, PLOT=True, show_figure = True, results=None):
-    from petrofit.photometry import order_cat
-    from petrofit.photometry import make_radius_list
+    # from petrofit.photometry import order_cat
+    # from petrofit.photometry import make_radius_list
 
-    from petrofit.photometry import source_photometry
-    from petrofit.segmentation import make_catalog, plot_segments
-    from petrofit.segmentation import plot_segment_residual
-    from petrofit.photometry import order_cat
+    # from petrofit source_photometry
+    # from petrofit import make_catalog, plot_segments
+    # from petrofit import plot_segment_residual
+    # from petrofit import order_cat
 
     if results == None:
         results = {}
@@ -4804,8 +4858,8 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
         data_2D,
         threshold=1.0 * std,
         deblend=deblend,
-        kernel_size=kernel_size,
-        fwhm=fwhm,
+        # kernel_size=kernel_size,
+        # fwhm=fwhm,
         npixels=npixels,
         plot=PLOT, vmax=data_2D.max(), vmin=3 * std
     )
@@ -4881,7 +4935,7 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
         r_list,  # list of aperture radii
         # Options
         cutout_size=2 * max(r_list),  # Cutout out size, set to double the max radius
-        bkg_sub=False,  # Subtract background
+        bg_sub=False,  # Subtract background
         sigma=1, sigma_type='clip',  # Fit a 2D plane to pixels within 3 sigma of the mean
         plot=PLOT, vmax=0.3 * data_2D.max(), vmin=3 * std,  # Show plot with max and min defined above
     )
@@ -4985,7 +5039,7 @@ def petrosian_metrics(source, data_2D, segm, mask_source,global_mask=None,
                                                       r_list=r_list,
                                                       error=error,
                                                       cutout_size=cutout_size,
-                                                      bkg_sub=bkg_sub, sigma=sigma,
+                                                      bg_sub=bkg_sub, sigma=sigma,
                                                       sigma_type=sigma_type,
                                                       plot=plot, vmax=0.3 * data_2D.max(),
                                                       vmin=vmin * mad_std(data_2D)
@@ -5021,7 +5075,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
                                  vmin=1.0, plot=False, deblend=False,
                                  show_figure = True,plot_catalog=False,
                                  segm_reg= 'mask',vmax=0.1,bkg_to_sub=None,
-                                 fwhm=121, kernel_size=81, npixels=None,
+                                 fwhm=121, kernel_size=81, npixels=128,
                                  add_save_name='',logger=None):
     # if mask:
     if source_props == None:
@@ -5065,8 +5119,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
         cat, segm, segm_deblend = make_catalog(image=data_component,
                                                threshold=3 * std,
                                                deblend=deblend,
-                                               kernel_size=kernel_size,
-                                               fwhm=fwhm,
+                                               # kernel_size=kernel_size,
+                                               # fwhm=fwhm,
                                                npixels=npixels,
                                                # because we already deblended it!
                                                plot=plot_catalog,
@@ -5077,8 +5131,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
             cat, segm, segm_deblend = make_catalog(image=data_component,
                                                    threshold=0.5 * std,
                                                    deblend=deblend,
-                                                   kernel_size=kernel_size,
-                                                   fwhm=fwhm,
+                                                   # kernel_size=kernel_size,
+                                                   # fwhm=fwhm,
                                                    npixels=npixels,
                                                    # because we already deblended it!
                                                    plot=plot_catalog,
@@ -5088,8 +5142,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
             cat, segm, segm_deblend = make_catalog(image=data_component,
                                                    threshold=0.01 * std,
                                                    deblend=deblend,
-                                                   kernel_size=kernel_size,
-                                                   fwhm=fwhm,
+                                                   # kernel_size=kernel_size,
+                                                   # fwhm=fwhm,
                                                    npixels=npixels,
                                                    # because we already deblended it!
                                                    plot=plot_catalog,
@@ -5277,7 +5331,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
            cat, sorted_idx_list, segm, segm_deblend)
 
 def compute_petro_source(data_2D, mask_component=None, global_mask=None,
-                         imagename=None, i=0, source_props={},
+                         imagename=None, i=0, source_props={},positions=None,
                          sigma_level=3, bkg_sub=False,
                          vmin=1, plot=False, deblend=False, ):
     # if mask:
@@ -5311,7 +5365,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
 
     # help function to be used if iteration required.
     source_props, p = petro_params(source=source, data_2D=data_component, segm=segm,
-                                mask_source=mask_component,
+                                mask_source=mask_component,positions=positions,
                                 i=ii, petro_properties=source_props,
                                 rlast=None, sigma=sigma_level,
                                 vmin=vmin, bkg_sub=bkg_sub,
@@ -5372,7 +5426,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
         source_props['c' + ii + '_total_flux'] = total_comp_flux
     return (source_props)
 
-def petro_cat(data_2D, fwhm=24, npixels=None, kernel_size=15,
+def petro_cat(data_2D, fwhm=24, npixels=128, kernel_size=15,
               nlevels=30, contrast=0.001,bkg_sub=False,
               sigma_level=20, vmin=5,
               deblend=True, plot=False):
@@ -5382,7 +5436,9 @@ def petro_cat(data_2D, fwhm=24, npixels=None, kernel_size=15,
     cat, segm, segm_deblend = make_catalog(
         image=data_2D,
         threshold=sigma_level * mad_std(data_2D),
-        kernel_size=kernel_size, fwhm=fwhm, nlevels=nlevels,
+        # kernel_size=kernel_size,
+        # fwhm=fwhm,
+        nlevels=nlevels,
         deblend=deblend,
         npixels=npixels,contrast=contrast,
         plot=plot, vmax=data_2D.max(), vmin=vmin * mad_std(data_2D)
@@ -5394,7 +5450,7 @@ def petro_cat(data_2D, fwhm=24, npixels=None, kernel_size=15,
     return (cat, segm, sorted_idx_list)
 
 
-def petro_params(source, data_2D, segm, mask_source,
+def petro_params(source, data_2D, segm, mask_source, positions=None,
                  i='1', petro_properties={},sigma_type='clip',eta_value=None,
                  rlast=None, sigma=3, vmin=3, bkg_sub=True, plot=False):
     if rlast is None:
@@ -5408,7 +5464,8 @@ def petro_params(source, data_2D, segm, mask_source,
     cutout_size = 2 * max(r_list)
     flux_arr, area_arr, error_arr = source_photometry(source, data_2D, segm,
                                                       r_list, cutout_size=cutout_size,
-                                                      bkg_sub=bkg_sub, sigma=sigma,
+                                                      position2=positions,
+                                                      bg_sub=bkg_sub, sigma=sigma,
                                                       sigma_type=sigma_type,
                                                       plot=plot, vmax=0.3 * data_2D.max(),
                                                       vmin=vmin * mad_std(data_2D)
@@ -5465,7 +5522,7 @@ def petro_params(source, data_2D, segm, mask_source,
 
 
 def source_props(data_2D, source_props={},sigma_mask = 5,
-                 fwhm=24, npixels=None, kernel_size=15, nlevels=30,
+                 fwhm=24, npixels=128, kernel_size=15, nlevels=30,
                  contrast=0.001,sigma_level=20, vmin=5,bkg_sub=False,
                  deblend=True,PLOT=False,apply_mask=False):
     '''
@@ -5594,18 +5651,66 @@ def sep_background(imagename,mask=None,apply_mask=False,
     return(bkg)
 
 
-
 def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
                    deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
                    gain=1, filter_kernel=None, mask=None,
                    segmentation_map=False, clean_param=1.0, clean=True,
                    minarea=20, filter_type='matched', sort_by='flux',
                    bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
-                   apply_mask=False,sigma_mask=6,
+                   apply_mask=False, sigma_mask=6, minarea_factor=1.0,
                    show_bkg_map=False, show_detection=False):
     """
     Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
 
+    Parameters
+    ----------
+    imagename : str
+        Path to the image.
+    sigma : float
+        Sigma level for detection.
+    iterations : int
+        Number of iterations for the mask dilation.
+    dilation_size : int
+        Size of the dilation kernel.
+    deblend_nthresh : int
+        Number of thresholds for deblending.
+    deblend_cont : float
+        Minimum contrast ratio for deblending.
+    maskthresh : float
+        Threshold for the mask.
+    gain : float
+        Gain of the image.
+    filter_kernel : array
+        Filter kernel for the convolution.
+    mask : array
+        Mask to be applied to the image.
+    segmentation_map : bool
+        If True, returns the segmentation map.
+    clean_param : float
+        Cleaning parameter.
+    clean : bool
+        If True, clean the image.
+    minarea : int
+        Minimum area for detection.
+    filter_type : str
+        Type of filter to be used.
+    sort_by : str
+        Sort the output by flux or area.
+    bw : int
+        Box width for the background estimation.
+    bh : int
+        Box height for the background estimation.
+    fw : int
+        Filter width for the background estimation.
+    fh : int
+        Filter height for the background estimation.
+    ell_size_factor : int
+        Size of the ellipse to be plotted.
+    apply_mask : bool
+        If True, apply the mask to the image.
+    sigma_mask : float
+        Sigma level for the mask.
+    minarea_factor : float
 
     """
     import sep
@@ -5614,31 +5719,39 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     from matplotlib.text import Text
     from matplotlib import rcParams
 
-    data_2D = fitsio.read(imagename)
-    if len(data_2D.shape) == 4:
-        data_2D = data_2D[0][0]
-    m, s = np.mean(data_2D), mad_std(data_2D)
-    bkg = sep.Background(data_2D)
+    # filter_kernel_5x5 = np.array([
+    #     [1, 1, 1, 1, 1],
+    #     [1, 2, 2, 2, 1],
+    #     [1, 2, 3, 2, 1],
+    #     [1, 2, 2, 2, 1],
+    #     [1, 1, 1, 1, 1]])
+
+    data_2D_ = fitsio.read(imagename)
+    if len(data_2D_.shape) == 4:
+        data_2D_ = data_2D_[0][0]
+    m, s = np.mean(data_2D_), mad_std(data_2D_)
+    bkg = sep.Background(data_2D_)
 
     if apply_mask:
         if mask is not None:
-            data_2D = data_2D * mask
+            data_2D = data_2D_ * mask
         else:
-            _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
+            _, mask = mask_dilation(data_2D_, sigma=sigma_mask, iterations=iterations,
                                     dilation_size=dilation_size)
-            data_2D = data_2D * mask
+            data_2D = data_2D_ * mask
 
-    # else:
-    #     mask = None
+    else:
+        data_2D = data_2D_
+
     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
-    print(bkg.globalback)
-    print(bkg.globalrms)
+    # print(bkg.globalback)
+    # print(bkg.globalrms)
     bkg_image = bkg.back()
     bkg_rms = bkg.rms()
 
     if show_bkg_map == True:
         plt.figure()
-        #display bkg map.
+        # display bkg map.
         plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=m - s,
                    vmax=m + s, origin='lower')
         plt.colorbar()
@@ -5647,31 +5760,34 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
         plt.imshow(bkg_image)
         plt.close()
     # fast_plot2(bkg_rms)
-    data_sub = data_2D - bkg
+    data_sub = data_2D  - bkg
     if segmentation_map == True:
-        objects, seg_maps = sep.extract(data_sub, thresh=sigma,
-                                        minarea=minarea, filter_type=filter_type,
+        npixels = int(minarea * minarea_factor)
+        objects, seg_maps = sep.extract(data_sub, thresh=sigma * s,
+                                        minarea=npixels, filter_type=filter_type,
                                         deblend_nthresh=deblend_nthresh,
-                                        deblend_cont=deblend_cont, filter_kernel=filter_kernel,
+                                        deblend_cont=deblend_cont,
+                                        filter_kernel=filter_kernel,
                                         maskthresh=maskthresh, gain=gain,
                                         clean=clean, clean_param=clean_param,
                                         segmentation_map=segmentation_map,
-                                        err=bkg.globalrms, mask=mask)
+                                        err=None, mask=None)
     else:
-        objects = sep.extract(data_sub, thresh=sigma,
-                              minarea=minarea, filter_type=filter_type,
+        npixels = int(minarea * minarea_factor)
+        objects = sep.extract(data_sub, thresh=sigma * s,
+                              minarea=npixels, filter_type=filter_type,
                               deblend_nthresh=deblend_nthresh,
                               deblend_cont=deblend_cont, filter_kernel=filter_kernel,
                               maskthresh=maskthresh, gain=gain,
                               clean=clean, clean_param=clean_param,
                               segmentation_map=segmentation_map,
-                              err=bkg.globalrms, mask=mask)
+                              err=None, mask=None)
 
     # len(objects)
     from matplotlib.patches import Ellipse
     from skimage.draw import ellipse
 
-    m, s = np.mean(data_sub), np.std(data_sub)
+    # m, s = np.mean(data_sub), np.std(data_sub)
     if show_detection == True:
         fig, ax = plt.subplots()
         im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
@@ -5726,22 +5842,191 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     if sort_by == 'flux':
         sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
         sorted_arr_desc = mask_fluxes[sorted_indices_desc]
+
+    objects_sorted = {}
+    objects_sorted['xc'] = np.asarray([1] * len(objects))
+    objects_sorted['yc'] = np.asarray([1] * len(objects))
+    for i in range(len(objects)):
+        objects_sorted['xc'][i] = objects['x'][sorted_indices_desc[i]]
+        objects_sorted['yc'][i] = objects['y'][sorted_indices_desc[i]]
+
     if show_detection == True:
         for i in range(len(objects)):
             xc = objects['x'][sorted_indices_desc[i]]
             yc = objects['y'][sorted_indices_desc[i]]
             label = str('ID' + str(i + 1))
-            text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label, ha='center', va='center', color='red')
+            text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label,
+                        ha='center', va='center', color='red')
             ax.add_artist(text)
 
         plt.axis('off')
-        plt.show()
+        # plt.show()
         plt.savefig(imagename + '_SEP.jpg', dpi=300, bbox_inches='tight')
+        plt.show()
 
     if segmentation_map == True:
-        return (masks_regions, sorted_indices_desc, seg_maps)
+        return (masks_regions, sorted_indices_desc, seg_maps, objects_sorted)
     else:
-        return (masks_regions, sorted_indices_desc)
+        return (masks_regions, sorted_indices_desc, objects_sorted)
+
+# def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
+#                    deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
+#                    gain=1, filter_kernel=None, mask=None,
+#                    segmentation_map=False, clean_param=1.0, clean=True,
+#                    minarea=20, filter_type='matched', sort_by='flux',
+#                    bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
+#                    apply_mask=False,sigma_mask=6,minarea_factor=1.0,
+#                    show_bkg_map=False, show_detection=False):
+#     """
+#     Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
+#
+#
+#     """
+#     import sep
+#     import fitsio
+#     import matplotlib.pyplot as plt
+#     from matplotlib.text import Text
+#     from matplotlib import rcParams
+#
+#     data_2D = fitsio.read(imagename)
+#     if len(data_2D.shape) == 4:
+#         data_2D = data_2D[0][0]
+#     m, s = np.mean(data_2D), mad_std(data_2D)
+#     bkg = sep.Background(data_2D)
+#
+#     if apply_mask:
+#         if mask is not None:
+#             data_2D = data_2D * mask
+#         else:
+#             _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
+#                                     dilation_size=dilation_size)
+#             data_2D = data_2D * mask
+#
+#     # else:
+#     #     mask = None
+#     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
+#     # print(bkg.globalback)
+#     # print(bkg.globalrms)
+#     bkg_image = bkg.back()
+#     bkg_rms = bkg.rms()
+#
+#     if show_bkg_map == True:
+#         plt.figure()
+#         #display bkg map.
+#         plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=m - s,
+#                    vmax=m + s, origin='lower')
+#         plt.colorbar()
+#         plt.close()
+#         plt.figure()
+#         plt.imshow(bkg_image)
+#         plt.close()
+#     # fast_plot2(bkg_rms)
+#     data_sub = data_2D - bkg
+#     if segmentation_map == True:
+#         npixels = int(minarea * minarea_factor)
+#         objects, seg_maps = sep.extract(data_sub, thresh=sigma,
+#                                         minarea=npixels, filter_type=filter_type,
+#                                         deblend_nthresh=deblend_nthresh,
+#                                         deblend_cont=deblend_cont, filter_kernel=filter_kernel,
+#                                         maskthresh=maskthresh, gain=gain,
+#                                         clean=clean, clean_param=clean_param,
+#                                         segmentation_map=segmentation_map,
+#                                         err=bkg.globalrms, mask=mask)
+#     else:
+#         npixels = int(minarea * minarea_factor)
+#         objects = sep.extract(data_sub, thresh=sigma,
+#                               minarea=npixels, filter_type=filter_type,
+#                               deblend_nthresh=deblend_nthresh,
+#                               deblend_cont=deblend_cont, filter_kernel=filter_kernel,
+#                               maskthresh=maskthresh, gain=gain,
+#                               clean=clean, clean_param=clean_param,
+#                               segmentation_map=segmentation_map,
+#                               err=bkg.globalrms, mask=mask)
+#
+#     # len(objects)
+#     from matplotlib.patches import Ellipse
+#     from skimage.draw import ellipse
+#
+#     m, s = np.mean(data_sub), np.std(data_sub)
+#     if show_detection == True:
+#         fig, ax = plt.subplots()
+#         im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
+#                        vmin=m - s, vmax=m + s, origin='lower')
+#
+#     masks_regions = []
+#
+#     y, x = np.indices(data_2D.shape[:2])
+#     for i in range(len(objects)):
+#         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
+#                     width=2 * ell_size_factor * objects['a'][i],
+#                     height=2 * ell_size_factor * objects['b'][i],
+#                     angle=objects['theta'][i] * 180. / np.pi)
+#
+#         xc = objects['x'][i]
+#         yc = objects['y'][i]
+#         a = ell_size_factor * objects['a'][i]
+#         b = ell_size_factor * objects['b'][i]
+#         theta = objects['theta'][i]
+#         rx = (x - xc) * np.cos(theta) + (y - yc) * np.sin(theta)
+#         ry = (y - yc) * np.cos(theta) - (x - xc) * np.sin(theta)
+#
+#         inside = ((rx / a) ** 2 + (ry / b) ** 2) <= 1
+#         mask_ell = np.zeros_like(data_2D)
+#         mask_ell[inside] = True
+#         if show_detection == True:
+#             e.set_facecolor('none')
+#             e.set_edgecolor('red')
+#             ax.add_artist(e)
+#         masks_regions.append(mask_ell)
+#
+#     #         plt.savefig('components_SEP.pdf',dpi=300, bbox_inches='tight')
+#     flux, fluxerr, flag = sep.sum_circle(data_sub, objects['x'], objects['y'],
+#                                          3.0, err=bkg.globalrms, gain=1.0)
+#     for i in range(len(objects)):
+#         print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
+#     objects['b'] / objects['a'], np.rad2deg(objects['theta'])
+#
+#     # sort regions from largest size to smallest size.
+#     mask_areas = []
+#     mask_fluxes = []
+#     for mask_comp in masks_regions:
+#         area_mask = np.sum(mask_comp)
+#         sum_mask = np.sum(mask_comp * data_2D)
+#         mask_areas.append(area_mask)
+#         mask_fluxes.append(sum_mask)
+#     mask_areas = np.asarray(mask_areas)
+#     mask_fluxes = np.asarray(mask_fluxes)
+#     if sort_by == 'area':
+#         sorted_indices_desc = np.argsort(mask_areas)[::-1]
+#         sorted_arr_desc = mask_areas[sorted_indices_desc]
+#     if sort_by == 'flux':
+#         sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
+#         sorted_arr_desc = mask_fluxes[sorted_indices_desc]
+#
+#     objects_sorted = {}
+#     objects_sorted['xc'] = np.asarray([1] * len(objects))
+#     objects_sorted['yc'] = np.asarray([1] * len(objects))
+#     for i in range(len(objects)):
+#         objects_sorted['xc'][i] = objects['x'][sorted_indices_desc[i]]
+#         objects_sorted['yc'][i] = objects['y'][sorted_indices_desc[i]]
+#
+#     if show_detection == True:
+#         for i in range(len(objects)):
+#             xc = objects['x'][sorted_indices_desc[i]]
+#             yc = objects['y'][sorted_indices_desc[i]]
+#             label = str('ID' + str(i + 1))
+#             text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label, ha='center', va='center', color='red')
+#             ax.add_artist(text)
+#
+#         plt.axis('off')
+#         # plt.show()
+#         plt.savefig(imagename + '_SEP.jpg', dpi=300, bbox_inches='tight')
+#         plt.show()
+#
+#     if segmentation_map == True:
+#         return (masks_regions, sorted_indices_desc, seg_maps, objects_sorted)
+#     else:
+#         return (masks_regions, sorted_indices_desc, objects_sorted)
 
 
 """
@@ -5903,13 +6188,36 @@ def construct_model_parameters(n_components=None, params_values_init=None,
 
     Parameters
     ----------
-    n_components:
-    params_values_init: np.array or None; optional
-        np.array containing initial values for paremeters. These values
-        are generated using
-            params_values_init = read_imfit_params(imfit_config_file).
+    n_components : int, optional
+        Number of components to be fitted. The default is None.
+    params_values_init : list, optional
+        List of initial parameters to be used as initial guess for the fit.
+        The default is None.
+    init_constraints : dict, optional
+        Dictionary containing initial constraints to be used as initial guess
+        for the fit. The default is None.
+    constrained : bool, optional
+        If True, then the fit will be constrained. The default is True.
+    fix_n : bool, optional
+        If True, then the Sersic index will be fixed to 0.5. The default is False.
+    fix_value_n : float, optional
+        If True, then the Sersic index will be fixed to this value. The default is False.
+    fix_x0_y0 : bool, optional
+        If True, then the centre position will be fixed to the initial guess
+        value. The default is False.
+    dr_fix : float, optional
+        If True, then the centre position will be fixed to the initial guess
+        value. The default is False.
+    fix_geometry : bool, optional
+        If True, then the geometry of the components will be fixed to the
+        initial guess value. The default is True.
 
-
+    ----------------------------
+    These will be removed in a future version.
+    init_params : float, optional
+        Initial parameter value. The default is 0.25.
+    final_params : float, optional
+        Final parameter value. The default is 4.0.
     """
 
     if n_components is None:
@@ -6210,7 +6518,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             dR = R50 * 0.5
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
-                            R50_max = 1.5*init_constraints['c' + jj + '_R50']
+                            R50_max = 2.0*init_constraints['c' + jj + '_R50']
                             R50_min = R50 * 0.01 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -6469,7 +6777,7 @@ def add_extra_component(petro_properties, copy_from_id):
         petro_properties_copy['c' + str(copy_from_id) + '_' + unique_list[k]]
         if unique_list[k] == 'R50':
             # multiply the R50 value by a factor, e.g., 2.0
-            factor = 4
+            factor = 3.0
             petro_properties_copy[
                 'c' + str(new_comp_id) + '_' + unique_list[k]] = \
             petro_properties_copy[
@@ -6486,10 +6794,177 @@ def add_extra_component(petro_properties, copy_from_id):
     return (petro_properties_copy)
 
 
+def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
+                    deblend_nthresh=5, deblend_cont=1e-6, maskthresh=0.0,
+                    gain=1, filter_kernel=None, mask=None,
+                    segmentation_map=False, clean_param=1.0, clean=True,
+                    minarea=100, minarea_factor=1, filter_type='matched', sort_by='flux',
+                    bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
+                    apply_mask=False, sigma_mask=6,
+                    show_bkg_map=False, show_detection=False):
+    """
+    Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
+
+
+    """
+    import sep
+    import fitsio
+    import matplotlib.pyplot as plt
+    from matplotlib.text import Text
+    from matplotlib import rcParams
+
+    data_2D = ctn(imagename)
+    if len(data_2D.shape) == 4:
+        data_2D = data_2D[0][0]
+    m, s = np.mean(data_2D), mad_std(data_2D)
+    bkg = 0.0
+
+    bkg = 0.0  # sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
+    # print(bkg.globalback)
+    # print(bkg.globalrms)
+    bkg_image = 0.0  # bkg.back()
+    bkg_rms = 0.0  # bkg.rms()
+
+    data_sub = data_2D - bkg
+
+    if apply_mask:
+        if mask is not None:
+            data_sub = data_sub * mask
+        else:
+            _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
+                                    dilation_size=dilation_size)
+            data_sub = data_sub * mask
+
+    # else:
+    #     mask = None
+    if segmentation_map == True:
+        # print(data_sub)
+        npixels = int(minarea * minarea_factor)
+        cat, segm, seg_maps = make_catalog(image=data_sub,
+                                           threshold=sigma * s,
+                                           deblend=True, contrast=deblend_cont,
+                                           nlevels=deblend_nthresh,
+                                           npixels=npixels,
+                                           plot=True, vmin=1.0 * s)
+        indices = order_cat(cat, key='segment_flux', reverse=True)
+        masks_deblended = []
+        for k in range(len(indices)):
+            print(k)
+            masks_deblended.append(seg_maps == seg_maps.labels[indices[k]])
+
+    else:
+        npixels = int(minarea * minarea_factor)
+        cat, segm, seg_maps = make_catalog(image=data_sub,
+                                           threshold=sigma * s,
+                                           deblend=True, contrast=deblend_cont,
+                                           nlevels=deblend_nthresh,
+                                           npixels=npixels,
+                                           plot=True, vmin=1.0 * s)
+        indices = order_cat(cat, key='segment_flux', reverse=True)
+        masks_deblended = []
+        for k in range(len(indices)):
+            print(k)
+            masks_deblended.append(seg_maps == seg_maps.labels[indices[k]])
+
+    # len(objects)
+    from matplotlib.patches import Ellipse
+    from skimage.draw import ellipse
+
+    m, s = np.mean(data_sub), np.std(data_sub)
+    if show_detection == True:
+        fig, ax = plt.subplots()
+        im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
+                       vmin=m - s, vmax=m + s, origin='lower')
+
+    masks_regions = []
+
+    y, x = np.indices(data_2D.shape[:2])
+    objects = cat
+    for i in range(len(cat)):
+        source = cat[i]
+        seg_mask = (seg_maps.data == i + 1)
+        e = Ellipse(xy=(source.centroid[0], source.centroid[1]),
+                    width=2 * ell_size_factor * source.equivalent_radius.value,
+                    height=2 * ell_size_factor * (
+                                1 - source.ellipticity.value) * source.equivalent_radius.value,
+                    # angle=source.orientation.value * 180. / np.pi
+                    angle=source.orientation.value
+                    )
+
+        xc = source.centroid[0]
+        yc = source.centroid[1]
+        a = ell_size_factor * source.equivalent_radius.value
+        b = ell_size_factor * (
+                    1 - source.ellipticity.value) * source.equivalent_radius.value
+        theta = source.orientation.value
+        rx = (x - xc) * np.cos(theta) + (y - yc) * np.sin(theta)
+        ry = (y - yc) * np.cos(theta) - (x - xc) * np.sin(theta)
+
+        inside = ((rx / a) ** 2 + (ry / b) ** 2) <= 1
+        mask_ell = np.zeros_like(data_2D)
+        mask_ell[inside] = True
+        if show_detection == True:
+            e.set_facecolor('none')
+            e.set_edgecolor('red')
+            ax.add_artist(e)
+        masks_regions.append(seg_mask)
+
+    #         plt.savefig('components_SEP.pdf',dpi=300, bbox_inches='tight')
+    # flux, fluxerr, flag = sep.sum_circle(data_sub, objects['x'], objects['y'],
+    #                                      3.0, err=bkg.globalrms, gain=1.0)
+    # for i in range(len(objects)):
+    #     print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
+    # objects['b'] / objects['a'], np.rad2deg(objects['theta'])
+
+    # sort regions from largest size to smallest size.
+    mask_areas = []
+    mask_fluxes = []
+    for mask_comp in masks_regions:
+        area_mask = np.sum(mask_comp)
+        sum_mask = np.sum(mask_comp * data_2D)
+        mask_areas.append(area_mask)
+        mask_fluxes.append(sum_mask)
+    mask_areas = np.asarray(mask_areas)
+    mask_fluxes = np.asarray(mask_fluxes)
+    if sort_by == 'area':
+        sorted_indices_desc = np.argsort(mask_areas)[::-1]
+        sorted_arr_desc = mask_areas[sorted_indices_desc]
+    if sort_by == 'flux':
+        sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
+        sorted_arr_desc = mask_fluxes[sorted_indices_desc]
+
+    objects_sorted = {}
+    objects_sorted['xc'] = np.asarray([1] * len(cat))
+    objects_sorted['yc'] = np.asarray([1] * len(cat))
+    for i in range(len(cat)):
+        source = cat[sorted_indices_desc[i]]
+        objects_sorted['xc'][i] = source.centroid[0]
+        objects_sorted['yc'][i] = source.centroid[1]
+
+    if show_detection == True:
+        for i in range(len(cat)):
+            source = cat[sorted_indices_desc[i]]
+            xc = source.centroid[0]
+            yc = source.centroid[1]
+            label = str('ID' + str(i + 1))
+            text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label,
+                        ha='center', va='center', color='red')
+            ax.add_artist(text)
+
+        plt.axis('off')
+        # plt.show()
+        plt.savefig(imagename + '_SEP_phot.jpg', dpi=300, bbox_inches='tight')
+        plt.show()
+
+    if segmentation_map == True:
+        return (masks_regions, sorted_indices_desc, seg_maps, objects_sorted)
+    else:
+        return (masks_regions, sorted_indices_desc, objects_sorted)
+
 def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 bw=51, bh=51, fw=15, fh=15, sigma=15, ell_size_factor=2.0,
-                deblend_cont=1e-7, deblend_nthresh=15,minarea=None,
-                show_detection=True,
+                deblend_cont=1e-7, deblend_nthresh=15,minarea=None,sigma_mask=6,
+                show_detection=True,use_extraction_positions=False,
                 clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
                 show_petro_plots=False):
     """
@@ -6510,41 +6985,76 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                               cell_size=get_cell_size(crop_image))
     #     eimshow(crop_image, vmin_factor=5)
     std_res = mad_std(ctn(crop_residual))
-    _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
+    _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
                             iterations=2, rms=std_res)
     # plt.figure()
 
     # _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
     #                         iterations=2)
-    masks, indices, seg_maps = sep_source_ext(crop_image, bw=bw, bh=bh,
-                                              fw=fw, fh=fh,
-                                              minarea=minarea,
-                                              segmentation_map=True,
-                                              filter_type='matched', mask=None,
-                                              deblend_nthresh=deblend_nthresh,
-                                              deblend_cont=deblend_cont,
-                                              clean_param=clean_param, 
-                                              clean=clean,
-                                              sort_by=sort_by,
-                                              sigma=sigma,
-                                              ell_size_factor=ell_size_factor,
-                                              apply_mask=apply_mask,
-                                              show_detection=show_detection)
+    masks, indices, seg_maps, objects = \
+        sep_source_ext(crop_image, bw=bw,
+                       bh=bh,
+                       fw=fw, fh=fh,
+                       minarea=minarea,
+                       segmentation_map=True,
+                       filter_type='matched', mask=None,
+                       deblend_nthresh=deblend_nthresh,
+                       deblend_cont=deblend_cont,
+                       clean_param=clean_param,
+                       clean=clean,
+                       sort_by=sort_by,
+                       sigma=sigma,
+                       ell_size_factor=ell_size_factor,
+                       apply_mask=apply_mask,
+                       show_detection=show_detection)
+
+    # masks, indices, seg_maps, objects = \
+    #     phot_source_ext(crop_image, bw=bw,
+    #                    bh=bh,
+    #                    fw=fw, fh=fh,
+    #                    minarea=minarea,
+    #                    segmentation_map=True,
+    #                    filter_type='matched', mask=None,
+    #                    deblend_nthresh=deblend_nthresh,
+    #                    deblend_cont=deblend_cont,
+    #                    clean_param=clean_param,
+    #                    clean=clean,
+    #                    sort_by=sort_by,
+    #                    sigma=sigma,
+    #                    ell_size_factor=ell_size_factor,
+    #                    apply_mask=apply_mask,
+    #                    show_detection=show_detection)
+
 
     data_2D = ctn(crop_image)
     sigma_level = 3
     vmin = 3
     # i = 0 #to be used in indices[0], e.g. first component
     sources_photometries = {}  # init dict to store values.
-    for i in range(len(indices)):
-        # ii = str(i+1)
-        mask_component = masks[indices[i]]
-        data_component = data_2D * mask_component
-        sources_photometries = compute_petro_source(data_component,
-                                                    mask_component=mask_component,
-                                                    sigma_level=1,
-                                                    i=i, plot=show_petro_plots,
-                                                    source_props=sources_photometries)
+    if use_extraction_positions == True:
+        for i in range(len(indices)):
+            # ii = str(i+1)
+            positions = np.array([objects['xc'][i], objects['yc'][i]])
+            mask_component = masks[indices[i]]
+            data_component = data_2D * mask_component
+            sources_photometries = compute_petro_source(data_component,
+                                                        mask_component=mask_component,
+                                                        sigma_level=1,positions=positions,
+                                                        i=i, plot=show_petro_plots,
+                                                        source_props=sources_photometries)
+
+    else:
+        for i in range(len(indices)):
+            # ii = str(i+1)
+            mask_component = masks[indices[i]]
+            data_component = data_2D * mask_component
+            sources_photometries = compute_petro_source(data_component,
+                                                        mask_component=mask_component,
+                                                        sigma_level=1,
+                                                        i=i, plot=show_petro_plots,
+                                                        source_props=sources_photometries)
+
+
     sources_photometries['ncomps'] = len(indices)
 
     # omaj, omin, _, _, _ = beam_shape(crop_image)
@@ -6575,16 +7085,16 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
              residualname=None,which_residual='shuffled',
              init_params=0.25, final_params=4.0, constrained=True,
-             fix_n=True, fix_value_n=False, dr_fix=2,
+             fix_n=True, fix_value_n=False, dr_fix=3,
              fix_x0_y0=False, psf_name=None, convolution_mode='CPU',
              convolve_cutout=False, cut_size=512, self_bkg=False, rms_map=None,
              fix_geometry=True, contrain_nelder=False, workers=6,mask_region = None,
              special_name='', method1='least_squares', method2='least_squares',
              reduce_fcn='neglogcauchy',loss="cauchy",tr_solver="exact",x_scale = 'jac',
-             ftol=1e-14, xtol=1e-14, gtol=1e-14, verbose=2,max_nfev=200000,
-             regularize  = True, f_scale = 0.5,
-             maxiter = 30000, maxfev = 30000, xatol = 1e-14,
-             fatol = 1e-14, return_all = True, disp = True,
+             ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,max_nfev=200000,
+             regularize  = True, f_scale = 1.0,
+             maxiter = 30000, maxfev = 30000, xatol = 1e-12,
+             fatol = 1e-12, return_all = True, disp = True,
              de_options={'disp': True, 'workers': 6,
                          'max_nfev': 20000, 'vectorized': True,
                          # 'strategy': 'randtobest1bin',
@@ -6869,7 +7379,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
         MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM)
         residual = data_2D_gpu - MODEL_2D_conv
-        return np.asarray(jnp.ravel(residual)).copy()
+        return np.asarray(residual).copy()
         # return np.asarray(residual).copy()
 
     if convolution_mode == 'GPU':
@@ -6938,7 +7448,8 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
 
     if method1 == 'least_squares':
         # faster, but usually not good for first run.
-        print(' >> Using',tr_solver,'for tr solver, with regularize set to True. Loss is',loss)
+        print(' >> Using',tr_solver,'for tr solver, with regularize set to',regularize,
+              ' Loss is',loss,'.')
         result_1 = mini.minimize(method='least_squares',
                                  max_nfev=max_nfev, x_scale=x_scale, f_scale=f_scale,
                                  tr_solver=tr_solver,
@@ -7066,33 +7577,33 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         else:
             model_dict['model_c' + str(i) + '_conv'] = model_temp
 
-        pf.writeto(imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_model_component_" + str(
-            i) + special_name + save_name_append + '.fits',
+        pf.writeto(imagename.replace('.fits', '') +
+                   "_" + "model_component_" + str(i) +
+                   special_name + save_name_append + '.fits',
                    model_dict['model_c' + str(i) + '_conv'], overwrite=True)
-        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_model_component_" + str(
-            i) + special_name + save_name_append + '.fits',
-                    imagename.replace('.fits', '') + "_" + str(
-                        ncomponents) + "C_model_component_" + str(
+        copy_header(imagename, imagename.replace('.fits', '') +
+                    "_" + "model_component_" + str(i) +
+                    special_name + save_name_append + '.fits',
+                    imagename.replace('.fits', '') +
+                    "_" + "model_component_" + str(
                         i) + special_name + save_name_append + '.fits')
-        pf.writeto(imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_dec_model_component_" + str(
-            i) + special_name + save_name_append + '.fits',
+        pf.writeto(imagename.replace('.fits', '') +
+                   "_" + "dec_model_component_" + str(i) +
+                   special_name + save_name_append + '.fits',
                    model_dict['model_c' + str(i)], overwrite=True)
-        copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_dec_model_component_" + str(
-            i) + special_name + save_name_append + '.fits',
-                    imagename.replace('.fits', '') + "_" + str(
-                        ncomponents) + "C_dec_model_component_" + str(
-                        i) + special_name + save_name_append + '.fits')
+        copy_header(imagename, imagename.replace('.fits', '') +
+                    "_" + "dec_model_component_" + str(i) +
+                    special_name + save_name_append + '.fits',
+                    imagename.replace('.fits', '') +
+                    "_" + "dec_model_component_" + str(i) +
+                    special_name + save_name_append + '.fits')
 
-        image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_model_component_" + str(
-            i) + special_name + save_name_append + '.fits')
-        image_results_deconv.append(imagename.replace('.fits', '') + "_" + str(
-            ncomponents) + "C_dec_model_component_" + str(
-            i) + special_name + save_name_append + '.fits')
+        image_results_conv.append(imagename.replace('.fits', '') +
+                                  "_" + "model_component_" + str(i) +
+                                  special_name + save_name_append + '.fits')
+        image_results_deconv.append(imagename.replace('.fits', '') +
+                                    "_" + "dec_model_component_" + str(i) +
+                                    special_name + save_name_append + '.fits')
 
     #     model = model
     model_dict['model_total'] = np.asarray(model).copy()  # + FlatSky(FlatSky_level, params['s_a'])
@@ -7113,28 +7624,28 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     model_dict['best_residual'] = data_2D - model_dict['model_total']
     model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
 
-    pf.writeto(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_model" + special_name + save_name_append + '.fits',
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "model" + special_name + save_name_append + '.fits',
                model_dict['model_total_conv'], overwrite=True)
-    pf.writeto(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_residual" + special_name + save_name_append + ".fits",
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "residual" + special_name + save_name_append + ".fits",
                model_dict['best_residual_conv'], overwrite=True)
-    copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_model" + special_name + save_name_append + '.fits',
-                imagename.replace('.fits', '') + "_" + str(
-                    ncomponents) + "C_model" + special_name + save_name_append + '.fits')
-    copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_residual" + special_name + save_name_append + '.fits',
-                imagename.replace('.fits', '') + "_" + str(
-                    ncomponents) + "C_residual" + special_name + save_name_append + '.fits')
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "model" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "C_model" + special_name + save_name_append + '.fits')
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "residual" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "residual" + special_name + save_name_append + '.fits')
 
-    pf.writeto(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits',
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "dec_model" + special_name + save_name_append + '.fits',
                model_dict['model_total'], overwrite=True)
-    copy_header(imagename, imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits',
-                imagename.replace('.fits', '') + "_" + str(
-                    ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits')
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "dec_model" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "dec_model" + special_name + save_name_append + '.fits')
     # # initial minimization.
     # method1 = 'differential_evolution'
     # print(' >> Using', method1, ' solver for first optimisation run... ')
@@ -7142,21 +7653,26 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     # #     method2 = 'ampgo'#'least_squares'
     # method2 = 'least_squares'
 
-    image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_model" + special_name + save_name_append + '.fits')
-    image_results_deconv.append(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_dec_model" + special_name + save_name_append + '.fits')
-    image_results_conv.append(imagename.replace('.fits', '') + "_" + str(
-        ncomponents) + "C_residual" + special_name + save_name_append + ".fits")
+    image_results_conv.append(imagename.replace('.fits', '') +
+                              "_" + "model" +
+                              special_name + save_name_append + '.fits')
+    image_results_deconv.append(imagename.replace('.fits', '') +
+                                "_" + "dec_model" +
+                                special_name + save_name_append + '.fits')
+    image_results_conv.append(imagename.replace('.fits', '') +
+                              "_" + "residual" +
+                              special_name + save_name_append + ".fits")
 
     # save mini results (full) to a pickle file.
-    with open(imagename.replace('.fits', '_' + str(
-            ncomponents) + 'C_fit' + special_name + save_name_append + '.pickle'),
+    with open(imagename.replace('.fits',
+                                '_' + 'fit' +
+                                special_name + save_name_append + '.pickle'),
               "wb") as f:
         pickle.dump(result, f)
 
-    with open(imagename.replace('.fits', '_' + str(
-            ncomponents) + 'C_fit' + special_name + save_name_append + '_modeldict.pickle'),
+    with open(imagename.replace('.fits',
+                                '_' + 'fit' +
+                                special_name + save_name_append + '_modeldict.pickle'),
               "wb") as f:
         pickle.dump(model_dict, f)
 
@@ -7173,6 +7689,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                          ext='.csv',
                          save_corr=True, save_params=True)
     except:
+        print('Error Saving Results to a csv file!!!')
         pass
 
     return (result, mini, result_1, result_extra, model_dict, image_results_conv,
@@ -7303,7 +7820,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       convolution_mode='GPU', workers=6,
                       method1='least_squares', method2='least_squares',
                       loss="cauchy", tr_solver="exact",
-                      init_params=0.25, final_params=4.0,
+                      init_params=0.25, final_params=4.0,sigma=6,
                       fix_n=[True, True, True, True, True, True, False],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
                       dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None):
@@ -7324,232 +7841,233 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
     print(ext_ids,all_comps_ids)
     for i in range(len(imagelist)):
         #         model_dict_results = {}
-        try:
-            crop_image = imagelist[i]
-            crop_residual = residuallist[i]
-            print('Fitting', os.path.basename(crop_image))
-            #             dict_results['#imagename'] = crop_image
-            data_2D = ctn(crop_image)
-            res_2D = ctn(crop_residual)
-            rms_std_data = mad_std(data_2D)
-            rms_std_res = mad_std(res_2D)
-            print('rms res = ', rms_std_res / rms_std_data)
-            print('rms data = ', rms_std_data * 1e6,
-                    '; rms res = ', rms_std_res * 1e6,
-                    '; ratio = ', rms_std_res / rms_std_data)
+        # try:
+        crop_image = imagelist[i]
+        crop_residual = residuallist[i]
+        print('Fitting', os.path.basename(crop_image))
+        #             dict_results['#imagename'] = crop_image
+        data_2D = ctn(crop_image)
+        res_2D = ctn(crop_residual)
+        rms_std_data = mad_std(data_2D)
+        rms_std_res = mad_std(res_2D)
+        print('rms res = ', rms_std_res / rms_std_data)
+        print('rms data = ', rms_std_data * 1e6,
+                '; rms res = ', rms_std_res * 1e6,
+                '; ratio = ', rms_std_res / rms_std_data)
 
-            sigma_level = 3
-            vmin = 3
-            # i = 0 #to be used in indices[0], e.g. first component
-            # omaj, omin, _, _, _ = beam_shape(crop_image)
-            # dilation_size = int(
-            # np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
-            _, mask_region = mask_dilation(crop_image,
-                                            rms=rms_std_res,
-                                            sigma=6.0, dilation_size=None,
-                                            iterations=2, PLOT=True)
-            # psf_size = dilation_size*6
-            # psf_size = (2 * psf_size) // 2 +1
+        sigma_level = 3
+        vmin = 3
+        # i = 0 #to be used in indices[0], e.g. first component
+        # omaj, omin, _, _, _ = beam_shape(crop_image)
+        # dilation_size = int(
+        # np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+        _, mask_region = mask_dilation(crop_image,
+                                        rms=rms_std_res,
+                                        sigma=sigma, dilation_size=None,
+                                        iterations=2, PLOT=True)
+        # psf_size = dilation_size*6
+        # psf_size = (2 * psf_size) // 2 +1
 
-            psf_beam_zise = int(get_beam_size_px(crop_image)[0])
-            psf_size = psf_beam_zise * 10
-            # psf_size = int(data_2D.shape[0])
-            print('PSF BEAM SIZE is >=> ', psf_beam_zise)
+        psf_beam_zise = int(get_beam_size_px(crop_image)[0])
+        # psf_size = psf_beam_zise * 10
+        psf_size = int(data_2D.shape[0])
+        print('PSF BEAM SIZE is >=> ', psf_beam_zise)
 
-            # psf_size = int(ctn(crop_image).shape[0])
-            print('PSF SIZE is >=> ', psf_size)
-            # creates a psf from the beam shape.
-            psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
-                                        aspect=aspect,
-                                        # aspect=None,
-                                        )  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
+        # psf_size = int(ctn(crop_image).shape[0])
+        print('PSF SIZE is >=> ', psf_size)
+        # creates a psf from the beam shape.
+        psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
+                                    aspect=aspect,
+                                    # aspect=None,
+                                    )  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
 
-            result_mini, mini, result_1, result_extra, model_dict, \
-                image_results_conv, image_results_deconv, \
-                smodel2D, model_temp = \
-                    do_fit2D(imagename=crop_image,
-                                residualname=crop_residual,
-                                which_residual=which_residual,
-                                init_constraints=sources_photometries,
-                                psf_name=psf_name,
-                                params_values_init=None,# imfit_conf_values[0:-1],
-                                #fix_n = False,fix_x0_y0=[False,False,False],
-                                ncomponents=n_components, constrained=True,
-                                fix_n=fix_n,# mask_region=mask_region,
-                                fix_value_n=fix_value_n,
-                                fix_x0_y0=[True, True, True, True, True, True, True, True],
-                                dr_fix=dr_fix,
-                                convolution_mode=convolution_mode,
-                                fix_geometry=fix_geometry,
-                                workers=workers,
-                                method1=method1, method2=method2,
-                                loss=loss, tr_solver=tr_solver,
-                                init_params=init_params, final_params=final_params,
-                                save_name_append=save_name_append,logger=logger)
+        result_mini, mini, result_1, result_extra, model_dict, \
+            image_results_conv, image_results_deconv, \
+            smodel2D, model_temp = \
+                do_fit2D(imagename=crop_image,
+                            residualname=crop_residual,
+                            which_residual=which_residual,
+                            init_constraints=sources_photometries,
+                            psf_name=psf_name,
+                            params_values_init=None,# imfit_conf_values[0:-1],
+                            #fix_n = False,fix_x0_y0=[False,False,False],
+                            ncomponents=n_components, constrained=True,
+                            fix_n=fix_n,
+                         # mask_region=mask,
+                            fix_value_n=fix_value_n,
+                            fix_x0_y0=[True, True, True, True, True, True, True, True],
+                            dr_fix=dr_fix,
+                            convolution_mode=convolution_mode,
+                            fix_geometry=fix_geometry,
+                            workers=workers,
+                            method1=method1, method2=method2,
+                            loss=loss, tr_solver=tr_solver,
+                            init_params=init_params, final_params=final_params,
+                            save_name_append=save_name_append,logger=logger)
 
-            print(result_mini.params)
-            models.append(model_dict)
-            lmfit_results.append(result_mini.params)
-            lmfit_results_1st_pass.append(result_1.params)
-            special_name = '_' + str(n_components) + 'C' + save_name_append
-            compact_model = 0
+        print(result_mini.params)
+        models.append(model_dict)
+        lmfit_results.append(result_mini.params)
+        lmfit_results_1st_pass.append(result_1.params)
+        special_name = save_name_append
+        compact_model = 0
+        extended_model = 0
+        compact_model_deconv = 0
+        extended_model_deconv = 0
+        for lc in comp_ids:
+            compact_model = (compact_model +
+                                model_dict['model_c' + lc + '_conv'])
+            compact_model_deconv = (compact_model_deconv +
+                                    model_dict['model_c' + lc])
+        # if ext_ids is not None:
+        if ext_ids == []:
             extended_model = 0
-            compact_model_deconv = 0
             extended_model_deconv = 0
-            for lc in comp_ids:
-                compact_model = (compact_model +
-                                    model_dict['model_c' + lc + '_conv'])
-                compact_model_deconv = (compact_model_deconv +
-                                        model_dict['model_c' + lc])
-            # if ext_ids is not None:
-            if ext_ids == []:
-                extended_model = 0
-                extended_model_deconv = 0
-                nfunctions = 1
-            else:
-                for le in ext_ids:
-                    extended_model = (extended_model +
-                                        model_dict['model_c' + le + '_conv'])
-                    extended_model_deconv = (extended_model_deconv +
-                                                model_dict['model_c' + le])
-                    nfunctions = None
+            nfunctions = 1
+        else:
+            for le in ext_ids:
+                extended_model = (extended_model +
+                                    model_dict['model_c' + le + '_conv'])
+                extended_model_deconv = (extended_model_deconv +
+                                            model_dict['model_c' + le])
+                nfunctions = None
 
-            decomp_results = plot_decomp_results(imagename=crop_image,
-                                                    compact=compact_model,
-                                                    extended_model=extended_model,
-                                                    rms=rms_std_res,
-                                                    nfunctions=nfunctions,
-                                                    special_name=special_name)
-            plot_fit_results(crop_image, model_dict, image_results_conv,
-                                sources_photometries,
-                                crop=False, box_size=200,
-                                vmax_factor=0.3, vmin_factor=1.0)
-            # plt.xlim(0,3)
-            plot_slices(ctn(crop_image), ctn(crop_residual), model_dict,
-                        image_results_conv[-2], sources_photometries)
-            parameter_results = result_mini.params.valuesdict().copy()
-            parameter_results['#imagename'] = os.path.basename(crop_image)
-            parameter_results['residualname'] = os.path.basename(crop_residual)
-            parameter_results['beam_size_px'] = psf_beam_zise
+        decomp_results = plot_decomp_results(imagename=crop_image,
+                                                compact=compact_model,
+                                                extended_model=extended_model,
+                                                rms=rms_std_res,
+                                                nfunctions=nfunctions,
+                                                special_name=special_name)
+        plot_fit_results(crop_image, model_dict, image_results_conv,
+                            sources_photometries,
+                            crop=False, box_size=200,
+                            vmax_factor=0.3, vmin_factor=1.0)
+        # plt.xlim(0,3)
+        plot_slices(ctn(crop_image), ctn(crop_residual), model_dict,
+                    image_results_conv[-2], sources_photometries)
+        parameter_results = result_mini.params.valuesdict().copy()
+        parameter_results['#imagename'] = os.path.basename(crop_image)
+        parameter_results['residualname'] = os.path.basename(crop_residual)
+        parameter_results['beam_size_px'] = psf_beam_zise
 
-            results_compact_conv_morpho, _ = \
+        results_compact_conv_morpho, _ = \
+            shape_measures(imagename=crop_image,
+                            residualname=crop_residual, z=z,
+                            mask_component=None, sigma_mask=1,
+                            last_level=1.0, vmin_factor=1.0,
+                            plot_catalog=False,
+                            data_2D=compact_model * mask * mask_region,
+                            npixels=128, fwhm=81, kernel_size=21,
+                            dilation_size=None,
+                            main_feature_index=0, results_final={},
+                            iterations=2,
+                            fracX=0.10, fracY=0.10, deblend=False,
+                            bkg_sub=False,
+                            bkg_to_sub=None, rms=rms_std_res,
+                            apply_mask=False, do_PLOT=True, SAVE=True,
+                            show_figure=True,
+                            mask=mask, do_measurements='partial',
+                            add_save_name='_compact_conv')
+
+        list_results_compact_conv_morpho.append(results_compact_conv_morpho)
+
+        results_compact_deconv_morpho, _ = \
+            shape_measures(imagename=crop_image,
+                            residualname=crop_residual, z=z,
+                            mask_component=None, sigma_mask=1,
+                            last_level=3.0, vmin_factor=1.0,
+                            plot_catalog=False,
+                            data_2D=compact_model_deconv * mask * mask_region,
+                            npixels=128, fwhm=81, kernel_size=21,
+                            dilation_size=None,
+                            main_feature_index=0, results_final={},
+                            iterations=2,
+                            fracX=0.10, fracY=0.10, deblend=False,
+                            bkg_sub=False,
+                            bkg_to_sub=None, rms=rms_std_res,
+                            apply_mask=False, do_PLOT=True, SAVE=True,
+                            show_figure=True,
+                            mask=mask, do_measurements='partial',
+                            add_save_name='_compact_deconv')
+
+        list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
+
+        if nfunctions == 1:
+            """
+            Consider that the single component fitted represents a 
+            compact component. Hence, extended emission is considered
+            to be only the residual after removing that component. 
+            """
+            results_ext_conv_morpho, _ = \
+                shape_measures(imagename=crop_image,
+                                residualname=crop_residual, z=z,
+                                mask_component=None, sigma_mask=3,
+                                last_level=3.0, vmin_factor=3.0,
+                                plot_catalog=False,
+                                data_2D=(ctn(crop_image) - compact_model) * mask_region,
+                                npixels=128, fwhm=81, kernel_size=21,
+                                dilation_size=None,
+                                main_feature_index=0, results_final={},
+                                iterations=2,
+                                fracX=0.10, fracY=0.10, deblend=False,
+                                bkg_sub=False,
+                                bkg_to_sub=None, rms=rms_std_res,
+                                apply_mask=False, do_PLOT=True, SAVE=True,
+                                show_figure=True,
+                                mask=mask, do_measurements='partial',
+                                add_save_name='_extended_conv')
+
+            list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+            results_ext_deconv_morpho = results_ext_conv_morpho
+            list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+        else:
+            results_ext_conv_morpho, _ = \
                 shape_measures(imagename=crop_image,
                                 residualname=crop_residual, z=z,
                                 mask_component=None, sigma_mask=1,
                                 last_level=1.0, vmin_factor=1.0,
                                 plot_catalog=False,
-                                data_2D=compact_model * mask * mask_region,
+                                data_2D=extended_model * mask * mask_region,
                                 npixels=128, fwhm=81, kernel_size=21,
                                 dilation_size=None,
                                 main_feature_index=0, results_final={},
                                 iterations=2,
                                 fracX=0.10, fracY=0.10, deblend=False,
                                 bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_std_res,
+                                bkg_to_sub=None, rms=rms_std_res / 2,
                                 apply_mask=False, do_PLOT=True, SAVE=True,
                                 show_figure=True,
                                 mask=mask, do_measurements='partial',
-                                add_save_name='_compact_conv')
+                                add_save_name='_extended_conv')
+            list_results_ext_conv_morpho.append(results_ext_conv_morpho)
 
-            list_results_compact_conv_morpho.append(results_compact_conv_morpho)
-
-            results_compact_deconv_morpho, _ = \
+            results_ext_deconv_morpho, _ = \
                 shape_measures(imagename=crop_image,
                                 residualname=crop_residual, z=z,
                                 mask_component=None, sigma_mask=1,
                                 last_level=3.0, vmin_factor=1.0,
                                 plot_catalog=False,
-                                data_2D=compact_model_deconv * mask * mask_region,
+                                data_2D=extended_model_deconv * mask * mask_region,
                                 npixels=128, fwhm=81, kernel_size=21,
                                 dilation_size=None,
                                 main_feature_index=0, results_final={},
                                 iterations=2,
                                 fracX=0.10, fracY=0.10, deblend=False,
                                 bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_std_res,
+                                bkg_to_sub=None, rms=rms_std_res / 2,
                                 apply_mask=False, do_PLOT=True, SAVE=True,
                                 show_figure=True,
                                 mask=mask, do_measurements='partial',
-                                add_save_name='_compact_deconv')
+                                add_save_name='_extended_deconv')
 
-            list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
+            list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
 
-            if nfunctions == 1:
-                """
-                Consider that the single component fitted represents a 
-                compact component. Hence, extended emission is considered
-                to be only the residual after removing that component. 
-                """
-                results_ext_conv_morpho, _ = \
-                    shape_measures(imagename=crop_image,
-                                    residualname=crop_residual, z=z,
-                                    mask_component=None, sigma_mask=3,
-                                    last_level=3.0, vmin_factor=3.0,
-                                    plot_catalog=False,
-                                    data_2D=(ctn(crop_image) - compact_model) * mask_region,
-                                    npixels=128, fwhm=81, kernel_size=21,
-                                    dilation_size=None,
-                                    main_feature_index=0, results_final={},
-                                    iterations=2,
-                                    fracX=0.10, fracY=0.10, deblend=False,
-                                    bkg_sub=False,
-                                    bkg_to_sub=None, rms=rms_std_res,
-                                    apply_mask=False, do_PLOT=True, SAVE=True,
-                                    show_figure=True,
-                                    mask=mask, do_measurements='partial',
-                                    add_save_name='_extended_conv')
+        all_results = {**parameter_results, **decomp_results}
+        results_fit.append(all_results)
 
-                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
-                results_ext_deconv_morpho = results_ext_conv_morpho
-                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
-            else:
-                results_ext_conv_morpho, _ = \
-                    shape_measures(imagename=crop_image,
-                                    residualname=crop_residual, z=z,
-                                    mask_component=None, sigma_mask=1,
-                                    last_level=1.0, vmin_factor=1.0,
-                                    plot_catalog=False,
-                                    data_2D=extended_model * mask * mask_region,
-                                    npixels=128, fwhm=81, kernel_size=21,
-                                    dilation_size=None,
-                                    main_feature_index=0, results_final={},
-                                    iterations=2,
-                                    fracX=0.10, fracY=0.10, deblend=False,
-                                    bkg_sub=False,
-                                    bkg_to_sub=None, rms=rms_std_res / 2,
-                                    apply_mask=False, do_PLOT=True, SAVE=True,
-                                    show_figure=True,
-                                    mask=mask, do_measurements='partial',
-                                    add_save_name='_extended_conv')
-                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
-
-                results_ext_deconv_morpho, _ = \
-                    shape_measures(imagename=crop_image,
-                                    residualname=crop_residual, z=z,
-                                    mask_component=None, sigma_mask=1,
-                                    last_level=3.0, vmin_factor=1.0,
-                                    plot_catalog=False,
-                                    data_2D=extended_model_deconv * mask * mask_region,
-                                    npixels=128, fwhm=81, kernel_size=21,
-                                    dilation_size=None,
-                                    main_feature_index=0, results_final={},
-                                    iterations=2,
-                                    fracX=0.10, fracY=0.10, deblend=False,
-                                    bkg_sub=False,
-                                    bkg_to_sub=None, rms=rms_std_res / 2,
-                                    apply_mask=False, do_PLOT=True, SAVE=True,
-                                    show_figure=True,
-                                    mask=mask, do_measurements='partial',
-                                    add_save_name='_extended_deconv')
-
-                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
-
-            all_results = {**parameter_results, **decomp_results}
-            results_fit.append(all_results)
-
-        except:
-            print('Error on fitting', os.path.basename(crop_image))
-            errors_fit.append(crop_image)
+        # except:
+            # print('Error on fitting', os.path.basename(crop_image))
+            # errors_fit.append(crop_image)
 
     return (pd.DataFrame(results_fit),
             lmfit_results, lmfit_results_1st_pass, errors_fit, models,
@@ -7562,7 +8080,29 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
 
 
 def image_decomposition(image1, image2, image3=None, iterations=2,
-                        dilation_size=None, std_factor=10.0, ref_mask=None):
+                        dilation_size=None, std_factor=10.0,
+                        ref_mask=None,sigma=6):
+    """
+    Peform an interferometric image decomposition using the e-MERLIN and JVLA.
+
+    Parameters
+    ----------
+    image1 : str
+        Path to the e-MERLIN image.
+    image2 : str
+        Path to the JVLA image.
+    image3 : str, optional
+        Path to the pure JVLA image.
+    iterations : int, optional
+        Number of iterations to perform the sigma masking.
+    dilation_size : int, optional
+        Size of the dilation kernel.
+    std_factor : float, optional
+        Factor to multiply the standard deviation of the residual image.
+    ref_mask : array, optional
+        Reference JVLA mask to be used in the masking process.
+
+    """
     def fit_sigma(g, g_next):
         '''
         Functiont to optmize sigma masking.
@@ -7571,7 +8111,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 
         def opt_sigma(params):
             sigma_level = params['sigma_level']
-            print('Current sigma is:', sigma_level)
+            # print('Current sigma is:', sigma_level)
             gomask, gmask = mask_dilation(g, cell_size=None,
                                           iterations=iterations,
                                           sigma=sigma_level,
@@ -7597,10 +8137,11 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         def opt_sigmav2(params):
             '''
             Improved version, do not use casa, so do not need to write and read files.
-            Using convolve_fft seems to give almost the same results as CASA's function smooth.
+            Using convolve_fft seems to give almost the same results as CASA's
+            function smooth.
             '''
             sigma_level = params['sigma_level']
-            print('Current sigma is:', sigma_level.value)
+            # print('Current sigma is:', sigma_level.value)
             gomask, gmask = mask_dilation(g, cell_size=None, iterations=2,
                                           sigma=sigma_level,
                                           dilation_size=dilation_size,
@@ -7610,11 +8151,10 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
             M12 = _fftconvolve_jax(gg, PSF_BEAM)
             mask_M12 = (M12 > 1e-6)
             R12_ = g_next - M12
-            residual_mask = (
-                                        R12_ - std_factor * std_level) * ref_mask  # *mask_M12#avoid including emission outside JVLA mask.
+            residual_mask = (R12_ - std_factor * std_level) * ref_mask  # *mask_M12#avoid including emission outside JVLA mask.
             #             residual_mask = R12_ - std_factor*mad_std(R12_)
             #             residual_mask = np.sum(R12_ ** 2 / (M12 -std_factor*std_level))
-            return (residual_mask)
+            return (np.array(residual_mask).copy())
 
         bounds_i = 5
         bounds_f = 300
@@ -7629,16 +8169,32 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         #         mini = lmfit.Minimizer(opt_sigma,fit_params,max_nfev=5000,nan_policy='omit',reduce_fcn='neglogcauchy')
         mini = lmfit.Minimizer(opt_sigmav2, fit_params, max_nfev=5000,
                                nan_policy='omit', reduce_fcn='neglogcauchy')
-        result_1 = mini.minimize(method=solver_method,
-                                 options={'xatol': 1e-10,
-                                          'fatol': 1e-10,
+        result_1 = mini.minimize(method=solver_method,tol=1e-12,
+                                 options={'xatol': 1e-12,
+                                          'fatol': 1e-12,
                                           'adaptive': True})
 
+        # result_1 = mini.minimize(method='least_squares',
+        #                          tr_solver="exact",
+        #                          tr_options={'regularize': True},
+        #                          x_scale='jac', loss="cauchy",
+        #                          ftol=1e-15, xtol=1e-15, gtol=1e-15,
+        #                          # f_scale=0.5,
+        #                          max_nfev=5000, verbose=2)
+
         result = mini.minimize(method='nelder', params=result_1.params,
-                               tol=1e-10,
-                               options={'xatol': 1e-10,
-                                        'fatol': 1e-10,
+                               tol=1e-12,
+                               options={'xatol': 1e-12,
+                                        'fatol': 1e-12,
                                         'adaptive': True})
+        # result = mini.minimize(method='least_squares',
+        #                        params=result_1.params,
+        #                        tr_solver="exact",
+        #                        tr_options={'regularize': True},
+        #                        x_scale='jac', loss="cauchy",
+        #                        ftol=1e-15, xtol=1e-15, gtol=1e-15,
+        #                        # f_scale=0.5,
+        #                        max_nfev=5000, verbose=2)
         #         result = mini.minimize(method=solver_method,params=result_1.params,
         #                                  max_nfev=30000, #x_scale='jac',  # f_scale=0.5,
         #                                  tr_solver="exact",
@@ -7744,7 +8300,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 
     omask_i, mask_i = mask_dilation(image_cut_i,
                                     cell_size=get_cell_size(image_cut_i),
-                                    sigma=6, iterations=2,
+                                    sigma=sigma, iterations=2,
                                     dilation_size=dilation_size_i, PLOT=True)
 
     omaj_j, omin_j, _, _, _ = beam_shape(image_cut_j)
@@ -7754,7 +8310,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 
     omask_j, mask_j = mask_dilation(image_cut_j,
                                     cell_size=get_cell_size(image_cut_j),
-                                    iterations=2, sigma=6,
+                                    iterations=2, sigma=sigma,
                                     dilation_size=dilation_size_j, PLOT=False)
 
     #     I1mask_data
@@ -7829,7 +8385,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         def opt_sub_3(image_data, M23_data, M13_data, zero_off):
             bounds_i = -10.0, -10.0, -3.0  # ,-3.0
             bounds_f = 1000.0, 1000.0, +3.0  # ,+3.0
-            pars0 = 1.0, 1.0, 0.0  # ,0.0
+            pars0 = 1.0, 1.0, 0.5  # ,0.0
             ai, bi, ci = bounds_i
             af, bf, cf = bounds_f
             a0, b0, c0 = pars0
@@ -7838,16 +8394,16 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
             fit_params.add("b", value=b0, min=bi, max=bf)
             fit_params.add("c", value=c0, min=ci, max=cf)
             #     fit_params.add("d", value=d0, min=di, max=df)
-            solver_method = 'nelder'
+            solver_method = 'least_squares'
             mini = lmfit.Minimizer(opt_res, fit_params, max_nfev=5000,
                                    nan_policy='omit', reduce_fcn='neglogcauchy')
             #             result_1 = mini.minimize(method=solver_method)
-            result_1 = mini.minimize(method='least_squares',
+            result_1 = mini.minimize(method=solver_method,
                                      tr_solver="exact",
                                      tr_options={'regularize': True},
                                      x_scale='jac', loss="cauchy",
                                      ftol=1e-15, xtol=1e-15, gtol=1e-15,
-                                     f_scale=0.5,
+                                     # f_scale=0.5,
                                      max_nfev=5000, verbose=2)
             #             result = mini.minimize(method='nelder',  params=result_1.params)
             #             result = mini.minimize(method='nelder',  params=result_1.params)
@@ -7857,7 +8413,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
                                    tr_options={'regularize': True},
                                    x_scale='jac', loss="cauchy",
                                    ftol=1e-15, xtol=1e-15, gtol=1e-15,
-                                   f_scale=0.5,
+                                   # f_scale=0.5,
                                    max_nfev=5000, verbose=2)
 
             parFit = result.params['a'].value, result.params['b'].value, \
@@ -7874,7 +8430,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         image_data = mask_k * ctn(image_cut_k)
         M13_data = ctn(M13)
         M23_data = ctn(M23)
-        #         zero_off = np.std(image_data) * 0.1
+        # zero_off = np.std(image_data) * 3.0
         zero_off = mad_std(image_data) * 0.0
         parFit, Err_parFit = opt_sub_3(image_data, M23_data, M13_data, zero_off)
         a, b, c = parFit
@@ -7911,7 +8467,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         copy_header(image_cut_k, I3ext_name, I3ext_name)
         copy_header(image_cut_k, I3comp_name, I3comp_name)
 
-        return (M123, Mcomp, Mext, I3re_name, I3ext_name, I3comp_name)
+        return (M123, Mcomp, Mext, I3re_name, I3ext_name, I3comp_name, a, b, c)
 
     if image3 is not None:
         print('Running decomposition for Image3...')
@@ -7970,8 +8526,9 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         pf.writeto(M123, model_total, overwrite=True)
         copy_header(image_cut_k, M123, M123)
 
-        M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name, I3comp_name = image_sum(
-            image_cut_k, M13, M23)
+        M123_opt, Mcomp_opt, Mext_opt, I3re_name, \
+            I3ext_name, I3comp_name, a, b, c = \
+            image_sum(image_cut_k, M13, M23)
 
         I3re_data = ctn(I3re_name)
         I3re_data_sig3 = I3re_data[I3re_data > 3 * mad_std(abs(I3re_data))]
@@ -8016,6 +8573,9 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 
         results['S_I3_23_res_full_py'] = np.sum(I3_residual_23) / bak
         results['S_I3_23_res_mask_py'] = np.sum(mask_k * I3_residual_23) / bak
+        results['a'] = a
+        results['b'] = b
+        results['c'] = c
 
         df = pd.DataFrame.from_dict(results, orient='index').T
         df.to_csv(image2.replace('.fits', '_interf_decomposition.csv'),
@@ -8025,6 +8585,7 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         plot_interferometric_decomposition(R12conv, image_cut_k,
                                            M123_opt,  # M23,
                                            I3re_name,
+                                           vmin0=mad_std(ctn(image_cut_j)),
                                            vmax_factor=0.1, vmin_factor=0.0,
                                            run_phase='2nd',
                                            crop=False, box_size=512,
@@ -8040,6 +8601,11 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
                                            NAME=image_cut_j,
                                            SPECIAL_NAME='_R12_I3_Mcomp_I3ext')
 
+
+
+
+
+
     #         fast_plot(R12,image_cut_k,
     #                   Mext_opt,
     #         #           M23,
@@ -8053,7 +8619,8 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
 def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
                                           imagelist_vla, residuallist_vla,
                                           idx_em, idx_vla, idxs_em, z,
-                                          std_factor=0.5, ref_mask=None):
+                                          std_factor=0.5, ref_mask=None,
+                                          sigma=6):
 
     """
     Perform interferometric decomposition of the images in the list.
@@ -8082,9 +8649,12 @@ def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
         Fig. 5 in the paper for more details.
     ref_mask : array
         Reference mask.
+    sigma : float; default = 6
+        Sigma level for the mask dilation.
 
     """
     int_results = []
+    I1_MASK_LIST = []
     R12_MASK_LIST = []
     R12_LIST = []
     M12_LIST = []
@@ -8104,80 +8674,81 @@ def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
     COMP_VLA_PROPS = []
     for l in range(0, len(imagelist_em_short)):
         for j in tqdm(range(0, len(imagelist_comb))):
-            # try:
+            try:
                 #                 i = idx_em # e-merlin image
-            k = idx_vla  # almost pure jvla image, but needs to have the same cellsize as of the e-merlin one
-            result_mini, results, results_short, Imask, I1mask_name, I1mask_2, R12, R12conv, M12, \
-                M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name, I3comp_name, I3_residual_23_name = image_decomposition(
-                #                 image1 = imagelist_comb[2],
-                image1=imagelist_em_short[l],
-                image2=imagelist_comb[j],
-                image3=imagelist_vla[k],
-                std_factor=std_factor, dilation_size=None, iterations=2,
-                ref_mask=ref_mask,
-            )
-            int_results.append(results)
-            R12_MASK_LIST.append(R12conv)
-            M12_LIST.append(M12)
-            R12_LIST.append(R12)
-            M123_LIST.append(M123_opt)
-            M23_Mext_opt_LIST.append(Mext_opt)
-            M13_Mcomp_opt_LIST.append(Mcomp_opt)
-            I3RE_RT_LIST.append(I3re_name)
-            I3EXT_LIST.append(I3ext_name)
+                k = idx_vla  # almost pure jvla image, but needs to have the same cellsize as of the e-merlin one
+                result_mini, results, results_short, Imask, I1mask_name, I1mask_2, R12, R12conv, M12, \
+                    M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name, I3comp_name, I3_residual_23_name = image_decomposition(
+                    #                 image1 = imagelist_comb[2],
+                    image1=imagelist_em_short[l],
+                    image2=imagelist_comb[j],
+                    image3=imagelist_vla[k],
+                    std_factor=std_factor, dilation_size=None, iterations=2,
+                    ref_mask=ref_mask, sigma=sigma
+                )
+                int_results.append(results)
+                I1_MASK_LIST.append(I1mask_name)
+                R12_MASK_LIST.append(R12conv)
+                M12_LIST.append(M12)
+                R12_LIST.append(R12)
+                M123_LIST.append(M123_opt)
+                M23_Mext_opt_LIST.append(Mext_opt)
+                M13_Mcomp_opt_LIST.append(Mcomp_opt)
+                I3RE_RT_LIST.append(I3re_name)
+                I3EXT_LIST.append(I3ext_name)
 
-            rms_i = mad_std(ctn(imagelist_em_short[l]))
-            rms_j = mad_std(ctn(R12))
+                rms_i = mad_std(ctn(imagelist_em_short[l]))
+                rms_j = mad_std(ctn(R12))
 
-            _, mask_extended = mask_dilation(imagelist_comb[j],
-                                             # imagelist_vla[k],
-                                             sigma=6, iterations=2,
-                                             dilation_size=None, PLOT=True)
-            #                 _, mask_extended_2nd = mask_dilation(I3ext_name,#imagelist_vla[k],
-            #                              sigma=6, iterations=2,
-            #                                 dilation_size=None, PLOT=True)
+                _, mask_extended = mask_dilation(imagelist_comb[j],
+                                                 # imagelist_vla[k],
+                                                 sigma=sigma, iterations=2,
+                                                 dilation_size=None, PLOT=True)
+                #                 _, mask_extended_2nd = mask_dilation(I3ext_name,#imagelist_vla[k],
+                #                              sigma=6, iterations=2,
+                #                                 dilation_size=None, PLOT=True)
 
-            _, mask_compact = mask_dilation(M12, rms=rms,
-                                            # we have to give a rms for model-based images
-                                            sigma=6, iterations=2,
-                                            dilation_size=None, PLOT=True)
-            results_extended = run_analysis_list([R12], residuallist_vla[k],
-                                                 imagelist_vla[k],
-                                                 z,
-                                                 mask_extended, rms_j)
-            results_extended_2nd = run_analysis_list([I3ext_name],
-                                                     residuallist_vla[k],
+                _, mask_compact = mask_dilation(M12, rms=rms,
+                                                # we have to give a rms for model-based images
+                                                sigma=sigma, iterations=2,
+                                                dilation_size=None, PLOT=True)
+                results_extended = run_analysis_list([R12], residuallist_vla[k],
                                                      imagelist_vla[k],
                                                      z,
-                                                     ref_mask, rms)
+                                                     mask_extended, rms_j, sigma=sigma)
+                results_extended_2nd = run_analysis_list([I3ext_name],
+                                                         residuallist_vla[k],
+                                                         imagelist_vla[k],
+                                                         z,
+                                                         ref_mask, rms, sigma=sigma)
 
-            results_compact = run_analysis_list([M12], residuallist_vla[k],
-                                                imagelist_vla[k],
-                                                z,
-                                                mask_compact, rms_j)
-            results_compact_vla = run_analysis_list([Mcomp_opt],
-                                                    residuallist_vla[k],
+                results_compact = run_analysis_list([M12], residuallist_vla[k],
                                                     imagelist_vla[k],
                                                     z,
-                                                    ref_mask, rms)
+                                                    mask_compact, rms_j, sigma=sigma)
+                results_compact_vla = run_analysis_list([Mcomp_opt],
+                                                        residuallist_vla[k],
+                                                        imagelist_vla[k],
+                                                        z,
+                                                        ref_mask, rms, sigma=sigma)
 
-            results_compact_EM = run_analysis_list([I1mask_name],
-                                                   residuallist_vla[k],
-                                                   imagelist_vla[k],
-                                                   z,
-                                                   mask_compact, rms_i)
-            EXTENDED_PROPS.append(results_extended)
-            EXTENDED_2nd_PROPS.append(results_extended_2nd)
-            COMP_EM_PROPS.append(results_compact_EM)
-            COMP_PROPS.append(results_compact)
-            COMP_VLA_PROPS.append(results_compact_vla)
+                results_compact_EM = run_analysis_list([I1mask_name],
+                                                       residuallist_vla[k],
+                                                       imagelist_vla[k],
+                                                       z,
+                                                       mask_compact, rms_i, sigma=sigma)
+                EXTENDED_PROPS.append(results_extended)
+                EXTENDED_2nd_PROPS.append(results_extended_2nd)
+                COMP_EM_PROPS.append(results_compact_EM)
+                COMP_PROPS.append(results_compact)
+                COMP_VLA_PROPS.append(results_compact_vla)
 
-            # except:
-            #     print('Error on minimising image:', imagelist_comb[j])
-            #     IMAGELIST_ERROR.append(imagelist_comb[j])
+            except:
+                print('Error on minimising image:', imagelist_comb[j])
+                IMAGELIST_ERROR.append(imagelist_comb[j])
     return (
     int_results, EXTENDED_PROPS, EXTENDED_2nd_PROPS, COMP_PROPS, COMP_EM_PROPS,
-    COMP_VLA_PROPS,
+    COMP_VLA_PROPS,I1_MASK_LIST,
     R12_MASK_LIST, M12_LIST, R12_LIST, M123_LIST, M23_Mext_opt_LIST,
     M13_Mcomp_opt_LIST, I3RE_RT_LIST, I3EXT_LIST)
 
@@ -8427,14 +8998,15 @@ def plot_slices(data_2D, residual_2D, model_dict, image_results_conv=None,
     ax1 = fig.add_subplot(2, 1, 1)
     ax2 = fig.add_subplot(2, 1, 2)
 
-    ax1.plot(plot_slice, np.mean(data_2D, axis=0), '--.', color='purple', ms=14,
+    norm_plot = np.max(np.mean(data_2D, axis=0))
+    ax1.plot(plot_slice, np.mean(data_2D, axis=0)/norm_plot, '--.', color='purple', ms=14,
              label='DATA')
-    ax1.plot(plot_slice, np.mean(model_dict['model_total_conv'], axis=0), '.-',
+    ax1.plot(plot_slice, np.mean(model_dict['model_total_conv']/norm_plot, axis=0), '.-',
              color='limegreen', linewidth=4, label='MODEL')
-    ax1.plot(plot_slice, np.mean(model_dict['best_residual_conv'], axis=0), '.-',
+    ax1.plot(plot_slice, np.mean(model_dict['best_residual_conv']/norm_plot, axis=0), '.-',
              color='black', linewidth=4, label='RESIDUAL')
     try:
-        ax1.plot(plot_slice, np.mean(residual_2D, axis=0), '.-', color='grey',
+        ax1.plot(plot_slice, np.mean(residual_2D, axis=0)/norm_plot, '.-', color='grey',
                 linewidth=4, label='MAP RESIDUAL')
     except:
         pass
@@ -8443,25 +9015,26 @@ def plot_slices(data_2D, residual_2D, model_dict, image_results_conv=None,
     #     ax1.set_xticks([])
     ax1.legend(fontsize=11)
     ax1.grid()
-    ax1.set_ylabel('mean $x$ direction')
+    ax1.set_ylabel('fractional mean $x$ direction')
     if Rp_props is not None:
         ax1.set_xlim(Rp_props['c1_x0c'] - plotlim, Rp_props['c1_x0c'] + plotlim)
     #     ax1.set_title('asd')
     # plt.plot(np.mean(shuffled_image,axis=0),color='red')
 
-    ax2.plot(plot_slice, np.mean(data_2D, axis=1), '--.', color='purple', ms=14,
+    norm_plot = np.max(np.mean(data_2D, axis=1))
+    ax2.plot(plot_slice, np.mean(data_2D, axis=1)/norm_plot, '--.', color='purple', ms=14,
              label='DATA')
-    ax2.plot(plot_slice, np.mean(model_dict['model_total_conv'], axis=1), '.-',
+    ax2.plot(plot_slice, np.mean(model_dict['model_total_conv']/norm_plot, axis=1), '.-',
              color='limegreen', linewidth=4, label='MODEL')
-    ax2.plot(plot_slice, np.mean(model_dict['best_residual_conv'], axis=1), '.-',
+    ax2.plot(plot_slice, np.mean(model_dict['best_residual_conv']/norm_plot, axis=1), '.-',
              color='black', linewidth=4, label='RESIDUAL')
     try:
-        ax2.plot(plot_slice, np.mean(residual_2D, axis=1), '.-', color='grey',
+        ax2.plot(plot_slice, np.mean(residual_2D, axis=1)/norm_plot, '.-', color='grey',
                 linewidth=4, label='MAP RESIDUAL')
     except:
         pass
     ax2.set_xlabel('Image Slice [px]')
-    ax2.set_ylabel('mean $y$ direction')
+    ax2.set_ylabel('fractional mean $y$ direction')
     if Rp_props is not None:
         ax2.set_xlim(Rp_props['c1_y0c'] - plotlim, Rp_props['c1_y0c'] + plotlim)
     ax2.grid()
@@ -8497,7 +9070,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
 
     ncomponents = sources_photometies['ncomps']
     if sources_photometies is not None:
-        plotlim =  2.5 * sources_photometies['c'+str(int(ncomponents))+'_rlast']
+        plotlim =  3.0 * sources_photometies['c'+str(int(ncomponents))+'_rlast']
         if plotlim > data_2D.shape[0]/2:
             plotlim = data_2D.shape[0]/2
         # plotlim = 0
@@ -8544,8 +9117,8 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     plt.plot(r * cell_size, abs(irmodel), '--', color='limegreen', label='MODEL',
              linewidth=4)
     plt.semilogy()
-    plt.xlabel(r'$r$ [arcsec]')
-    plt.ylabel(r'$I(r)$ [Jy/beam]')
+    plt.xlabel(r'Projected Radius $R$ [arcsec]')
+    plt.ylabel(r'Radial Intensity $I(R)$ [Jy/beam]')
     plt.legend(fontsize=11)
     plt.ylim(1e-7, -0.05 * np.log(ir[0]))
     # plt.xlim(0,3.0)
@@ -8797,6 +9370,7 @@ def plot_interferometric_decomposition(imagename0, imagename,
                                        max_percent_lowlevel=99.0,
                                        max_percent_highlevel=99.9999,
                                        NAME=None, EXT='.pdf',
+                                       vmin0=None,
                                        run_phase = '1st',
                                        vmin_factor=3,vmax_factor=0.1,
                                        SPECIAL_NAME='', show_figure=True):
@@ -8853,6 +9427,11 @@ def plot_interferometric_decomposition(imagename0, imagename,
 
     #     print(I1)
     vmin0 = 3 * std  # 0.5*g.min()#
+    if vmin0 is not None:
+        vmin0 = vmin0
+    else:
+        vmin0 = 3 * std
+
     vmax0 = 1.0 * g.max()
     vmin = vmin_factor * std  # 0.5*g.min()#
     vmax = vmax_factor * g.max()
@@ -8861,30 +9440,38 @@ def plot_interferometric_decomposition(imagename0, imagename,
     vmin_m = 1 * mad_std(m)  # vmin#0.01*std_m#0.5*m.min()#
     vmax_m = m.max()  # vmax#0.5*m.max()
 
-    levels_I1 = np.geomspace(2*I1.max(), 1.5 * np.std(I1), 6)
+    # levels_I1 = np.geomspace(2*I1.max(), 1.5 * np.std(I1), 6)
+    levels_I1 = np.geomspace(2 * I1.max(), vmin0, 6)
     levels_g = np.geomspace(2*g.max(), 3 * std, 6)
     levels_m = np.geomspace(2*m.max(), 20 * std_m, 6)
     levels_r = np.geomspace(2*r.max(), 3 * std_r, 6)
     levels_neg = np.asarray([-3]) * std
     script_R = "\u211B"
+    script_M = "\u2133"
     if run_phase == '1st':
-        title_labels = [r"$I_1^{\rm mask}$",
+        title_labels = [r"$I_1^{\rm mask}[\sigma_{\mathrm{opt}}]$",
                         r"$I_2$",
-                        r"$I_{1}^{\rm mask} * \theta_2$",
-                        r""+script_R+r"$_{12} = I_2 - I_{1}^{\rm mask} * "
-                                     r"\theta_2 $"
+                        r""+script_M+r"$_{1,2} = I_{1}^{\rm mask}[\sigma_{\mathrm{"
+                                     r"opt}}] * "
+                                     r"\theta_2$",
+                        r""+script_R+r"$_{1,2} = I_2 -$"+script_M+r"$_{1,2}$"
                         ]
 
     if run_phase == '2nd':
-        title_labels = [r""+script_R+r"$_{12}$",
+        # title_labels = [r""+script_R+r"$_{1,2}$",
+        #                 r"$I_3$",
+        #                 r"$I_{1}^{\rm mask} * \theta_3 + $"+script_R+r"$_{1,2} "
+        #                                                              r"* \theta_3$",
+        #                 r""+script_R+r"$_{T}$"
+        #                 ]
+        title_labels = [r""+script_R+r"$_{1,2}$",
                         r"$I_3$",
-                        r"$I_{1}^{\rm mask} * \theta_3 + $"+script_R+r"$_{12} "
-                                                                     r"* \theta_3$",
+                        r""+script_M+"$_{1,3} + $"+script_M+r"$_{2,3}$",
                         r""+script_R+r"$_{T}$"
                         ]
 
     if run_phase == 'compact':
-        title_labels = [r""+script_R+r"$_{12}$",
+        title_labels = [r""+script_R+r"$_{1,2}$",
                         r"$I_3$",
                         r"$I_{1}^{\rm mask} * \theta_3$",
                         r"$I_3 - I_{1}^{\rm mask} * \theta_3$"
@@ -8934,8 +9521,10 @@ def plot_interferometric_decomposition(imagename0, imagename,
     ax.set_yticks(xticks,xticklabels)
     ax.set_xticks(xticks,xticklabels)
     ax.set_xlabel(r'Offset [arcsec]')
+    ax = add_beam_to_image(imagename0, ax=ax, dx=dx1,
+                           cell_size=cell_size)
     # ax.set_yticks([])
-    ax.set_yticklabels([])
+    # ax.set_yticklabels([])
 
     #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
     ax = fig.add_subplot(1, 4, 2)
@@ -8971,13 +9560,15 @@ def plot_interferometric_decomposition(imagename0, imagename,
     # cb.dividers.set_color('none')
 
     cell_size = get_cell_size(imagename)
+    # ax = add_beam_to_image(imagename, ax=ax, dx=dx,
+    #                        cell_size=cell_size)
     xticks = np.linspace(-dx, dx, 5)
     xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 5)
     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
     ax.set_yticks(xticks,xticklabels)
     ax.set_xticks(xticks,xticklabels)
     # ax.set_yticks([])
-    ax.set_yticklabels([])
+    # ax.set_yticklabels([])
 
     ax = plt.subplot(1, 4, 3)
 
@@ -8997,8 +9588,10 @@ def plot_interferometric_decomposition(imagename0, imagename,
     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
     ax.set_yticks(xticks,xticklabels)
     ax.set_xticks(xticks,xticklabels)
+    # ax = add_beam_to_image(modelname, ax=ax, dx=dx,
+    #                        cell_size=cell_size)
     # ax.set_yticks([])
-    ax.set_yticklabels([])
+    # ax.set_yticklabels([])
 
 
 
@@ -9018,6 +9611,9 @@ def plot_interferometric_decomposition(imagename0, imagename,
                colors='k', linewidths=1.0,
                alpha=1.0)
 
+    ax = add_beam_to_image(imagename, ax=ax, dx=dx,
+                           cell_size=cell_size)
+
     cell_size = get_cell_size(residualname)
     xticks = np.linspace(-dx, dx, 5)
     xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 5)
@@ -9025,7 +9621,7 @@ def plot_interferometric_decomposition(imagename0, imagename,
     ax.set_yticks(xticks,xticklabels)
     ax.set_xticks(xticks,xticklabels)
     # ax.set_yticks([])
-    ax.set_yticklabels([])
+    # ax.set_yticklabels([])
 
 
     ax.set_title(title_labels[3])
@@ -9182,14 +9778,46 @@ def fast_plot(imagename0, imagename, modelname, residualname, crop=False, box_si
             plt.close()
 
 
-def plot_data_model_res(imagename, modelname, residualname, reference_image, crop=False,
-               box_size=512, NAME=None, CM='magma_r',
-               vmin_factor=3.0,vmax_factor=0.1,
-               max_percent_lowlevel=99.0, max_percent_highlevel=99.9999,
-               ext='.pdf', show_figure=True):
+def plot_data_model_res(imagename, modelname, residualname, reference_image,
+                        crop=False,box_size=512, NAME=None, CM='magma_r',
+                        vmin_factor=3.0,vmax_factor=0.1,
+                        max_percent_lowlevel=99.0, max_percent_highlevel=99.9999,
+                        ext='.pdf', show_figure=True):
     """
     Plots fitting results: image <> model <> residual images.
 
+    Parameters
+    ----------
+    imagename : str
+        Path to the image.
+    modelname : str
+        Path to the model.
+    residualname : str
+        Path to the residual.
+    reference_image : str
+        Path to the reference image.
+    crop : bool, optional
+        Crop the image to the box_size. The default is False.
+    box_size : int, optional
+        Size of the box to crop the image. The default is 512.
+    NAME : str, optional
+        Name of the output file. The default is None.
+    CM : str, optional
+        Colormap. The default is 'magma_r'.
+    vmin_factor : float, optional
+        Factor to multiply the standard deviation of the image to set the
+        minimum value of the colormap. The default is 3.0.
+    vmax_factor : float, optional
+        Factor to multiply the maximum value of the image to set the
+        maximum value of the colormap. The default is 0.1.
+    max_percent_lowlevel : float, optional
+        Maximum percentile to set the low level of the colormap. The default is 99.0.
+    max_percent_highlevel : float, optional
+        Maximum percentile to set the high level of the colormap. The default is 99.9999.
+    ext : str, optional
+        Extension of the output file. The default is '.pdf'.
+    show_figure : bool, optional
+        Show the figure. The default is True.
     """
     fig = plt.figure(figsize=(12, 12))
     try:
@@ -9249,9 +9877,9 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
     vmin_m = vmin  # 1*mad_std(m)#vmin#0.01*std_m#0.5*m.min()#
     vmax_m = vmax  # 0.5*m.max()#vmax#0.5*m.max()
 
-    levels_g = np.geomspace(3*g.max(), 3 * std, 7)
-    levels_m = np.geomspace(3*m.max(), 10 * std_m, 7)
-    levels_r = np.geomspace(3*r.max(), 3 * std_r, 7)
+    levels_g = np.geomspace(3*g.max(), 3 * std, 6)
+    levels_m = np.geomspace(3*m.max(), 10 * std_m, 6)
+    levels_r = np.geomspace(3*r.max(), 3 * std_r, 6)
 
     #     norm = simple_norm(g,stretch='asinh',asinh_a=0.01)#,vmin=vmin,vmax=vmax)
     norm = visualization.simple_norm(g, stretch='linear',
@@ -9268,16 +9896,22 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
                         origin='lower', extent=[-dx,dx,-dx,dx],
                         alpha=1.0, norm=norm2)
 
-    ax.set_title(r'Image')
+    ax = add_beam_to_image(imagename=reference_image, ax=ax,
+                           dx=dx,cell_size=cell_size)
 
-    ax.contour(g, levels=levels_g[::-1], colors='grey', linewidths=1.0,
-               extent=[-dx, dx, -dx, dx],
+    ax.set_title(r'Data')
+
+    contour_palette = ['#000000', '#444444', '#666666', '#EEEEEE',
+                       '#EEEEEE', '#FFFFFF']
+
+    ax.contour(g, levels=levels_g[::-1], colors=contour_palette,
+               linewidths=1.2,extent=[-dx, dx, -dx, dx],
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
     cb1 = plt.colorbar(mappable=plt.gca().images[0],
                        cax=fig.add_axes([0.91, 0.40, 0.02, 0.19]))
     cb1.formatter = CustomFormatter(factor=int(1000/vmax_factor), useMathText=True)
     cb1.update_ticks()
-    cb1.set_label(r'Flux [mJy/beam]', labelpad=1)
+    cb1.set_label(r'Flux Density [mJy/beam]', labelpad=1)
     cb1.ax.xaxis.set_tick_params(pad=1)
     cb1.ax.tick_params(labelsize=12)
     cb1.outline.set_linewidth(1)
@@ -9317,7 +9951,7 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
     ax.set_title(r'Model')
     ax.contour(m, levels=levels_g[::-1],
                extent=[-dx, dx, -dx, dx],
-               colors='grey', linewidths=1.0,
+               colors=contour_palette, linewidths=1.2,
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
     #     cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.08,0.3,0.02,0.4]))#,format=ticker.FuncFormatter(fmt))#cax=fig.add_axes([0.01,0.7,0.5,0.05]))#, orientation='horizontal')
     ax.set_yticks(xticks,xticklabels)
@@ -9337,7 +9971,7 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image, cro
 
     ax.contour(r, levels=levels_g[::-1],
                extent=[-dx, dx, -dx, dx],
-               colors='grey', linewidths=1.0,
+               colors=contour_palette, linewidths=1.2,
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
     levels_neg = np.asarray([-3 * std])
 
@@ -9488,18 +10122,21 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
     #         plt.close()
 
 
-def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax=None,
-            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',cmap_cont='terrain',
-            rms=None, max_factor=None,plot_title=None,apply_mask=False,
-            add_contours=True,extent=None,projection = 'offset',add_beam = False,
-            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,show_axis='on',
-            source_distance = None,scalebar_length=250 * u.pc,
-            ax=None):
+def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
+            vmax=None,
+            vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
+            cmap_cont='terrain',
+            rms=None, max_factor=None, plot_title=None, apply_mask=False,
+            add_contours=True, extent=None, projection='offset', add_beam=False,
+            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
+            show_axis='on',
+            source_distance=None, scalebar_length=250 * u.pc,
+            ax=None, save_name=None, special_name=''):
     """
     Fast plotting of an astronomical image with/or without a wcs header.
     imagename:
         str or 2d array.
-        If str (the image file name with a wcs), it will attempt to read the wcs 
+        If str (the image file name with a wcs), it will attempt to read the wcs
         and plot the coordinates axes.
 
         If 2darray, will plot the data with generic axes.
@@ -9510,7 +10147,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
 
                      However, it does not read header/wcs.
                      Note: THis function only works inside CASA environment.
-                     
+
         <<finish documentation>>
         -- changes:
             - added scalebar plot
@@ -9540,7 +10177,6 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
         fig = plt.figure(figsize=figsize)
     if isinstance(imagename, str) == True:
 
-        
         if with_wcs == True:
             hdu = pf.open(imagename)
             ww = WCS(hdu[0].header, naxis=2)
@@ -9555,20 +10191,20 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
             g = ctn(imagename)
 
         if crop == True:
-            xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
+            yin, yen, xin, xen = do_cutout(imagename, box_size=box_size,
                                            center=center, return_='box')
-            g = g[yin:yen,xin:xen]
+            g = g[xin:xen, yin:yen]
             crop = False
 
         if apply_mask == True:
             _, mask_d = mask_dilation(imagename, cell_size=None,
-                                    sigma=6, rms=None,
-                                    dilation_size=None,
-                                    iterations=3, dilation_type='disk',
-                                    PLOT=False, show_figure=False)
+                                      sigma=6, rms=None,
+                                      dilation_size=None,
+                                      iterations=3, dilation_type='disk',
+                                      PLOT=False, show_figure=False)
             print('Masking emission....')
-            g = g * mask_d[yin:yen,xin:xen]
-            
+            g = g * mask_d[xin:xen, yin:yen]
+
 
     else:
         g = imagename
@@ -9578,10 +10214,10 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
     if crop == True:
         xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
                                        center=center, return_='box')
-        g = g[yin:yen,xin:xen]
+        g = g[xin:xen, yin:yen]
         if apply_mask == True:
             print('Masking emission....')
-            g = g * mask_d[yin:yen,xin:xen]
+            g = g * mask_d[xin:xen, yin:yen]
     if rms is not None:
         std = rms
     else:
@@ -9613,21 +10249,19 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
     if ax == None:
         if isinstance(imagename, str) == False:
             projection = 'px'
-            
+
         if (projection == 'celestial') and (with_wcs == True) and (isinstance(
                 imagename, str) == True):
             ax = fig.add_subplot(projection=ww.celestial)
-            ax.set_xlabel('RA',fontsize=14)
-            ax.set_ylabel('DEC',fontsize=14)
-            
-                
-            
+            ax.set_xlabel('RA', fontsize=14)
+            ax.set_ylabel('DEC', fontsize=14)
+
         if projection == 'offset':
             ax = fig.add_subplot()
             # dx = g.shape[0] / 2
             axis_units_label = r'Offset [arcsec]'
-            ax.set_xlabel(axis_units_label,fontsize=14)
-            
+            ax.set_xlabel(axis_units_label, fontsize=14)
+
         dx = g.shape[0] / 2
         if projection == 'px':
             ax = fig.add_subplot()
@@ -9636,74 +10270,70 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
             ax.set_xlabel('x pix')
             # ax.set_ylabel('y pix')
             axis_units_label = r'Offset [px]'
-            ax.set_xlabel(axis_units_label,fontsize=14)
-        
+            ax.set_xlabel(axis_units_label, fontsize=14)
 
-    xticks = np.linspace(-dx, dx, 4)
-    xticklabels = np.linspace(-dx*cell_size, +dx*cell_size, 4)
+    xticks = np.linspace(-dx, dx, 5)
+    xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 5)
     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
-    ax.set_yticks(xticks,xticklabels)
-    ax.set_xticks(xticks,xticklabels)
-    
+    ax.set_yticks(xticks, xticklabels)
+    ax.set_xticks(xticks, xticklabels)
 
     ax.tick_params(axis='y', which='both', labelsize=16, color='black',
-                        pad=5)
+                   pad=5)
     ax.tick_params(axis='x', which='both', labelsize=16, color='black',
-                        pad=5)
+                   pad=5)
     # ax2_x.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     # ax3_y.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
     if projection != 'celestial':
         ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                    alpha=0.7)
+                alpha=0.7)
         ax.grid(which='both', axis='both', color='gray', linewidth=0.6,
-                    alpha=0.7)
+                alpha=0.7)
     else:
         ax.grid()
-        
-    ax.axis(show_axis)
-    ax.axis(show_axis)
 
+    ax.axis(show_axis)
+    ax.axis(show_axis)
 
     vmin = vmin_factor * std
     if extent == None:
         extent = [-dx, dx, -dx, dx]
     #     print(g)
-    
+
     if vmax is not None:
-            vmax = vmax
+        vmax = vmax
     else:
         if vmax_factor is not None:
             vmax = vmax_factor * g.max()
         else:
-            vmax = 0.95*g.max()
-        
+            vmax = 0.95 * g.max()
 
-    norm0 = simple_norm(g, stretch='linear',max_percent=99.0)
+    norm0 = simple_norm(g, stretch='linear', max_percent=99.0)
     # # plot the first normalization (low level, transparent)
     im_plot = ax.imshow(g, origin='lower',
-                   cmap='gray', norm=norm0, alpha=0.5, extent=extent)
+                        cmap='gray', norm=norm0, alpha=0.5, extent=extent)
 
     # cm = copy.copy(plt.cm.get_cmap(CM))
     # cm.set_under((0, 0, 0, 0))
 
-
     norm = simple_norm(g, stretch='sqrt', asinh_a=0.02, min_cut=vmin,
                        max_cut=vmax)
 
-    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0,extent=extent,
+    im_plot = ax.imshow((g), cmap=CM, origin='lower', alpha=1.0, extent=extent,
                         norm=norm,
                         aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
-    
-    levels_g = np.geomspace(2.0 * g.max(), vmin_factor * std, 6)
+
+    levels_g = np.geomspace(2.0 * g.max(), 5 * std, 6)
+    levels_low = np.asarray([4 * std, 3 * std])
     levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 6)
     levels_neg = neg_levels * std
     levels_white = np.geomspace(g.max(), 0.1 * g.max(), 6)
     if add_contours:
         try:
-            from matplotlib.colors import LinearSegmentedColormap
+            # from matplotlib.colors import LinearSegmentedColormap
 
             # Define the "magma_r" colormap
-            cmap_magma_r = plt.cm.get_cmap(CM)
+            # cmap_magma_r = plt.cm.get_cmap(CM)
 
             # Create a custom contour color palette with a continuous transition from white to black
             # contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
@@ -9720,16 +10350,23 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
             # plt.clabel(contour, inline=1, fontsize=10)
 
             # plt.show()
-            
-            contour=ax.contour(g, levels=levels_g[::-1], colors=contour_palette, 
-                       linewidths=1.2,extent=extent,
-                       alpha=1.0)
+
+            contour = ax.contour(g, levels=levels_g[::-1],
+                                 colors=contour_palette,
+                                 linewidths=1.2, extent=extent,
+                                 alpha=1.0)
+
+            contour = ax.contour(g, levels=levels_low[::-1],
+                                 colors='brown',
+                                 # linestyles=['dashed', 'dashdot'],
+                                 linewidths=1.0, extent=extent,
+                                 alpha=1.0)
             # ax.clabel(contour, inline=1, fontsize=10)
         except:
             pass
         try:
-            ax.contour(g, levels=levels_neg[::-1], colors='k', 
-                       linewidths=1.0,extent=extent,
+            ax.contour(g, levels=levels_neg[::-1], colors='k',
+                       linewidths=1.0, extent=extent,
                        alpha=1.0)
         except:
             pass
@@ -9737,14 +10374,18 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
         try:
             # cb = plt.colorbar(mappable=plt.gca().images[0],
             #                   cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
-            
+
             cb = plt.colorbar(im_plot, ax=ax,
                               cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
-            
-            cb.set_label(r"Flux Density [mJy/Beam]",labelpad=10, fontsize=16)
+
+            cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
             cb.formatter = CustomFormatter(factor=1000, useMathText=True)
             cb.update_ticks()
-            
+
+            levels_colorbar2 = np.geomspace(1.0 * vmax, 3 * std,
+                                            6)
+            cb.set_ticks(levels_colorbar2)
+
             cb.ax.yaxis.set_tick_params(labelleft=True, labelright=False,
                                         tick1On=False, tick2On=False)
             cb.ax.yaxis.tick_right()
@@ -9761,17 +10402,11 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
         except:
             pass
 
-        
-
-    
     if plot_title is not None:
         ax.set_title(plot_title)
 
-
-    
-    
     if add_beam == True:
-        
+
         if isinstance(imagename, str) == True:
             try:
                 from matplotlib.patches import Ellipse
@@ -9780,71 +10415,117 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax
                 b = imhd['restoringbeam']['minor']['value']
                 pa = imhd['restoringbeam']['positionangle']['value']
                 if projection == 'px':
-                    el = Ellipse((-dx*0.85, -dx*0.85), b  , a  , angle=pa,
-                                    facecolor='black', alpha=1.0)
+                    el = Ellipse((-dx * 0.85, -dx * 0.85), b, a, angle=pa,
+                                 facecolor='black', alpha=1.0)
                 else:
-                    el = Ellipse((-dx*0.85, -dx*0.85), b / cell_size , a / cell_size , 
-                                angle=pa,facecolor='black', alpha=1.0)
+                    el = Ellipse((-dx * 0.85, -dx * 0.85), b / cell_size,
+                                 a / cell_size,
+                                 angle=pa, facecolor='black', alpha=1.0)
 
-                ax.add_artist(el,)
+                ax.add_artist(el, )
 
                 Oa = '{:.2f}'.format(a)
                 Ob = '{:.2f}'.format(b)
-                
+
                 blabel_pos_x, blabel_pos_y = g.shape
                 blabel_pos_x = blabel_pos_x + dx
                 blabel_pos_y = blabel_pos_y + dx
-                
+
+                #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
+                #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
+                #                     fontsize=15,bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+                #                     color='red')
+                ax.annotate(r"$" + Oa + "''\\times" + Ob + "''$",
+                            xy=(0.67, 0.06), xycoords='axes fraction',
+                            fontsize=15,
+                            bbox=dict(boxstyle='round', facecolor='white',
+                                      alpha=0.9),
+                            color='red')
+
+                el.set_clip_box(ax.bbox)
+            except:
+                print('Error adding beam.')
+
+    if source_distance is not None:
+        # try:
+        ww.wcs.radesys = 'icrs'
+        radesys = ww.wcs.radesys
+        # distance = source_distance * u.Mpc
+        distance = angular_distance_cosmo(source_distance)  # * u.Mpc
+        #         scalebar_length = scalebar_length
+        scalebar_loc = (0.99, 0.99)  # y, x
+        left_side = coordinates.SkyCoord(
+            *ww.celestial.wcs_pix2world(
+                g.shape[0],
+                g.shape[1],
+                0) * u.deg,
+            frame=radesys.lower())
+
+        length = (scalebar_length / distance).to(u.arcsec,
+                                                 u.dimensionless_angles())
+
+        scale_bar_length_pixels = length.value / cell_size
+        scale_bar_position = (-dx * 0.50, -dx * 0.9)
+
+        ax.annotate('',
+                    xy=(scale_bar_position[0] + scale_bar_length_pixels,
+                        scale_bar_position[1]),
+                    # xy=(0.1, 0.1), ##
+                    xytext=scale_bar_position, arrowprops=dict(arrowstyle='-',
+                                                               color='red',
+                                                               lw=3))
+
+        ax.text(scale_bar_position[0] + scale_bar_length_pixels / 2,
+                scale_bar_position[1] + scale_bar_length_pixels / 20,
+                f'{scalebar_length}', fontsize=16,
+                color='red', ha='center',weight='bold',
+                va='bottom')
+        # except:
+        #     print('Error adding scalebar.')
+
+        if save_name != None:
+            #         if not os.path.exists(save_name+special_name+'.jpg'):
+            plt.savefig(save_name + special_name + '.jpg', dpi=300,
+                        bbox_inches='tight')
+            plt.savefig(save_name + special_name + '.pdf', dpi=600,
+                        bbox_inches='tight')
+    return (ax)
+
+def add_beam_to_image(imagename, ax, dx, cell_size):
+    if isinstance(imagename, str) == True:
+        try:
+            from matplotlib.patches import Ellipse
+
+            imhd = imhead(imagename)
+            a = imhd['restoringbeam']['major']['value']
+            b = imhd['restoringbeam']['minor']['value']
+            pa = imhd['restoringbeam']['positionangle']['value']
+            el = Ellipse((-dx * 0.85, -dx * 0.85), b / cell_size, a / cell_size,
+                         angle=pa, facecolor='black', alpha=1.0)
+
+            ax.add_artist(el, )
+
+            Oa = '{:.2f}'.format(a)
+            Ob = '{:.2f}'.format(b)
+
+            blabel_pos_x, blabel_pos_y = 2*dx, 2*dx
+            blabel_pos_x = blabel_pos_x + dx
+            blabel_pos_y = blabel_pos_y + dx
+
             #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
             #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
             #                     fontsize=15,bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
             #                     color='red')
-                ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
-                            xy=(0.70, 0.06), xycoords='axes fraction',
-                            fontsize=15,bbox=dict(boxstyle='round', facecolor='white', 
-                                                alpha=0.9),
-                            color='red')
-                
-                el.set_clip_box(ax.bbox)
-            except:
-                print('Error adding beam.')
-    
+            ax.annotate(r'$' + Oa + '\\times' + Ob + '$',
+                        xy=(0.60, 0.06), xycoords='axes fraction',
+                        fontsize=15, bbox=dict(boxstyle='round', facecolor='white',
+                                               alpha=0.9),
+                        color='red')
 
-    if source_distance is not None:
-        try:
-            ww.wcs.radesys = 'icrs'
-            radesys = ww.wcs.radesys
-            # distance = source_distance * u.Mpc
-            distance = angular_distance_cosmo(source_distance)  # * u.Mpc
-    #         scalebar_length = scalebar_length
-            scalebar_loc = (0.99, 0.99)  # y, x
-            left_side = coordinates.SkyCoord(
-                *ww.celestial.wcs_pix2world(
-                    g.shape[0],
-                    g.shape[1],
-                    0) * u.deg,
-                frame=radesys.lower())
-
-            length = (scalebar_length / distance).to(u.arcsec,
-                                                    u.dimensionless_angles())
-            
-
-            scale_bar_length_pixels = length.value / cell_size
-            scale_bar_position = (-dx*0.5, -dx*0.9)
-            
-            ax.annotate('', 
-                        xy=(scale_bar_position[0] + scale_bar_length_pixels/2, 
-                            scale_bar_position[1]),
-                        # xy=(0.1, 0.1), ##
-                        xytext=scale_bar_position, arrowprops=dict(arrowstyle='-', 
-                                                                color='red', lw=2))
-            
-            ax.text(scale_bar_position[0]  + scale_bar_length_pixels / 4, 
-                    scale_bar_position[1] + scale_bar_length_pixels / 20,
-            f'{scalebar_length}', fontsize=16, color='red', ha='center', va='bottom')
+            el.set_clip_box(ax.bbox)
         except:
-            print('Error adding scalebar.')
-    return (ax)
+            print('Error adding beam.')
+    return ax
 
 
 def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
@@ -10686,7 +11367,22 @@ def save_results_csv(result_mini, save_name, ext='.csv', save_corr=True,
             df = pd.DataFrame(result_mini.params.valuesdict(), index=['value'])
             df.T.to_csv(save_name + '_mini_params' + ext,
                         index_label='parameter')
+"""
+#Utils
+"""
 
+
+def adjust_arrays(a, b):
+    len_a, len_b = len(a), len(b)
+
+    # If a is shorter, pad it with NaN values
+    if len_a < len_b:
+        a = np.pad(a, (0, len_b - len_a), 'constant', constant_values=np.nan)
+    # If b is shorter, pad it with NaN values
+    elif len_b < len_a:
+        b = np.pad(b, (0, len_a - len_b), 'constant', constant_values=np.nan)
+
+    return a, b
 
 
 """

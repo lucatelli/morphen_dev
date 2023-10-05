@@ -20,6 +20,8 @@
 __version__ = '0.3.1b'
 __codiname__ = 'Pelicoto'
 __author__ = 'Geferson Lucatelli'
+__coauthors__ = ('Javier Moldon, Rob Beswick, '
+                  'Fabricio Ferrari, Leonardo Ferreira')
 __email__ = 'geferson.lucatelli@postgrad.manchester.ac.uk'
 __date__ = '2023 08 31'
 # print(__doc__)
@@ -29,21 +31,27 @@ import argparse
 import os
 import sys
 import matplotlib as mpl
-sys.path.append('libs/')
-sys.path.append('analysis_scripts/')
-import libs as mlibs
-import coloredlogs
 import logging
 from matplotlib import use as mpluse
+
+# sys.path.append("/mirror/scratch/lucatelli/app/miniconda3/envs/casa6/lib/python3.8/site-packages/")
+sys.path.append('libs/')
+sys.path.append('analysis_scripts/')
+# import sys
+
+import libs as mlibs
 import analysisUtils as au
 from analysisUtils import *
-
+import coloredlogs
 class config():
     """
     Configuration Class to specify basic parameters.
     """
 
     def reset_rc_params():
+        """
+        Global configuration for matplotlib.pyplot
+        """
         mpl.rcParams.update({'font.size': 16,
                              "text.usetex": False,  #
                              "font.family": "sans-serif",
@@ -58,14 +66,16 @@ class config():
                              'xtick.major.width': 1,
                              'ytick.major.width': 1,
                              'axes.linewidth': 1.5,
-                             'axes.edgecolor': 'black',
+                             'axes.edgecolor':'orange',
                              'lines.linewidth': 2,
                              'legend.fontsize': 14,
                              'grid.linestyle': '--',
+                             # 'grid.color':'black',
                              'axes.grid.which': 'major',  
                              'axes.grid.axis': 'both', 
-                             'axes.spines.right': False,
+                             'axes.spines.right': True,
                              'axes.grid': True,
+                             'axes.titlesize' : 16
                              })
         pass
 
@@ -169,7 +179,7 @@ class radio_image_analysis():
                  # logger=None,
                  crop=False,box_size=256,
                  apply_mask=True,mask=None,dilation_size = None,
-                 sigma_level=3, sigma_mask=6,vmin_factor=3,last_level=1,
+                 sigma_level=3, sigma_mask=6,vmin_factor=3,last_level=3,
                  results=None,mask_component=None,
                  npixels=128,kernel_size=21,fwhm=81,
                  SAVE=True, show_figure=True):
@@ -262,6 +272,7 @@ class radio_image_analysis():
                            dilation_size=self.dilation_size,
                            main_feature_index=0,
                            results_final={},
+                           crop=self.crop, box_size=self.box_size,
                            iterations=config.mask_iterations,
                            fracX=0.15, fracY=0.15,
                            deblend=False, bkg_sub=False,
@@ -294,11 +305,87 @@ class source_extraction():
                  segmentation_map = True, filter_type='matched',
                  deblend_nthresh=3, deblend_cont=1e-8,
                  clean_param=0.5, clean=True,
+                 minarea_factor = 1.0,
                  sort_by='flux',  # sort detected source by flux
                  sigma=12,  # min rms to search for sources
                  ell_size_factor=2.0,  # unstable, please inspect!
                  show_detection=False,show_petro_plots=False,
                  SAVE=True, show_figure=True,dry_run = False):
+        """
+        Parameters
+        ----------
+        input_data : str
+            Path to the image.
+        z : float
+            Redshift of the source.
+        ids_to_add : list
+            List of ids to be added to the catalogue.
+        crop : bool
+            If True, crop the image.
+        box_size : int
+            Size of the box to be cropped.
+        apply_mask : bool
+            If True, apply the mask to the image.
+        mask : array
+            Mask to be applied to the image.
+        dilation_size : int
+            Size of the dilation kernel.
+        sigma_level : float
+            Sigma level for detection.
+        sigma_mask : float
+            Sigma level for the mask.
+        vmin_factor : float
+            Factor to be multiplied by the standard deviation to set the minimum
+            value for the imshow plot.
+        mask_component : array
+            Mask to be applied to the image.
+        bwf : int
+            Box width fraction in terms of the beam size
+            for the background estimation.
+        bhf : int
+            Box height fraction in terms of the beam size
+            for the background estimation.
+        fwf : int
+            Filter width fraction in terms of the beam size
+            for the background estimation.
+        fhf : int
+            Filter height fraction in terms of the beam size
+            for the background estimation.
+        segmentation_map : bool
+            If True, returns the segmentation map.
+        filter_type : str
+            Type of filter to be used.
+        deblend_nthresh : int
+            Number of thresholds for deblending.
+        deblend_cont : float
+            Minimum contrast ratio for deblending.
+        clean_param : float
+            Cleaning parameter.
+        clean : bool
+            If True, clean the image.
+        minarea_factor : float
+            Factor to be multiplied by the minimum area for detection.
+            Default is 1.0, i.e. one restoring beam size. Any structure smaller
+            than one beam size will not be detected. This is critical if you have
+            oversampled data.
+        sort_by : str
+            Sort the output by flux or area.
+        sigma : float
+            Sigma level for detection.
+        ell_size_factor : int
+            Size factor of the ellipse to be drawn in the detected structures.
+        show_detection : bool
+            If True, show the detection plot.
+        show_petro_plots : bool
+            If True, show the petrosian plots.
+        SAVE : bool
+            If True, save plots.
+        show_figure : bool
+            If True, show the figure.
+        dry_run : bool
+            If True, do not compute source properties. In a first run, use True
+            to inspect how well the source detection was.
+        """
 
         self.input_data = input_data
         self.z = z
@@ -311,6 +398,7 @@ class source_extraction():
         self.sigma_level = sigma_level
         self.sigma_mask = sigma_mask
         self.sigma = sigma
+        self.minarea_factor = minarea_factor
         self.ell_size_factor = ell_size_factor
         self.vmin_factor = vmin_factor
         self.mask_component = mask_component
@@ -352,13 +440,13 @@ class source_extraction():
         
         if dry_run is True:
             self.show_detection = True
+            self.get_sources()
 
-        self.get_sources()
         if dry_run is not True:
             self.contruct_source_properties()
 
     def get_sources(self):
-        self.masks, self.indices, self.seg_maps = \
+        self.masks, self.indices, self.seg_maps, self.objects = \
             mlibs.sep_source_ext(self.input_data.filename,
                            bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
                            # filtering options for source detection
@@ -370,10 +458,28 @@ class source_extraction():
                            clean_param=self.clean_param,
                            clean=self.clean,
                            sort_by=self.sort_by,
-                           sigma=self.sigma,
+                           minarea_factor=self.minarea_factor,
+                           sigma=self.sigma,sigma_mask=self.sigma_mask,
                            ell_size_factor=self.ell_size_factor,
                            apply_mask=self.apply_mask,
                            show_detection=self.show_detection)
+        # self.masks, self.indices, self.seg_maps, self.objects = \
+        #     mlibs.phot_source_ext(self.input_data.filename,
+        #                    bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
+        #                    # filtering options for source detection
+        #                    minarea=self.minarea,
+        #                    segmentation_map=self.segmentation_map,
+        #                    filter_type=self.filter_type, mask=self.mask,
+        #                    deblend_nthresh=self.deblend_nthresh,
+        #                    deblend_cont=self.deblend_cont,
+        #                    clean_param=self.clean_param,
+        #                    clean=self.clean,
+        #                    sort_by=self.sort_by,
+        #                    sigma=self.sigma,sigma_mask=self.sigma_mask,
+        #                    minarea_factor = self.minarea_factor,
+        #                    ell_size_factor=self.ell_size_factor,
+        #                    apply_mask=self.apply_mask,
+        #                    show_detection=self.show_detection)
 
     def contruct_source_properties(self):
         (self.sources_photometries, self.n_components,
@@ -382,7 +488,7 @@ class source_extraction():
                               self.input_data.residualname,
                               z=self.z,ids_to_add = self.ids_to_add,
                               bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
-                              sigma=self.sigma,
+                              sigma=self.sigma,apply_mask=self.apply_mask,
                               deblend_nthresh=self.deblend_nthresh,
                               ell_size_factor=self.ell_size_factor,
                               deblend_cont=self.deblend_cont,
@@ -431,12 +537,14 @@ class sersic_multifit_radio():
         model the bulge/bar/disk, for example.
     """
     def __init__(self, input_data, SE, aspect=None, 
+                 which_residual='shuffled',
                  fix_geometry = True,
                  comp_ids = ['1'],
                  fix_n = None, 
                  fix_value_n = None, dr_fix = None,
+                 sigma=6.0,tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
-                 method2='least_squares'):
+                 method2='least_squares',z = 0.01):
         """
             Examples: 
                 fix_n = [True, True, True,True, True, True,True, True, True]
@@ -451,7 +559,10 @@ class sersic_multifit_radio():
         self.convolution_mode = convolution_mode
         self.method1 = method1
         self.method2 = method2
-        
+        self.tr_solver = tr_solver
+        self.z = z
+        self.which_residual = which_residual
+        self.sigma = sigma
         
         if fix_n==None:
             self.fix_n = [True] * self.SE.n_components
@@ -478,20 +589,95 @@ class sersic_multifit_radio():
             mlibs.run_image_fitting(imagelist=[self.input_data.filename],
                                     residuallist=[self.input_data.residualname],
                                     aspect=self.aspect,
+                                    which_residual=self.which_residual,
                                     comp_ids=self.comp_ids,# which IDs refers to compact components?
                                     sources_photometries=self.SE.sources_photometries,
                                     n_components=self.SE.n_components,
-                                    z=self.SE.z,
+                                    z=self.z,
                                     convolution_mode=self.convolution_mode,
                                     method1=self.method1,
                                     method2=self.method2,
                                     mask=self.SE.mask,
                                     save_name_append='',
                                     fix_n=self.fix_n,
+                                    tr_solver = self.tr_solver,
                                     fix_value_n=self.fix_value_n,
                                     fix_geometry=self.fix_geometry,  # unstable if  False
                                     dr_fix=self.dr_fix,
+                                    sigma=self.sigma,
                                     logger=_logging_.logger)
+        # compute sizes
+        try:
+            self.pix_to_pc = \
+                mlibs.pixsize_to_pc(z=self.z,
+                                    cell_size=mlibs.get_cell_size(self.input_data.filename))
+            self.size_unit = ' pc'
+        except:
+            self.pix_to_pc = 1
+            self.size_unit = ' px'
+
+        self.beam_size_px = self.results_fit['beam_size_px']
+        self.beam_size_pc = self.beam_size_px * self.pix_to_pc
+
+        # 50% core-compact/unresolved deconvolved radii
+        self.C50comp_radii_deconv = \
+            self.results_compact_deconv_morpho['C50radii'] * self.pix_to_pc
+        # 50% core-compact/unresolved convolved radii
+        self.C50comp_radii_conv = \
+            self.results_compact_conv_morpho['C50radii'] * self.pix_to_pc
+        # 95% core-compact/unresolved deconvolved radii
+        self.C95comp_radii_deconv = \
+            self.results_compact_deconv_morpho['C95radii'] * self.pix_to_pc
+        # 95% core-compact/unresolved convolved radii
+        self.C95comp_radii_conv = \
+            self.results_compact_conv_morpho['C95radii'] * self.pix_to_pc
+
+        # 50% core-compact/unresolved deconvolved radii
+        self.C50ext_radii_deconv = \
+            self.results_ext_deconv_morpho['C50radii'] * self.pix_to_pc
+        # 50% core-compact/unresolved convolved radii
+        self.C50ext_radii_conv = \
+            self.results_ext_conv_morpho['C50radii'] * self.pix_to_pc
+        # 95% core-compact/unresolved deconvolved radii
+        self.C95ext_radii_deconv = \
+            self.results_ext_deconv_morpho['C95radii'] * self.pix_to_pc
+        # 95% core-compact/unresolved convolved radii
+        self.C95ext_radii_conv = \
+            self.results_ext_conv_morpho['C95radii'] * self.pix_to_pc
+
+        # Rn main core-compact/unresolved component (ID1)
+        self.Rn_comp = self.results_fit['f1_Rn'] * self.pix_to_pc
+
+        mlibs.print_logger_header(title="Core-Compact Component Sizes",
+                            logger=_logging_.logger)
+        _logging_.logger.info(f" >=> Beam Size = "
+                              f"{self.beam_size_px[0]:.2f} px")        
+        _logging_.logger.info(f" >=> Beam Size = "
+                              f"{self.beam_size_pc[0]:.2f} {self.size_unit}")        
+
+        _logging_.logger.info(f" >=> Rn Main Compact = "
+                              f"{self.Rn_comp[0]:.2f} {self.size_unit}")
+
+        _logging_.logger.info(f" >=> C50 Compact Deconv Radii = "
+                              f"{self.C50comp_radii_deconv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C50 Compact Conv Radii = "
+                              f"{self.C50comp_radii_conv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C95 Compact Deconv Radii = "
+                              f"{self.C95comp_radii_deconv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C95 Compact Conv Radii = "
+                              f"{self.C95comp_radii_conv[0]:.2f} {self.size_unit}")
+
+        mlibs.print_logger_header(title="Extended Component Sizes",
+                            logger=_logging_.logger)
+        _logging_.logger.info(f" >=> C50 Extended Deconv Radii = "
+                              f"{self.C50ext_radii_deconv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C50 Extended Conv Radii = "
+                              f"{self.C50ext_radii_conv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C95 Extended Deconv Radii = "
+                              f"{self.C95ext_radii_deconv[0]:.2f} {self.size_unit}")
+        _logging_.logger.info(f" >=> C95 Extended Conv Radii = "
+                              f"{self.C95ext_radii_conv[0]:.2f} {self.size_unit}")
+
 
 
 class morphometry():
@@ -503,7 +689,7 @@ class morphometry():
     def __init__(self, input_data, aspect=None):
         self.input_data = input_data
         
-        
+
     def _concentration(self):
         pass
     def _asymetry(self):
@@ -546,6 +732,11 @@ class radio_star_formation():
         self.alpha = alpha
         self.alpha_NT = alpha_NT
         self.return_with_error = True
+        self.cell_size = mlibs.get_cell_size(self.input_data.filename)
+        self.pix_to_pc = mlibs.pixsize_to_pc(z=self.z,
+                                  cell_size=self.cell_size)
+
+
         if frequency is None:
             try:
                 imhd = mlibs.imhead(self.input_data.filename)
@@ -568,6 +759,9 @@ class radio_star_formation():
         self.frequency = frequency
         self.calibration_kind = calibration_kind
         self.compute_SFR_extended()
+        self.compute_surface_areas_SFR()
+        self.brightness_temperature()
+
 
     def compute_flux_compact(self):
         """
@@ -588,10 +782,104 @@ class radio_star_formation():
                                  alpha=self.alpha, alpha_NT=self.alpha_NT,
                                  calibration_kind=self.calibration_kind,
                                  return_with_error=self.return_with_error)
+
         mlibs.print_logger_header(title="SFR Estimates",
                             logger=_logging_.logger)
         _logging_.logger.info(f" ==> SFR ={self.SFR_ext:.2f} +/- {self.SFR_ext_err:.2f} "
                               f"Mo/yr")
+        
+    def compute_surface_areas_SFR(self):
+        """
+        From the Sersic fitting results, compute the convolved and deconvolved areas. 
+        These will be used to determine the surface density star formation rates.
+
+        """
+        def get_areas(df,region,pix_to_pc):
+            area_region = (df[region] * df['beam_area'] *
+                           (pix_to_pc**2.0)/(1000**2.0))
+            return(area_region)
+
+        # The 50% deconvolved area for core-compact/unresolved components
+        self.A50_kpc_comp_deconv = get_areas(self.SMFR.results_compact_deconv_morpho,
+                                             region='A50',
+                                             pix_to_pc = self.pix_to_pc)
+        # The 50% convolved area for core-compact/unresolved components
+        self.A50_kpc_comp_conv = get_areas(self.SMFR.results_compact_conv_morpho,
+                                           region='A50',
+                                           pix_to_pc = self.pix_to_pc)
+        # The 50% deconvolved area for diffuse components
+        self.A50_kpc_ext_deconv = get_areas(self.SMFR.results_ext_deconv_morpho,
+                                            region='A50',
+                                            pix_to_pc = self.pix_to_pc)
+        # The 50% convolved area for diffuse components
+        self.A50_kpc_ext_conv = get_areas(self.SMFR.results_ext_conv_morpho,
+                                          region='A50',
+                                          pix_to_pc = self.pix_to_pc)
+        # The 95% deconvolved area for core-compact/unresolved components
+        self.A95_kpc_comp_deconv = get_areas(self.SMFR.results_compact_deconv_morpho,
+                                             region='A95',
+                                             pix_to_pc = self.pix_to_pc)
+        # The 95% convolved area for core-compact/unresolved components
+        self.A95_kpc_comp_conv = get_areas(self.SMFR.results_compact_conv_morpho,
+                                           region='A95',
+                                           pix_to_pc = self.pix_to_pc)
+        # The 95% deconvolved area for diffuse components
+        self.A95_kpc_ext_deconv = get_areas(self.SMFR.results_ext_deconv_morpho,
+                                            region='A95',
+                                            pix_to_pc = self.pix_to_pc)
+        # The 95% convolved area for diffuse components
+        self.A95_kpc_ext_conv = get_areas(self.SMFR.results_ext_conv_morpho,
+                                          region='A95',
+                                          pix_to_pc = self.pix_to_pc)
+
+        self.sSFR50_deconv_ext = self.SFR_ext / self.A50_kpc_ext_deconv
+        self.sSFR50_conv_ext = self.SFR_ext / self.A50_kpc_ext_conv
+        self.sSFR95_deconv_ext = self.SFR_ext / self.A95_kpc_ext_deconv
+        self.sSFR95_conv_ext = self.SFR_ext / self.A95_kpc_ext_conv
+
+
+        mlibs.print_logger_header(title="sSFR Estimates",
+                            logger=_logging_.logger)
+        _logging_.logger.info(f" >=> Deconvolved A50 sSFR = "
+                              f"{self.sSFR50_deconv_ext[0]:.2f} Mo/(yr kpc^2)")
+        _logging_.logger.info(f" >=> Convolved A50 sSFR = "
+                              f"{self.sSFR50_conv_ext[0]:.2f} Mo/(yr kpc^2)")
+        _logging_.logger.info(f" >=> Deconvolved A95 sSFR = "
+                              f"{self.sSFR95_deconv_ext[0]:.2f} Mo/(yr kpc^2)")
+        _logging_.logger.info(f" >=> Convolved A95 sSFR = "
+                              f"{self.sSFR95_conv_ext[0]:.2f} Mo/(yr kpc^2)")
+
+
+        
+
+    def brightness_temperature(self):
+        """
+        To Do: Loop over all model components, and compute TB individually.
+
+        """
+        self.theta1_Rnfit = 2 * self.cell_size * self.SMFR.results_fit['f1_Rn']
+        self.theta2_Rnfit = (2 * (1 - self.SMFR.results_fit['f1_ell']) * self.cell_size *
+                             self.SMFR.results_fit['f1_Rn'])
+
+        self.TB_Rnfit  = mlibs.Tb_source(Snu=self.SMFR.results_compact_deconv_morpho[
+            'total_flux_mask'],
+                                   freq=self.frequency,
+                                   theta1=self.theta1_Rnfit, theta2=self.theta2_Rnfit,
+                                   z=self.z)
+
+        self.theta1_R50fit = 2 * self.cell_size * self.SMFR.results_compact_deconv_morpho[
+            'C50radii']
+        self.theta2_R50fit = (2 * (1 - self.SMFR.results_compact_deconv_morpho['qm']) *
+                              self.cell_size *
+                             self.SMFR.results_compact_deconv_morpho['C50radii'])
+        self.TB_R50fit  = mlibs.Tb_source(Snu=self.SMFR.results_compact_deconv_morpho['total_flux_mask'],
+                                   freq=self.frequency,
+                                   theta1=self.theta1_R50fit, theta2=self.theta2_R50fit,
+                                   z=self.z)
+        mlibs.print_logger_header(title="Brightness Temperature",
+                            logger=_logging_.logger)
+        _logging_.logger.info(f" ==> TB Rn Fit = {self.TB_Rnfit[0]:.2f} e5 K")
+        _logging_.logger.info(f" ==> TB R50 Fit = {self.TB_R50fit[0]:.2f} e5 K")
 
 
 
@@ -689,10 +977,10 @@ if __name__ == '__main__':
                 if args.residualname != None:
                     SMFR = sersic_multifit_radio(input_data, SE,
                                                  method2 = args.solver2)
+                    if '--SFR-do' in sys.argv:
+                        SFR = radio_star_formation(input_data,
+                                                   SMFR,
+                                                   z=args.redshift)
                 else:
                     print("Error: Please, provide a residual image (e.g. the one "
                           "generate during interferometric deconvolution).")
-                if '--SFR-do' in sys.argv:
-                    SFR = radio_star_formation(input_data,
-                                               SMFR,
-                                               z=args.redshift)
