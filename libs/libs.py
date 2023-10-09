@@ -477,11 +477,10 @@ def area_to_radii(A):
 
 def ctn(image):
     '''
+        Name origin:
         ctn > casa to numpy
-        FUnction that read fits files inside CASA environment.
-        Read a CASA format image file and return as a numpy array.
-        Also works with wsclean images!
-        Note: For some reason, casa returns a rotated mirroed array, so we need
+        Function that read fits files, using casa IA.open or astropy.io.fits.
+        Note: For some reason, IA.open returns a rotated mirroed array, so we need
         to undo it by a rotation.
         '''
     try:
@@ -500,7 +499,7 @@ def ctn(image):
             data_image = pf.getdata(image)
             return (data_image)
         except:
-            print('Error loading fits file')
+            print('Input image is not a fits file.')
             return(ValueError)
 
 
@@ -1051,6 +1050,8 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
     if isinstance(image, str) == True:
         data = ctn(image)
     else:
+        print('Not able to determine cell size. Please, provide a cell size with the '
+              'parameter `cell_size`.')
         data = image
     if rms is None:
         std = mad_std(data)
@@ -1111,14 +1112,14 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
             plt.close()
     #         plt.savefig(image.replace('.fits','_masks.jpg'),dpi=300, bbox_inches='tight')
 
-    if cell_size is not None:
-        if isinstance(image, str) == True:
-            try:
-                print((data * data_mask_d).sum() / beam_area2(image, cell_size))
-                print((data * data_mask).sum() / beam_area2(image, cell_size))
-                print((data).sum() / beam_area2(image, cell_size))
-            except:
-                print('Provide a cell size of the image.')
+    # if cell_size is not None:
+    #     if isinstance(image, str) == True:
+    #         try:
+    #             print((data * data_mask_d).sum() / beam_area2(image, cell_size))
+    #             print((data * data_mask).sum() / beam_area2(image, cell_size))
+    #             print((data).sum() / beam_area2(image, cell_size))
+    #         except:
+    #             print('Provide a cell size of the image.')
     return (mask, data_mask_d)
 
 def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
@@ -2375,7 +2376,7 @@ def get_image_statistics(imagename,cell_size,
 
 
 def level_statistics(img, cell_size=None, mask_component=None,
-                    sigma=6, do_PLOT=True, crop=False,data_2D = None,
+                    sigma=6, do_PLOT=False, crop=False,data_2D = None,
                     box_size=256, bkg_to_sub=None, apply_mask=True,
                     mask=None,rms=None,
                     results=None, dilation_size=None, iterations=2,
@@ -2409,18 +2410,7 @@ def level_statistics(img, cell_size=None, mask_component=None,
     if mask_component is not None:
         g = g * mask_component
 
-    print('Mad    >  ', std)
-    print('std    >  ', np.std(g_))
-    print('median >  ', np.median(g_))
-    print('mean   >  ', np.mean(g_))
-
-    ###########################################
-    ############## CASA UTILITY  ##############
-    ###########################################
-    g_hd = imhead(img)
-    omaj = g_hd['restoringbeam']['major']['value']
-    omin = g_hd['restoringbeam']['minor']['value']
-    beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
+    beam_area_ = beam_area2(img)
 
     if mask is not None:
         g = g * mask
@@ -2518,23 +2508,23 @@ def level_statistics(img, cell_size=None, mask_component=None,
         results = {}
         results['#imagename'] = os.path.basename(img)
 
-    print('Low Flux (extended) Jy                    > ', low_flux, ' >> ratio=',
-          low_flux / total_flux)
-    print('Mid Flux (outer core + inner extended) Jy > ', mid_flux, ' >> ratio=',
-          mid_flux / total_flux)
-    print('Inner Flux (core) Jy                      > ', inner_flux,
-          ' >> ratio=', inner_flux / total_flux)
-    print('Uncertain Flux (<5std)                    > ', uncertain_flux,
-          ' >> ratio=', uncertain_flux / total_flux)
-    print('Total Flux Jy                             > ', total_flux)
-    print('Total area (in # ob beams)                > ', number_of_beams)
-    print('Total inner area (in # ob beams)          > ', n_beams_inner)
-    print('Total mid area (in # ob beams)            > ', n_beams_mid)
-    print('Total low area (in # ob beams)            > ', n_beams_low)
-    print('Total uncertain area (in # ob beams)      > ', n_beams_uncertain)
-    print('Inner Flux (core) fraction                > ',
-          inner_flux / total_flux)
-    print('Outer Flux (ext)  fraction                > ', ext_flux / total_flux)
+    # print('Low Flux (extended) Jy                    > ', low_flux, ' >> ratio=',
+    #       low_flux / total_flux)
+    # print('Mid Flux (outer core + inner extended) Jy > ', mid_flux, ' >> ratio=',
+    #       mid_flux / total_flux)
+    # print('Inner Flux (core) Jy                      > ', inner_flux,
+    #       ' >> ratio=', inner_flux / total_flux)
+    # print('Uncertain Flux (<5std)                    > ', uncertain_flux,
+    #       ' >> ratio=', uncertain_flux / total_flux)
+    # print('Total Flux Jy                             > ', total_flux)
+    # print('Total area (in # ob beams)                > ', number_of_beams)
+    # print('Total inner area (in # ob beams)          > ', n_beams_inner)
+    # print('Total mid area (in # ob beams)            > ', n_beams_mid)
+    # print('Total low area (in # ob beams)            > ', n_beams_low)
+    # print('Total uncertain area (in # ob beams)      > ', n_beams_uncertain)
+    # print('Inner Flux (core) fraction                > ',
+    #       inner_flux / total_flux)
+    # print('Outer Flux (ext)  fraction                > ', ext_flux / total_flux)
 
     results['total_flux'] = total_flux
     results['inner_flux'] = inner_flux
@@ -2821,7 +2811,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     data_2D=data_2D,
                                     sigma=sigma_mask, do_PLOT=do_PLOT,
                                     results=results_final, bkg_to_sub=bkg_to_sub,
-                                    show_figure=show_figure,
+                                    show_figure=False,
                                     add_save_name=add_save_name,
                                     SAVE=SAVE, ext='.jpg')
     levels, fluxes, agrow, plt, \
@@ -4164,7 +4154,7 @@ def cal_PA_q(gal_image_0,Isequence = None,region_split=None,SAVENAME=None):
     <<<Morfometryka-core part>>>
     Estimates inner and outer PA nad q=(b/a)
     '''
-    from fitEllipse2018 import main_test2
+    from fitEllipse import main_test2
     # mean Inner q,  mean outer q,  mean Inner PA,  mean Outer PA
     qmi, qmo, PAmi, PAmo, qm, PAm,\
         x0median,y0median,x0median_i,y0median_i,\

@@ -166,10 +166,14 @@ class read_data():
         self.image_data_2D = None
         self.residual_data_2D = None
         self.psf_data_2D = None
+        self.rms_img = None
+        self.rms_res = None
         if self.filename != None:
             self.image_data_2D = mlibs.ctn(self.filename)
+            self.rms_img = mlibs.mad_std(self.image_data_2D)
         if self.residualname != None:
             self.residual_data_2D = mlibs.ctn(self.residualname)
+            self.rms_res = mlibs.mad_std(self.residual_data_2D)
         if self.psfname != None:
             self.psf_data_2D = mlibs.ctn(self.psfname)
 
