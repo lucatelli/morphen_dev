@@ -29,7 +29,6 @@ print('By',__author__)
 print('Date',__date__)
 import os
 import sys
-# sys.path.append("/mirror/scratch/lucatelli/app/miniconda3/envs/casa6/lib/python3.8/site-packages/")
 
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
@@ -410,7 +409,7 @@ def angular_distance_cosmo(z, Om0=0.308):
     h = 67.8# * (h1 + h2) / 2
     cosmo = FlatLambdaCDM(H0=h, Om0=Om0)
     d_A = cosmo.angular_diameter_distance(z=z)
-    print('D_a = ', d_A)  # 946.9318492873492 Mpc
+    # print('D_a = ', d_A)  # 946.9318492873492 Mpc
     return(d_A)
 
 def arcsec_to_pc(z, cell_size, Om0=0.308):
@@ -1917,7 +1916,7 @@ def get_radial_profiles(imagelist, labels_profiles=None, save_fig=None):
 def get_peak_pos(imagename):
     st = imstat(imagename=imagename)
     maxpos = st['maxpos'][0:2]
-    print('Peak Pos=', maxpos)
+    # print('Peak Pos=', maxpos)
     return (maxpos)
 
 
@@ -2347,16 +2346,17 @@ def get_image_statistics(imagename,cell_size,
             total_flux_tmp = flux_im
             total_flux_tmp = total_flux(image_data,imagename,mask=mask)
 
-        print('Estimate #1 of flux error (based on sum of residual map): ')
-        print('Flux = ', total_flux_tmp * 1000, '+/-',
-              abs(flux_res_error) * 1000, 'mJy')
-        print('Fractional error flux = ', flux_res_error / total_flux_tmp)
+        # print('Estimate #1 of flux error (based on sum of residual map): ')
+        # print('Flux = ', total_flux_tmp * 1000, '+/-',
+        #       abs(flux_res_error) * 1000, 'mJy')
+        # print('Fractional error flux = ', flux_res_error / total_flux_tmp)
         print('-----------------------------------------------------------------')
-        print('Estimate #2 of flux error (based on rms of '
+        print('Estimate of flux error (based on rms of '
               'residual x area): ')
         print('Flux = ', total_flux_tmp * 1000, '+/-',
               abs(res_error_rms) * 1000, 'mJy')
         print('Fractional error flux = ', res_error_rms / total_flux_tmp)
+        print('-----------------------------------------------------------------')
 
         dic_data['max_residual'] = np.max(data_res * mask)
         dic_data['min_residual'] = np.min(data_res * mask)
@@ -2906,7 +2906,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
         R50_arcsec = results_final['C50radii'] * cell_size
 
     if do_measurements=='all':
-        x0c, y0c = results_final['x0'], results_final['y0']
+        x0c, y0c = results_final['x0m'], results_final['y0m']
         if compute_A == True:
             print('--==>> Computing asymetries...')
             results_final = compute_asymetries(imagename=imagename,
@@ -3008,12 +3008,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
 
     if bkg_to_sub is not None:
         g = g - bkg_to_sub
-    ###########################################
-    ############## CASA UTILITY  ##############
-    ###########################################
-    ####################################################################
-    ############## CASA COMPONENT  #####################################
-    ####################################################################
+
 
     if cell_size is None:
         try:
@@ -3021,14 +3016,13 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
         except:
             cell_size = 1.0
 
-    g_hd = imhead(img)                                      ############
-    freq = g_hd['refval'][2] / 1e9                          ############
-    print(freq)                                             ############
-    omaj = g_hd['restoringbeam']['major']['value']          ############
-    omin = g_hd['restoringbeam']['minor']['value']          ############
-    beam_area_ = beam_area(omaj, omin, cellsize=cell_size)  ############
-    ##############                 #####################################
-    ####################################################################
+    g_hd = imhead(img)
+    freq = g_hd['refval'][2] / 1e9
+    # print(freq)                                            
+    omaj = g_hd['restoringbeam']['major']['value']
+    omin = g_hd['restoringbeam']['minor']['value']
+    beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
+
     if rms is not None:
         print('Using rms provided...')
         std = rms
@@ -3147,6 +3141,10 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     Lgrow = np.cumsum(fluxes)
     Lgrow_norm = Lgrow / fluxes.sum()
     # print(Lgrow_norm)
+
+    ####################################################################
+    ## THIS NEEDS A BETTER IMPLEMENTATION USING SPLINE!!!!  ############
+    ####################################################################
     mask_L20 = Lgrow_norm < 0.2
     mask_L50 = Lgrow_norm < 0.5
     mask_L80 = Lgrow_norm < 0.8
@@ -3360,7 +3358,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     results['RTmed'], results['RTmean'], \
         results['RTstd'] = RTmed,RTmean,RTstd
 
-    print(C20radii, C50radii, C80radii, C90radii)
+    # print(C20radii, C50radii, C80radii, C90radii)
     C1 = np.log10(C80radii / C20radii)
     C2 = np.log10(C90radii / C50radii)
 
@@ -3527,7 +3525,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     #             label='Levels Norm Flux')
     ax1.scatter(levels[:], np.cumsum(fluxes) / results['total_flux_mask'],
                 label='Mask Norm Flux')
-    print('Sum of fluxes = ', np.sum(fluxes))
+    # print('Sum of fluxes = ', np.sum(fluxes))
 
     #     print(np.sum(fluxes))
     ax1.axhline(0, ls='-.', color='black')
@@ -3713,7 +3711,7 @@ def structural_morphology(imagelist, residuallist,
             omaj, omin, _, _, _ = beam_shape(crop_image)
             dilation_size = int(
                 np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
-            print('dilation_size=', dilation_size)
+            # print('dilation_size=', dilation_size)
 
             if len(indices) > 1:
                 for j in range(len(indices)):
@@ -5337,7 +5335,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
         data_component = data_2D
     cat, segm, segm_deblend = make_catalog(image=data_component,
                                            threshold=sigma_level * std,
-                                           deblend=deblend,
+                                           deblend=deblend,npixels=512,
                                            # because we already deblended it!
                                            plot=plot, vmax=data_component.max(),
                                            vmin=vmin * std)
@@ -5454,7 +5452,7 @@ def petro_params(source, data_2D, segm, mask_source, positions=None,
     cutout_size = 2 * max(r_list)
     flux_arr, area_arr, error_arr = source_photometry(source, data_2D, segm,
                                                       r_list, cutout_size=cutout_size,
-                                                      position2=positions,
+                                                      # position2=positions,
                                                       bg_sub=bkg_sub, sigma=sigma,
                                                       sigma_type=sigma_type,
                                                       plot=plot, vmax=0.3 * data_2D.max(),
@@ -7021,28 +7019,28 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     vmin = 3
     # i = 0 #to be used in indices[0], e.g. first component
     sources_photometries = {}  # init dict to store values.
-    if use_extraction_positions == True:
-        for i in range(len(indices)):
-            # ii = str(i+1)
-            positions = np.array([objects['xc'][i], objects['yc'][i]])
-            mask_component = masks[indices[i]]
-            data_component = data_2D * mask_component
-            sources_photometries = compute_petro_source(data_component,
-                                                        mask_component=mask_component,
-                                                        sigma_level=1,positions=positions,
-                                                        i=i, plot=show_petro_plots,
-                                                        source_props=sources_photometries)
+    # if use_extraction_positions == True:
+    #     for i in range(len(indices)):
+    #         # ii = str(i+1)
+    #         positions = np.array([objects['xc'][i], objects['yc'][i]])
+    #         mask_component = masks[indices[i]]
+    #         data_component = data_2D * mask_component
+    #         sources_photometries = compute_petro_source(data_component,
+    #                                                     mask_component=mask_component,
+    #                                                     sigma_level=1,positions=positions,
+    #                                                     i=i, plot=show_petro_plots,
+    #                                                     source_props=sources_photometries)
 
-    else:
-        for i in range(len(indices)):
-            # ii = str(i+1)
-            mask_component = masks[indices[i]]
-            data_component = data_2D * mask_component
-            sources_photometries = compute_petro_source(data_component,
-                                                        mask_component=mask_component,
-                                                        sigma_level=1,
-                                                        i=i, plot=show_petro_plots,
-                                                        source_props=sources_photometries)
+    # else:
+    for i in range(len(indices)):
+        # ii = str(i+1)
+        mask_component = masks[indices[i]]
+        data_component = data_2D * mask_component
+        sources_photometries = compute_petro_source(data_component,
+                                                    mask_component=mask_component,
+                                                    sigma_level=1,
+                                                    i=i, plot=show_petro_plots,
+                                                    source_props=sources_photometries)
 
 
     sources_photometries['ncomps'] = len(indices)
