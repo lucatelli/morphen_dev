@@ -125,25 +125,20 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.12'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=6'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
-#if you are using GPU, you MUST limit the number of CPU threads to be used.
-"""
-If you have a machine with multiple cores (e.g. > 16), using all will slow things 
-down, since the communication between all distributed processes with the GPU 
-will take longer...
-"""
 
-os.environ["NUM_CPUS"] = "6"  # Set the desired number of CPU threads here
+
+os.environ["NUM_CPUS"] = "16"  # Set the desired number of CPU threads here
 # os.environ["XLA_FLAGS"] = "--xla_cpu_threads=2"
-os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=6"  # Set the desired number of CPU
+os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=16"  # Set the desired number of CPU
 # threads here
 
-# os.environ['MKL_NUM_THREADS']='6'
-# os.environ['OPENBLAS_NUM_THREADS']='6'
-# os.environ["NUM_INTER_THREADS"]="6"
-# os.environ["NUM_INTRA_THREADS"]="6"
+os.environ['MKL_NUM_THREADS']='16'
+os.environ['OPENBLAS_NUM_THREADS']='16'
+os.environ["NUM_INTER_THREADS"]="16"
+os.environ["NUM_INTRA_THREADS"]="16"
 #
-# os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
-#                            "intra_op_parallelism_threads=6")
+os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=true "
+                           "intra_op_parallelism_threads=16")
 
 
 # sys.path.append('../../scripts/analysis_scripts/')
@@ -227,10 +222,15 @@ def rotation(PA, x0, y0, x, y):
     Rotate an input image array. It can be used to modify
     the position angle (PA).
 
-    Params:
+    Params
+    ------
         x0,y0: center position
         PA: position angle of the meshgrid
         x,y: meshgrid arrays
+    Returns
+    -------
+        tuple float
+            rotated meshgrid arrays
     """
     # gal_center = (x0+0.01,y0+0.01)
     x0 = x0 + 0.25
@@ -253,6 +253,36 @@ def bn_cpu(n):
     return 2. * n - 1. / 3. + 0 * ((4. / 405.) * n) + ((46. / 25515.) * n ** 2.0)
 
 def sersic2D(xy, x0, y0, PA, ell, n, In, Rn,cg=0.0):
+    """
+    Parameters
+    ----------
+    xy : tuple float
+        meshgrid arrays
+    x0,y0 : float float
+        center position in pixels
+    PA : float
+        position angle in degrees of the meshgrid
+        [-180, +180]
+    ell : float
+        ellipticity, e = 1 - q
+        ell in [0,1]
+    n : float
+        sersic index
+        n in [0, inf]
+   Rn : float
+        half-light radius
+        Rn in [0, inf]
+    In : float
+        intensity at Rn
+        In in [0, inf]
+    cg : float
+        geometric parameter that controls how boxy the ellipse is
+        c in [-2, 2]
+    Returns
+    -------
+    model : 2D array
+        2D sersic function image
+    """
     q = 1 - ell
     x, y = xy
     # x,y   = np.meshgrid(np.arange((size[1])),np.arange((size[0])))
@@ -262,8 +292,24 @@ def sersic2D(xy, x0, y0, PA, ell, n, In, Rn,cg=0.0):
     model = In * np.exp(-bn_cpu(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
     return (model)
 
-def FlatSky(data_level, a):
+def FlatSky_cpu(data_level, a):
+    """
+    Parameters
+    ----------
+    data_level : float
+        data level, usually the std of the image.
+        data_level in [0, inf]
+    a : float
+        flat sky level factor, to multiply the data_level.
+        a in [0, inf]
+    Returns
+    -------
+    float
+        flat sky level
+
+    """
     return (a * data_level)
+
 
 
 def deconvolve_fft(image, psf):
@@ -276,6 +322,20 @@ def deconvolve_fft(image, psf):
     This was designed to provide a residual map to be used as input for the 
     Sersic fitting. Instead of providing the convolved residual map, it is 
     more correct to provide a deconvolved residual map.
+
+    Parameters
+    ----------
+    image : 2D array
+        Input image array.
+    psf : 2D array
+        Input psf array.
+    Returns
+    -------
+    deconvolved_scaled : 2D array
+        Deconvolved image array.
+    deconvolved_norm : 2D array
+        Deconvolved image array, normalised.
+
     
     """
     padded_shape = (image.shape[0] + psf.shape[0] - 1,
@@ -337,8 +397,38 @@ def bn(n):
 @jit
 def sersic2D_GPU(xy, x0, y0, PA, ell, n, In, Rn, cg=0.0):
     """
-    Using Jax >> 10x faster.
+    Using Jax >> 10x to 100x faster.
+
+    Parameters
+    ----------
+    xy : tuple float
+        meshgrid arrays
+    x0,y0 : float float
+        center position in pixels
+    PA : float
+        position angle in degrees of the meshgrid
+        [-180, +180]
+    ell : float
+        ellipticity, e = 1 - q
+        ell in [0,1]
+    n : float
+        sersic index
+        n in [0, inf]
+    Rn : float
+        half-light radius
+        Rn in [0, inf]
+    In : float
+        intensity at Rn
+        In in [0, inf]
+    cg : float
+        geometric parameter that controls how boxy the ellipse is
+        c in [-2, 2]
+    Returns
+    -------
+    model : 2D Jax array
+        2D sersic function image
     """
+
     q = 1 - ell
     x, y = xy
 
@@ -646,7 +736,7 @@ def get_beam_size_px(imagename):
     aO_px = aO/cs
     bO_px = bO/cs
     beam_size_px = np.sqrt(aO_px * bO_px)
-    return(beam_size_px,aO,bO)
+    return(beam_size_px,aO_px,bO_px)
 
 def beam_physical_area(imagename,z):
     '''
@@ -823,6 +913,24 @@ def tcreate_beam_psf(imname, cellsize=None,size=(128,128),app_name='',
     From an interferometric image, reconstruct the restoring beam as a PSF
     gaussian image, with the same size as the original image.
 
+    Parameters
+    ----------
+    imname : str
+        Image name.
+    cellsize : float
+        Cell size of the image in arcsec.
+    size : tuple
+        Size of the PSF image.
+    app_name : str
+        Name to append to the PSF image.
+    aspect : str
+        Aspect ratio of the PSF image. If 'equal', the PSF will be circular.
+        If None, the PSF will be elliptical.
+    Returns
+    -------
+    psf_name : str
+        PSF image name.
+
     """
     if cellsize is None:
         try:
@@ -845,11 +953,11 @@ def tcreate_beam_psf(imname, cellsize=None,size=(128,128),app_name='',
     direction = "J2000 10h00m00.0s -30d00m00.0s"
     cl.done()
     freq = str(imhd['refval'][2] / 1e9) + 'GHz'
-    if aspect=='equal':
+    if (aspect=='circular') or (aspect=='equal'):
         print('WARNING: Using circular Gaussian for Gaussian beam convolution.')
-        minoraxis = str(imhd['restoringbeam']['major']['value']) + str(
+        minoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
-        majoraxis = str(imhd['restoringbeam']['major']['value']) + str(
+        majoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
 
     else:
@@ -1881,6 +1989,16 @@ def cdiff(data):
 |____/ \___|\__\___|\___|\__|_|\___/|_| |_|
 
 """
+
+def get_ell_size_factor(psf_current, psf_large=50, ell_large=2.0, psf_small=4,
+                        ell_small=7):
+    """
+    Rough linear relation between the restoring beam size (psf) with the scale factor
+    of the ellipse to
+    be drawn on the detection map.
+    """
+    return ell_large + (ell_small - ell_large) *  ((psf_current - psf_large) / (
+            psf_small - psf_large))
 
 
 """
@@ -5191,8 +5309,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
 
     if (source_props['rlast'] < 2 * source_props['Rp']) or \
             (p.r_total_flux is np.nan):
-        print('WARNING: Number of pixels for petro region is to small. Looping '
-              'over until good condition is satisfied.')
+        print('WARNING: Number of pixels for petro region is to small. Finding '
+              'a good condition...')
         print('Rlast     >> ', source_props['rlast'])
         print('Rp        >> ', source_props['Rp'])
         print('Rtotal    >> ', p.r_total_flux)
@@ -5220,8 +5338,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
 
     if (source_props['rlast'] < 2 * source_props['Rp']) or \
             (p.r_total_flux is np.nan):
-        print('WARNING: Number of pixels for petro region is to small. Looping '
-              'over until good condition is satisfied.')
+        print('WARNING: Number of pixels for petro region is to small. Finding '
+              'a good condition...')
         print('Rlast     >> ', source_props['rlast'])
         print('Rp        >> ', source_props['Rp'])
         print('Rtotal    >> ', p.r_total_flux)
@@ -5335,7 +5453,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
         data_component = data_2D
     cat, segm, segm_deblend = make_catalog(image=data_component,
                                            threshold=sigma_level * std,
-                                           deblend=deblend,npixels=512,
+                                           deblend=deblend,npixels=10,
                                            # because we already deblended it!
                                            plot=plot, vmax=data_component.max(),
                                            vmin=vmin * std)
@@ -5777,13 +5895,14 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
 
     # m, s = np.mean(data_sub), np.std(data_sub)
     if show_detection == True:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 10))
         im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
                        vmin=m - s, vmax=m + s, origin='lower')
 
     masks_regions = []
 
     y, x = np.indices(data_2D.shape[:2])
+    print('INFO: Total number of Sources/Structures (deblended) = ', len(objects))
     for i in range(len(objects)):
         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
                     width=2 * ell_size_factor * objects['a'][i],
@@ -5810,9 +5929,9 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     #         plt.savefig('components_SEP.pdf',dpi=300, bbox_inches='tight')
     flux, fluxerr, flag = sep.sum_circle(data_sub, objects['x'], objects['y'],
                                          3.0, err=bkg.globalrms, gain=1.0)
-    for i in range(len(objects)):
-        print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
-    objects['b'] / objects['a'], np.rad2deg(objects['theta'])
+    # for i in range(len(objects)):
+    #     print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
+    # objects['b'] / objects['a'], np.rad2deg(objects['theta'])
 
     # sort regions from largest size to smallest size.
     mask_areas = []
@@ -6804,7 +6923,7 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
     data_2D = ctn(imagename)
     if len(data_2D.shape) == 4:
         data_2D = data_2D[0][0]
-    m, s = np.mean(data_2D), mad_std(data_2D)
+    m, s = np.mean(data_2D), np.std(data_2D)
     bkg = 0.0
 
     bkg = 0.0  # sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
@@ -6828,6 +6947,7 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
     if segmentation_map == True:
         # print(data_sub)
         npixels = int(minarea * minarea_factor)
+        print(' INFO: Uinsg min number of pixels of :', npixels)
         cat, segm, seg_maps = make_catalog(image=data_sub,
                                            threshold=sigma * s,
                                            deblend=True, contrast=deblend_cont,
@@ -7056,7 +7176,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     psf_name = tcreate_beam_psf(crop_image, size=(
         psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
     n_components = len(indices)
-    print("# of components to be fitted =", n_components)
+    print("# of structures (IDs) to be fitted =", n_components)
     # sources_photometies_new = sources_photometies
     # n_components_new = n_components
     if ids_to_add is not None:
@@ -7066,7 +7186,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
 
     # update variable `n_components`.
     n_components = sources_photometries['ncomps']
-    print("# of model components to be fitted =", n_components)
+    print("# of model components (COMPS) to be fitted =", n_components)
     return (sources_photometries, n_components, psf_name, mask)
 
 def do_fit2D(imagename, params_values_init=None, ncomponents=None,
@@ -7802,7 +7922,7 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
 
 
 def run_image_fitting(imagelist, residuallist, sources_photometries,
-                      n_components, comp_ids, mask= None,
+                      n_components, comp_ids, mask= None, mask_for_fit=None,
                       which_residual='shuffled',
                       save_name_append='', z=None, aspect=None,
                       convolution_mode='GPU', workers=6,
@@ -7881,7 +8001,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             #fix_n = False,fix_x0_y0=[False,False,False],
                             ncomponents=n_components, constrained=True,
                             fix_n=fix_n,
-                         # mask_region=mask,
+                            mask_region=mask_for_fit,
                             fix_value_n=fix_value_n,
                             fix_x0_y0=[True, True, True, True, True, True, True, True],
                             dr_fix=dr_fix,

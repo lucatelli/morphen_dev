@@ -415,10 +415,10 @@ class source_extraction():
             self.bspx, self.aO, self.bO = \
                 mlibs.get_beam_size_px(self.input_data.filename)
             print(self.bspx)
-            self.bw = self.bspx / bwf
-            self.bh = self.bspx / bhf
-            self.fw = self.bspx / fwf
-            self.fh = self.bspx / fhf
+            self.bw = self.aO / bwf
+            self.bh = self.bO / bhf
+            self.fw = self.aO / fwf
+            self.fh = self.bO / fhf
         except:
             self.bw = 128
             self.bh = 21
@@ -546,10 +546,44 @@ class sersic_multifit_radio():
                  comp_ids = ['1'],
                  fix_n = None, 
                  fix_value_n = None, dr_fix = None,
-                 sigma=6.0,tr_solver = "exact",
+                 sigma=6.0, use_mask_for_fit=False,
+                 tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
                  method2='least_squares',z = 0.01):
         """
+        Parameters
+        ----------
+        input_data : object
+            Input data object. See read_data class.
+        SE : object
+            Source extraction object.
+        aspect : float
+            Aspect ratio of the image.
+        which_residual : str
+            Which residual to use for the fitting.
+        fix_geometry : bool
+            If True, fix the geometry of the components.
+        comp_ids : list
+            List of component IDs to be fitted.
+        fix_n : list
+            List of booleans to fix the Sersic index.
+        fix_value_n : list
+            List of values to fix the Sersic index.
+        dr_fix : list
+            List of values to fix the dr parameter.
+        sigma : float
+            Sigma level for detection.
+        tr_solver : str
+            Solver for the trust region problem.
+        convolution_mode : str
+            Convolution mode.
+        method1 : str
+            Method for the first pass of the fit.
+        method2 : str
+            Method for the second pass of the fit.
+        z : float
+            Redshift of the source.
+
             Examples: 
                 fix_n = [True, True, True,True, True, True,True, True, True]
                 fix_value_n=[0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
@@ -557,6 +591,10 @@ class sersic_multifit_radio():
         """
         self.input_data = input_data
         self.SE = SE
+        if use_mask_for_fit == True:
+            self.mask_fit = self.SE.mask
+        else:
+            self.mask_fit = None
         self.aspect = aspect
         self.comp_ids = comp_ids
         self.fix_geometry = fix_geometry
@@ -602,6 +640,7 @@ class sersic_multifit_radio():
                                     method1=self.method1,
                                     method2=self.method2,
                                     mask=self.SE.mask,
+                                    mask_for_fit=self.mask_fit,
                                     save_name_append='',
                                     fix_n=self.fix_n,
                                     tr_solver = self.tr_solver,
