@@ -313,6 +313,7 @@ class source_extraction():
                  sort_by='flux',  # sort detected source by flux
                  sigma=12,  # min rms to search for sources
                  ell_size_factor=2.0,  # unstable, please inspect!
+                 obs_type = 'radio',
                  show_detection=False,show_petro_plots=False,
                  SAVE=True, show_figure=True,dry_run = False):
         """
@@ -421,14 +422,14 @@ class source_extraction():
             self.fh = self.bO / fhf
         except:
             self.bw = 128
-            self.bh = 21
+            self.bh = 128
             self.fw = 81
             self.fh = 81
 
         try:
             self.minarea = mlibs.beam_area2(self.input_data.filename)
         except:
-            self.minarea = self.input_data.data_2D.shape[0]/25
+            self.minarea = self.input_data.image_data_2D.shape[0]/25
         # self.bw, self.bh, self.fw, self.fh = bw, bh, fw, fh
         self.segmentation_map = segmentation_map
         self.filter_type = filter_type
@@ -441,6 +442,7 @@ class source_extraction():
         self.show_figure = show_figure
         self.show_detection = show_detection
         self.show_petro_plots = show_petro_plots
+        self.obs_type = obs_type
         
         if dry_run is True:
             self.show_detection = True
@@ -450,7 +452,7 @@ class source_extraction():
             self.contruct_source_properties()
 
     def get_sources(self):
-        self.masks, self.indices, self.seg_maps, self.objects = \
+        self.masks, self.indices, self.bkg, self.seg_maps, self.objects = \
             mlibs.sep_source_ext(self.input_data.filename,
                            bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
                            # filtering options for source detection
@@ -487,7 +489,7 @@ class source_extraction():
 
     def contruct_source_properties(self):
         (self.sources_photometries, self.n_components,
-         self.psf_name, self.mask) = \
+         self.psf_name, self.mask, self.bkg) = \
             mlibs.prepare_fit(self.input_data.filename,
                               self.input_data.residualname,
                               z=self.z,ids_to_add = self.ids_to_add,
@@ -497,13 +499,14 @@ class source_extraction():
                               ell_size_factor=self.ell_size_factor,
                               deblend_cont=self.deblend_cont,
                               clean_param=self.clean_param,
+                              obs_type=self.obs_type,
                               show_petro_plots=self.show_petro_plots)
 
 class evaluate_source_structure():
     """
     This will be designed to evaluate the souce structure
     in order to check its complexity and compute how many model
-    components will be required to perfor the multi-sersic fitting. 
+    components will be required to perform the multi-sersic fitting.
     
     Also, this will compute basic source morphology, in order to 
     quantify which component represents a compact or a extended 
@@ -721,7 +724,150 @@ class sersic_multifit_radio():
         _logging_.logger.info(f" >=> C95 Extended Conv Radii = "
                               f"{self.C95ext_radii_conv[0]:.2f} {self.size_unit}")
 
+class sersic_multifit_general():
+    """
+    Multi-Sersic Fitting Decomposition.
 
+    Perform a semi-automated and robust multi-sersic image decomposition.
+    It supports GPU-acceleration using Jax. If no GPU is present, Jax still
+    will benefit from CPU parallel processing. Do not worry, you do not have
+    to change anything, Jax will automatically detect wheter you are runnin on
+    CPU or GPU.
+    This class it to help in modelling optical data.
+    """
+
+    def __init__(self, input_data, SE,
+                 fix_geometry = True,
+                 comp_ids = ['1'],
+                 fix_n = None,
+                 fix_value_n = None, dr_fix = None,
+                 constrained=True, self_bkg=True,
+                 sigma=6.0, use_mask_for_fit=False,
+                 loss='cauchy', tr_solver='exact',
+                 regularize=True, f_scale=1., ftol=1e-12,
+                 xtol=1e-12, gtol=1e-12,
+                 init_params=0.2, final_params=5.0,
+                 convolution_mode='GPU',method1='least_squares',
+                 method2='least_squares',z = 0.01,
+                 save_name_append = ''):
+
+        self.input_data = input_data
+        self.SE = SE
+        if use_mask_for_fit == True:
+            self.mask_fit = self.SE.mask
+        else:
+            self.mask_fit = None
+        self.comp_ids = comp_ids
+        self.fix_geometry = fix_geometry
+        self.convolution_mode = convolution_mode
+        self.constrained = constrained
+        self.self_bkg = self_bkg
+        self.method1 = method1
+        self.method2 = method2
+        self.init_params = init_params
+        self.final_params = final_params
+        self.tr_solver = tr_solver
+        self.regularize = regularize
+        self.f_scale = f_scale
+        self.ftol = ftol
+        self.xtol = xtol
+        self.gtol = gtol
+        self.loss = loss
+        self.z = z
+        self.sigma = sigma
+
+        if fix_n == None:
+            self.fix_n = [True] * self.SE.n_components
+        else:
+            self.fix_n = fix_n
+
+        if fix_value_n == None:
+            self.fix_value_n = [0.5] * self.SE.n_components
+        else:
+            self.fix_value_n = fix_value_n
+
+        if dr_fix == None:
+            self.dr_fix = [10] * self.SE.n_components
+        else:
+            self.dr_fix = dr_fix
+
+        self.save_name_append = save_name_append
+
+        self.__sersic_general()
+
+    def __sersic_general(self):
+        (self.result_mini, self.mini, self.result_1, self.result_extra,
+         self.model_dict, self.image_results_conv, self.image_results_deconv,
+         self.smodel2D,  self.model_temp) = \
+            mlibs.do_fit2D(imagename=self.input_data.filename,
+                           residualname=self.input_data.residualname,
+                           init_constraints=self.SE.sources_photometries,
+                           psf_name=self.input_data.psfname,
+                           params_values_init=None,
+                           ncomponents=self.SE.n_components,
+                           constrained=self.constrained,
+                           self_bkg=self.self_bkg,
+                           rms_map=self.SE.bkg,
+                           fix_n=self.fix_n,
+                           fix_value_n=self.fix_value_n,
+                           dr_fix=self.dr_fix,
+                           convolution_mode=self.convolution_mode,
+                           fix_geometry=self.fix_geometry, workers=-1,
+                           method1=self.method1,
+                           method2=self.method2,
+                           init_params=self.init_params, final_params=self.final_params,
+                           loss=self.loss, tr_solver=self.tr_solver,
+                           regularize=self.regularize, f_scale=self.f_scale,
+                           ftol=self.ftol,
+                           xtol=self.xtol, gtol=self.gtol,
+                           save_name_append=self.save_name_append)
+
+        all_comps_ids = np.arange(1, self.SE.n_components + 1).astype('str')
+        mask_compact_ids = np.isin(all_comps_ids, np.asarray(self.comp_ids))
+        ext_ids = list(all_comps_ids[~mask_compact_ids])
+
+        special_name = ''
+        compact_model = 0
+        extended_model = 0
+        compact_model_deconv = 0
+        extended_model_deconv = 0
+
+        if self.input_data.rms_res == None:
+            rms_std_res = self.input_data.rms_img
+        else:
+            rms_std_res = self.input_data.rms_res
+
+        for lc in self.comp_ids:
+            compact_model = (compact_model +
+                                self.model_dict['model_c' + lc + '_conv'])
+            compact_model_deconv = (compact_model_deconv +
+                                    self.model_dict['model_c' + lc])
+        # if ext_ids is not None:
+        if ext_ids == []:
+            extended_model = 0
+            extended_model_deconv = 0
+            nfunctions = 1
+        else:
+            for le in ext_ids:
+                extended_model = (extended_model +
+                                    self.model_dict['model_c' + le + '_conv'])
+                extended_model_deconv = (extended_model_deconv +
+                                            self.model_dict['model_c' + le])
+                nfunctions = None
+
+        decomp_results = mlibs.plot_decomp_results(imagename=self.input_data.filename,
+                                                   compact=compact_model,
+                                                   extended_model=extended_model,
+                                                   rms=rms_std_res,
+                                                   nfunctions=nfunctions,
+                                                   special_name=special_name)
+
+        mlibs.plot_fit_results(self.input_data.filename, self.model_dict, self.image_results_conv,
+                               self.SE.sources_photometries,
+                               crop=False, box_size=200,
+                               vmax_factor=0.3, vmin_factor=1.0)
+
+        pass
 
 class morphometry():
     """
@@ -743,17 +889,14 @@ class morphometry():
         pass
     def _entropy(self):
         """
-        This will be provided here soon, since it was my Master Thesis subject. 
+        This will be provided here soon, since it was my Master Thesis research.
         """
         pass
     def _kurvature(self):
         """
-        This will be provided here soon, since it was my Master Thesis subject. 
+        This will be provided here soon, since it was my Master Thesis research.
         """
         pass
-
-    
-    
         
     pass
 
