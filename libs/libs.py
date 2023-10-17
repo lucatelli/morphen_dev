@@ -5972,9 +5972,9 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
         plt.show()
 
     if segmentation_map == True:
-        return (masks_regions, sorted_indices_desc, seg_maps, objects_sorted)
+        return (masks_regions, sorted_indices_desc, bkg_image, seg_maps, objects_sorted)
     else:
-        return (masks_regions, sorted_indices_desc, objects_sorted)
+        return (masks_regions, sorted_indices_desc, bkg_image,  objects_sorted)
 
 # def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
 #                    deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
@@ -6557,7 +6557,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             else:
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
-                                    value=0.5, min=0.3, max=8.0)
+                                    value=0.5, min=0.2, max=8.0)
 
                         """
                         Constraining PA and q from the pre-analysis of the image
@@ -7074,6 +7074,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 deblend_cont=1e-7, deblend_nthresh=15,minarea=None,sigma_mask=6,
                 show_detection=True,use_extraction_positions=False,
                 clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
+                obs_type = 'radio',
                 show_petro_plots=False):
     """
     Prepare the imaging data to be modelled.
@@ -7092,14 +7093,18 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     pix_to_pc = pixsize_to_pc(z=z,
                               cell_size=get_cell_size(crop_image))
     #     eimshow(crop_image, vmin_factor=5)
-    std_res = mad_std(ctn(crop_residual))
+    try:
+        std_res = mad_std(ctn(crop_residual))
+    except:
+        std_res = mad_std(ctn(crop_image))
+
     _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
                             iterations=2, rms=std_res)
     # plt.figure()
 
     # _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
     #                         iterations=2)
-    masks, indices, seg_maps, objects = \
+    masks, indices, bkg, seg_maps, objects = \
         sep_source_ext(crop_image, bw=bw,
                        bh=bh,
                        fw=fw, fh=fh,
@@ -7165,16 +7170,24 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
 
     sources_photometries['ncomps'] = len(indices)
 
-    # omaj, omin, _, _, _ = beam_shape(crop_image)
-    # dilation_size = int(
-    #     np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
-    # psf_size = dilation_size*6
-    # psf_size = (2 * psf_size) // 2 +1
-    psf_size = int(data_2D.shape[0])
-    print('PSF SIZE is', psf_size)
-    # creates a psf from the beam shape.
-    psf_name = tcreate_beam_psf(crop_image, size=(
-        psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
+    if obs_type == 'radio':
+        """
+        PSF image is contained within the header of the original image. 
+        A new psf file will be created (as `psf_name`). 
+        """
+        # omaj, omin, _, _, _ = beam_shape(crop_image)
+        # dilation_size = int(
+        #     np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+        # psf_size = dilation_size*6
+        # psf_size = (2 * psf_size) // 2 +1
+        psf_size = int(data_2D.shape[0])
+        print('PSF SIZE is', psf_size)
+        # creates a psf from the beam shape.
+        psf_name = tcreate_beam_psf(crop_image, size=(
+            psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
+    if obs_type == 'other':
+        psf_name = None
+
     n_components = len(indices)
     print("# of structures (IDs) to be fitted =", n_components)
     # sources_photometies_new = sources_photometies
@@ -7187,7 +7200,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     # update variable `n_components`.
     n_components = sources_photometries['ncomps']
     print("# of model components (COMPS) to be fitted =", n_components)
-    return (sources_photometries, n_components, psf_name, mask)
+    return (sources_photometries, n_components, psf_name, mask, bkg)
 
 def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
@@ -9957,10 +9970,13 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image,
     else:
         std = mad_std(g)
 
-    if mad_std(r) == 0:
-        std_r = r.std()
+    if residualname is not None:
+        if mad_std(r) == 0:
+            std_r = r.std()
+        else:
+            std_r = mad_std(r)
     else:
-        std_r = mad_std(r)
+        std_r = std
 
     if mad_std(m) == 0:
         std_m = m.std()
@@ -10380,9 +10396,13 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             axis_units_label = r'Offset [px]'
             ax.set_xlabel(axis_units_label, fontsize=14)
 
+
     xticks = np.linspace(-dx, dx, 5)
     xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 5)
-    xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    if dx < 10:
+        xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    else:
+        xticklabels = ['{:.0f}'.format(xtick) for xtick in xticklabels]
     ax.set_yticks(xticks, xticklabels)
     ax.set_xticks(xticks, xticklabels)
 
