@@ -7482,8 +7482,9 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                                      params['f' + str(i) + '_cg'], )
         # print(model.shape)
         # model = model + FlatSky_cpu(FlatSky_level, params['s_a'])*background
-        model = model + FlatSky_cpu(background, params['s_a'])
-        MODEL_2D_conv = scipy.signal.fftconvolve(model, PSF_BEAM, 'same')
+        # model = model + FlatSky_cpu(background, params['s_a'])
+        MODEL_2D_conv = scipy.signal.fftconvolve(model, PSF_BEAM, 'same') + \
+                        FlatSky_cpu(background, params['s_a'])
         residual = data_2D - MODEL_2D_conv
         return np.ravel(residual)
 
@@ -7500,10 +7501,11 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                                          params['f' + str(i) + '_Rn'].value,
                                          params['f' + str(i) + '_cg'].value, )
         # print(model.shape)
-        model = model + FlatSky(background,params['s_a'].value)
         # MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
         # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
-        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM)
+        # model = model + FlatSky(background, params['s_a'].value)
+        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
+                        FlatSky(background,params['s_a'].value)
         residual = data_2D_gpu - MODEL_2D_conv
         return np.asarray(residual).copy()
         # return np.asarray(residual).copy()
@@ -7683,25 +7685,28 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                               params['f' + str(i) + '_n'].value,
                               params['f' + str(i) + '_In'].value,
                               params['f' + str(i) + '_Rn'].value,
-                              params['f' + str(i) + '_cg'].value) + \
-                     FlatSky(background, params['s_a'].value) / ncomponents
+                              params['f' + str(i) + '_cg'].value)
         #                                  params['f'+str(i)+'_Rn'])+FlatSky(FlatSky_level, params['s_a'])/ncomponents
         # print(model_temp[0])
         model = model + model_temp
         # print(model)
-        model_dict['model_c' + str(i)] = np.asarray(model_temp).copy()
+        bkg_comp_i = FlatSky(background, params['s_a'].value) / ncomponents
+        model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
+
 
         if PSF_CONV == True:
             if convolution_mode == 'GPU':
                 # model_dict['model_c' + str(i) + '_conv'] = np.asarray(jax_convolve(model_temp, PSF_BEAM)).copy()
-                model_dict['model_c' + str(i) + '_conv'] = np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy())
+                model_dict['model_c' + str(i) + '_conv'] = (
+                    np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
             if convolution_mode == 'CPU':
-                model_dict['model_c' + str(i) + '_conv'] = scipy.signal.fftconvolve(
+                model_dict['model_c' + str(i) + '_conv'] = (
+                    scipy.signal.fftconvolve(
                     model_temp, PSF_BEAM_raw,
-                    'same')  # + FlatSky(FlatSky_level, params['s_a'])/ncomponents
+                    'same')+bkg_comp_i)  # + FlatSky(FlatSky_level, params['s_a'])/ncomponents
 
         else:
-            model_dict['model_c' + str(i) + '_conv'] = model_temp
+            model_dict['model_c' + str(i) + '_conv'] = model_temp+bkg_comp_i
 
         pf.writeto(imagename.replace('.fits', '') +
                    "_" + "model_component_" + str(i) +
@@ -7741,13 +7746,19 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         if convolution_mode == 'GPU':
             # model_dict['model_total_conv'] = np.asarray(jax_convolve(model,
             #                                                          PSF_BEAM)).copy()
-            model_dict['model_total_conv'] = np.asarray(_fftconvolve_jax(model, PSF_BEAM).copy())
+            model_conv = _fftconvolve_jax(model, PSF_BEAM).copy()
+            model_dict['model_total_conv'] = np.asarray(model_conv +
+                                                        FlatSky(background, params['s_a'].value))
         if convolution_mode == 'CPU':
-            model_dict['model_total_conv'] = scipy.signal.fftconvolve(model, PSF_BEAM_raw,'same')
+            model_conv = scipy.signal.fftconvolve(model, PSF_BEAM_raw,'same')
+            model_dict['model_total_conv'] = model_conv + \
+                                             FlatSky_cpu(background, params['s_a'])
     else:
-        model_dict['model_total_conv'] = model
+        model_dict['model_total_conv'] = model + FlatSky_cpu(background, params['s_a'])
+
 
     model_dict['best_residual'] = data_2D - model_dict['model_total']
+    # bkg_comp_total
     model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
 
     pf.writeto(imagename.replace('.fits', '') +
