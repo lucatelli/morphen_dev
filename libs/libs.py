@@ -6616,7 +6616,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             the signal, specially for radio images.
                             """
                             I50_max = I50 * 100
-                            I50_min = I50 * 0.1
+                            I50_min = I50 * 0.01
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=I50, min=I50_min, max=I50_max)
@@ -6625,8 +6625,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             dR = R50 * 0.5
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
-                            R50_max = 2.0*init_constraints['c' + jj + '_R50']
-                            R50_min = R50 * 0.01 #should be small.
+                            R50_max = 1.5*init_constraints['c' + jj + '_R50']
+                            R50_min = R50 * 0.05 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=R50, min=R50_min, max=R50_max)
@@ -7085,21 +7085,25 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     """
     crop_image = ref_image
     crop_residual = ref_res
+    data_2D = ctn(crop_image)
     if minarea == None:
         try:
             minarea = int(beam_area2(crop_image))
         except:
-            minarea = 50
+            minarea = data_2D.shape[0]/30
     pix_to_pc = pixsize_to_pc(z=z,
                               cell_size=get_cell_size(crop_image))
     #     eimshow(crop_image, vmin_factor=5)
     try:
         std_res = mad_std(ctn(crop_residual))
     except:
-        std_res = mad_std(ctn(crop_image))
+        std_res = mad_std(data_2D)
 
-    _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
-                            iterations=2, rms=std_res)
+    if apply_mask == True:
+        _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
+                                iterations=2, rms=std_res)
+    else:
+        mask = np.ones(data_2D.shape)
     # plt.figure()
 
     # _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
@@ -7116,7 +7120,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                        clean_param=clean_param,
                        clean=clean,
                        sort_by=sort_by,
-                       sigma=sigma,
+                       sigma=sigma,sigma_mask=sigma_mask,
                        ell_size_factor=ell_size_factor,
                        apply_mask=apply_mask,
                        show_detection=show_detection)
@@ -7139,7 +7143,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     #                    show_detection=show_detection)
 
 
-    data_2D = ctn(crop_image)
+
     sigma_level = 3
     vmin = 3
     # i = 0 #to be used in indices[0], e.g. first component
@@ -7477,7 +7481,8 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                                      params['f' + str(i) + '_Rn'],
                                      params['f' + str(i) + '_cg'], )
         # print(model.shape)
-        model = model + FlatSky_cpu(FlatSky_level, params['s_a'])*background
+        # model = model + FlatSky_cpu(FlatSky_level, params['s_a'])*background
+        model = model + FlatSky_cpu(background, params['s_a'])
         MODEL_2D_conv = scipy.signal.fftconvolve(model, PSF_BEAM, 'same')
         residual = data_2D - MODEL_2D_conv
         return np.ravel(residual)
