@@ -305,7 +305,7 @@ class source_extraction():
                  crop=False, box_size=256,
                  apply_mask=False, mask=None, dilation_size = None,
                  sigma_level=3, sigma_mask=6, vmin_factor=3, mask_component=None,
-                 bwf=2, bhf=2, fwf=10, fhf=10,
+                 bwf=2, bhf=2, fwf=2, fhf=2,
                  segmentation_map = True, filter_type='matched',
                  deblend_nthresh=3, deblend_cont=1e-8,
                  clean_param=0.5, clean=True,
@@ -421,15 +421,15 @@ class source_extraction():
             self.fw = self.aO / fwf
             self.fh = self.bO / fhf
         except:
-            self.bw = 128
-            self.bh = 128
-            self.fw = 81
-            self.fh = 81
+            self.bw = 51
+            self.bh = 51
+            self.fw = 15
+            self.fh = 15
 
         try:
             self.minarea = mlibs.beam_area2(self.input_data.filename)
         except:
-            self.minarea = self.input_data.image_data_2D.shape[0]/25
+            self.minarea = self.input_data.image_data_2D.shape[0]/30
         # self.bw, self.bh, self.fw, self.fh = bw, bh, fw, fh
         self.segmentation_map = segmentation_map
         self.filter_type = filter_type
@@ -494,7 +494,8 @@ class source_extraction():
                               self.input_data.residualname,
                               z=self.z,ids_to_add = self.ids_to_add,
                               bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
-                              sigma=self.sigma,apply_mask=self.apply_mask,
+                              sigma=self.sigma, sigma_mask=self.sigma_mask,
+                              apply_mask=self.apply_mask,
                               deblend_nthresh=self.deblend_nthresh,
                               ell_size_factor=self.ell_size_factor,
                               deblend_cont=self.deblend_cont,
@@ -743,9 +744,10 @@ class sersic_multifit_general():
                  fix_value_n = None, dr_fix = None,
                  constrained=True, self_bkg=True,
                  sigma=6.0, use_mask_for_fit=False,
+                 bkg_rms_map = None,
                  loss='cauchy', tr_solver='exact',
-                 regularize=True, f_scale=1., ftol=1e-12,
-                 xtol=1e-12, gtol=1e-12,
+                 regularize=True, f_scale=0.5, ftol=1e-13,
+                 xtol=1e-13, gtol=1e-13,
                  init_params=0.2, final_params=5.0,
                  convolution_mode='GPU',method1='least_squares',
                  method2='least_squares',z = 0.01,
@@ -775,6 +777,7 @@ class sersic_multifit_general():
         self.loss = loss
         self.z = z
         self.sigma = sigma
+        self.bkg_rms_map = bkg_rms_map
 
         if fix_n == None:
             self.fix_n = [True] * self.SE.n_components
@@ -807,7 +810,9 @@ class sersic_multifit_general():
                            ncomponents=self.SE.n_components,
                            constrained=self.constrained,
                            self_bkg=self.self_bkg,
-                           rms_map=self.SE.bkg,
+                           rms_map = self.bkg_rms_map,
+                           # rms_map=self.SE.bkg,
+                           # rms_map=None,
                            fix_n=self.fix_n,
                            fix_value_n=self.fix_value_n,
                            dr_fix=self.dr_fix,
@@ -815,12 +820,14 @@ class sersic_multifit_general():
                            fix_geometry=self.fix_geometry, workers=-1,
                            method1=self.method1,
                            method2=self.method2,
-                           init_params=self.init_params, final_params=self.final_params,
+                           init_params=self.init_params,
+                           final_params=self.final_params,
                            loss=self.loss, tr_solver=self.tr_solver,
                            regularize=self.regularize, f_scale=self.f_scale,
                            ftol=self.ftol,
                            xtol=self.xtol, gtol=self.gtol,
-                           save_name_append=self.save_name_append)
+                           save_name_append=self.save_name_append,
+                           logger=_logging_.logger)
 
         all_comps_ids = np.arange(1, self.SE.n_components + 1).astype('str')
         mask_compact_ids = np.isin(all_comps_ids, np.asarray(self.comp_ids))
@@ -866,6 +873,13 @@ class sersic_multifit_general():
                                self.SE.sources_photometries,
                                crop=False, box_size=200,
                                vmax_factor=0.3, vmin_factor=1.0)
+
+        mlibs.plot_slices(data_2D=self.input_data.image_data_2D,
+                          model_dict=self.model_dict,
+                          image_results_conv=self.image_results_conv[-2],
+                          Rp_props=self.SE.sources_photometries,
+                          residual_2D=None)
+        # result_mini.params
 
         pass
 
