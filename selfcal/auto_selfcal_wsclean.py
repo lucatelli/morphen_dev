@@ -78,7 +78,7 @@ print(__doc__)
 
 import os
 from casatasks import *
-
+import numpy as np
 try:
     import casatools
     from casatasks import *
@@ -103,7 +103,7 @@ threshold = '20.0e-6Jy'
 FIELD = ''
 SPWS = ''
 ANTENNAS = ''
-refant = 'ea18'
+refant = 'ea06,ea10'
 minblperant=3
 
 imsize = 4096
@@ -256,6 +256,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
            antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
            ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
+           correlation='LL,RR',
            width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
            plotfile=os.path.dirname(
                g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected-model.jpg')
@@ -270,6 +271,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
            antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
            ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
+           correlation='LL,RR',
            width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
            plotrange=[-1, -1, 0, 5],
            plotfile=os.path.dirname(
@@ -287,6 +289,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='baseline',
                ydatacolumn='model', avgchannel='64', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_model.jpg')
@@ -301,6 +304,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
                ydatacolumn='model', avgchannel='', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_freq_amp_model.jpg')
@@ -309,6 +313,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='baseline',
                ydatacolumn='data', avgchannel='64', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                # plotrange=[-1,-1,-1,0.3],
                plotfile=os.path.dirname(
@@ -323,6 +328,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
                ydatacolumn='data', avgchannel='', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_freq_amp_data.jpg')
@@ -332,6 +338,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                antenna=ANTENNAS, spw=SPWS,
                # plotrange=[-1,-1,0,0.3],
                ydatacolumn='corrected', avgchannel='64', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected.jpg')
@@ -345,6 +352,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
                ydatacolumn='corrected', avgchannel='', avgtime='360',
+               correlation='LL,RR',
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_freq_amp_corrected.jpg')
@@ -468,6 +476,7 @@ def calibration_table_plot(table, stage='selfcal',
         plotms(vis=table, xaxis=xaxis, yaxis=yaxis, field='',
                gridcols=1, gridrows=1, coloraxis='spw', antenna='', plotrange=plotrange,
                width=800, height=540, dpi=600, overwrite=True, showgui=True,
+               correlation='LL,RR',
                plotfile=os.path.dirname(
                    table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
                    'all') + '.jpg')
@@ -480,6 +489,7 @@ def calibration_table_plot(table, stage='selfcal',
                    gridcols=1, gridrows=1, coloraxis='spw', antenna='',
                    plotrange=plotrange,
                    width=800, height=540, dpi=600, overwrite=True, showgui=False,
+                   correlation='LL,RR',
                    plotfile=os.path.dirname(
                        table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
                        FIELD) + '.jpg')
@@ -487,30 +497,42 @@ def calibration_table_plot(table, stage='selfcal',
     pass
 
 def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uvrange='',
-                    solnorm=solnorm, combine='', calmode='p', gaintype='G',
+                    solnorm=solnorm, combine='', calmode='p', gaintype='G',solint_factor=1.0,
                     gain_tables_selfcal=[''], special_name='',
                     return_solution_stats=False):
     g_vis = g_name + '.ms'
     minsnr = minsnr
+    solint_template = np.asarray([24,48,96,192,384])
+    solints = solint_template * solint_factor
+
     caltable_int = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
         n_interaction) + '_' + os.path.basename(g_name) + '_solint_int_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
-    # caltable_5 = 'selfcal/selfcal_'+str(n_interaction)+'_'+g_name+'_solint_5.tb'
-    caltable_20 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
-        n_interaction) + '_' + os.path.basename(g_name) + '_solint_48_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
-    caltable_40 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
-        n_interaction) + '_' + os.path.basename(g_name) + '_solint_96_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
-    caltable_60 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
-        n_interaction) + '_' + os.path.basename(g_name) + '_solint_192_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
-    caltable_120 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
-        n_interaction) + '_' + os.path.basename(g_name) + '_solint_384_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
+    caltable_1 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
+        n_interaction) + '_' + os.path.basename(g_name) + '_solint_'+str(int(solints[0]))+'_minsnr_' + str(
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
+    caltable_2 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
+        n_interaction) + '_' + os.path.basename(g_name) + '_solint_'+str(int(solints[1]))+'_minsnr_' + str(
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
+    caltable_3 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
+        n_interaction) + '_' + os.path.basename(g_name) + '_solint_'+str(int(solints[2]))+'_minsnr_' + str(
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
+    caltable_4 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
+        n_interaction) + '_' + os.path.basename(g_name) + '_solint_'+str(int(solints[3]))+'_minsnr_' + str(
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
+    caltable_5 = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
+        n_interaction) + '_' + os.path.basename(g_name) + '_solint_'+str(int(solints[4]))+'_minsnr_' + str(
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
     caltable_inf = os.path.dirname(g_name) + '/selfcal/selfcal_test_' + str(
         n_interaction) + '_' + os.path.basename(g_name) + '_solint_inf_minsnr_' + str(
-        minsnr) + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+        minsnr) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb'
+
 
     if not os.path.exists(caltable_int):
         print('>> Performing test-gaincal for solint=int...')
@@ -518,31 +540,38 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
                 solnorm=solnorm, combine=combine, minblperant=minblperant,
                 calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
                 gaintable=gain_tables_selfcal)
-    # if not os.path.exists(caltable_5):
-    # print(  '>> Performing test-gaincal for solint=5s...')
-    # gaincal(vis=g_vis,caltable=caltable_5,solint='5s',refant=refant,
-    #     calmode=calmode,gaintype=gaintype, minsnr=1,gaintable=gain_tables_selfcal)
-    if not os.path.exists(caltable_20):
-        print('>> Performing test-gaincal for solint=48s...')
-        gaincal(vis=g_vis, caltable=caltable_20, solint='48s', refant=refant,
+    if not os.path.exists(caltable_1):
+        print('>> Performing test-gaincal for solint='+str(solints[0])+'s...')
+        gaincal(vis=g_vis, caltable=caltable_1, solint=str(solints[0])+'s',
+                refant=refant,
                 solnorm=solnorm, combine=combine, minblperant=minblperant,
                 calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
                 gaintable=gain_tables_selfcal)
-    if not os.path.exists(caltable_40):
-        print('>> Performing test-gaincal for solint=96s...')
-        gaincal(vis=g_vis, caltable=caltable_40, solint='96s', refant=refant,
+    if not os.path.exists(caltable_2):
+        print('>> Performing test-gaincal for solint='+str(solints[1])+'s...')
+        gaincal(vis=g_vis, caltable=caltable_2, solint=str(solints[1])+'s',
+                refant=refant,
                 solnorm=solnorm, combine=combine, minblperant=minblperant,
                 calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
                 gaintable=gain_tables_selfcal)
-    if not os.path.exists(caltable_60):
-        print('>> Performing test-gaincal for solint=192s...')
-        gaincal(vis=g_vis, caltable=caltable_60, solint='192s', refant=refant,
+    if not os.path.exists(caltable_3):
+        print('>> Performing test-gaincal for solint='+str(solints[2])+'s...')
+        gaincal(vis=g_vis, caltable=caltable_3, solint=str(solints[2])+'s',
+                refant=refant,
                 solnorm=solnorm, combine=combine, minblperant=minblperant,
                 calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
                 gaintable=gain_tables_selfcal)
-    if not os.path.exists(caltable_120):
-        print('>> Performing test-gaincal for solint=384s...')
-        gaincal(vis=g_vis, caltable=caltable_120, solint='384s', refant=refant,
+    if not os.path.exists(caltable_4):
+        print('>> Performing test-gaincal for solint='+str(solints[3])+'s...')
+        gaincal(vis=g_vis, caltable=caltable_4, solint=str(solints[3])+'s',
+                refant=refant,
+                solnorm=solnorm, combine=combine, minblperant=minblperant,
+                calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
+                gaintable=gain_tables_selfcal)
+    if not os.path.exists(caltable_5):
+        print('>> Performing test-gaincal for solint='+str(solints[4])+'s...')
+        gaincal(vis=g_vis, caltable=caltable_5, solint=str(solints[4])+'s',
+                refant=refant,
                 solnorm=solnorm, combine=combine, minblperant=minblperant,
                 calmode=calmode, gaintype=gaintype, minsnr=minsnr, uvrange=uvrange,
                 gaintable=gain_tables_selfcal)
@@ -559,26 +588,34 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
         from scipy import stats
         snr_int = get_tb_data(caltable_int, 'SNR')
         # snr_5 = get_tb_data(caltable_5,'SNR')
-        snr_20 = get_tb_data(caltable_20, 'SNR')
-        snr_40 = get_tb_data(caltable_40, 'SNR')
-        snr_60 = get_tb_data(caltable_60, 'SNR')
-        snr_120 = get_tb_data(caltable_120, 'SNR')
+        snr_1 = get_tb_data(caltable_1, 'SNR')
+        snr_2 = get_tb_data(caltable_2, 'SNR')
+        snr_3 = get_tb_data(caltable_3, 'SNR')
+        snr_4 = get_tb_data(caltable_4, 'SNR')
+        snr_5 = get_tb_data(caltable_5, 'SNR')
         snr_inf = get_tb_data(caltable_inf, 'SNR')
 
         plt.figure()
-        plt.hist(snr_int, bins=50, density=True, histtype='step', label='int')
-        # plt.hist( snr_5, bins=50, density=True, histtype='step', label='5 seconds' )
-        plt.hist(snr_20, bins=50, density=True, histtype='step', label='48 seconds')
-        plt.hist(snr_40, bins=50, density=True, histtype='step', label='96 seconds')
-        plt.hist(snr_60, bins=50, density=True, histtype='step', label='192 seconds')
-        plt.hist(snr_120, bins=50, density=True, histtype='step', label='384 seconds')
-        plt.hist(snr_inf, bins=50, density=True, histtype='step', label='inf')
+        plt.hist(snr_int, bins=50, density=True, histtype='step',
+                 label='int')
+        plt.hist(snr_1, bins=50, density=True, histtype='step',
+                 label=str(solints[0])+' seconds')
+        plt.hist(snr_2, bins=50, density=True, histtype='step',
+                 label=str(solints[1])+' seconds')
+        plt.hist(snr_3, bins=50, density=True, histtype='step',
+                 label=str(solints[2])+' seconds')
+        plt.hist(snr_4, bins=50, density=True, histtype='step',
+                 label=str(solints[3])+' seconds')
+        plt.hist(snr_5, bins=50, density=True, histtype='step',
+                 label=str(solints[4])+' seconds')
+        plt.hist(snr_inf, bins=50, density=True, histtype='step',
+                 label='inf')
         plt.legend(loc='upper right')
         plt.xlabel('SNR')
         plt.semilogx()
         plt.savefig(os.path.dirname(g_name) + '/selfcal/plots/' + str(n_interaction) +
                     '_' + os.path.basename(
-            g_name) + '_combine' + combine + '_gtype_' + gaintype
+            g_name) + '_calmode' + calmode + '_combine' + combine + '_gtype_' + gaintype
                     + special_name + '_gain_solutions_comparisons_norm.pdf')
         # plt.clf()
         # plt.close()
@@ -586,34 +623,40 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
 
         plt.figure()
         plt.figure()
-        plt.hist(snr_int, bins=50, density=False, histtype='step', label='int')
-        # plt.hist( snr_5, bins=50, density=False, histtype='step', label='5 seconds' )
-        plt.hist(snr_20, bins=50, density=False, histtype='step', label='48 seconds')
-        plt.hist(snr_40, bins=50, density=False, histtype='step', label='96 seconds')
-        plt.hist(snr_60, bins=50, density=False, histtype='step', label='192 seconds')
-        plt.hist(snr_120, bins=50, density=False, histtype='step',
-                 label='384 seconds')
-        plt.hist(snr_inf, bins=50, density=False, histtype='step', label='inf')
+        plt.hist(snr_int, bins=50, density=False, histtype='step',
+                 label='int')
+        plt.hist(snr_1, bins=50, density=False, histtype='step',
+                 label=str(solints[0])+' seconds')
+        plt.hist(snr_2, bins=50, density=False, histtype='step',
+                 label=str(solints[1])+' seconds')
+        plt.hist(snr_3, bins=50, density=False, histtype='step',
+                 label=str(solints[2])+' seconds')
+        plt.hist(snr_4, bins=50, density=False, histtype='step',
+                 label=str(solints[3])+' seconds')
+        plt.hist(snr_5, bins=50, density=False, histtype='step',
+                 label=str(solints[4])+' seconds')
+        plt.hist(snr_inf, bins=50, density=False, histtype='step',
+                 label='inf')
         plt.legend(loc='upper right')
         plt.xlabel('SNR')
         plt.semilogx()
         plt.savefig(os.path.dirname(g_name) + '/selfcal/plots/' + str(n_interaction) +
-                    '_' + os.path.basename(g_name) + '_combine' + combine +
+                    '_' + os.path.basename(g_name) + '_calmode' + calmode + '_combine' + combine +
                     '_gtype_' + gaintype + special_name +
                     '_gain_solutions_comparisons.pdf')
 
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
             stats.percentileofscore(snr_int, cut_off), 'int'))
-        # print( 'P(<='+str(cut_off)+') = {0}  ({1})'.format(
-        #     stats.percentileofscore( snr_5, cut_off ), '5s' ) )
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
-            stats.percentileofscore(snr_20, cut_off), '48s'))
+            stats.percentileofscore(snr_1, cut_off), str(solints[0])+' s'))
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
-            stats.percentileofscore(snr_40, cut_off), '96s'))
+            stats.percentileofscore(snr_2, cut_off), str(solints[1])+' s'))
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
-            stats.percentileofscore(snr_60, cut_off), '192s'))
+            stats.percentileofscore(snr_3, cut_off), str(solints[2])+' s'))
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
-            stats.percentileofscore(snr_120, cut_off), '384s'))
+            stats.percentileofscore(snr_4, cut_off), str(solints[3])+' s'))
+        print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
+            stats.percentileofscore(snr_5, cut_off), str(solints[4])+' s'))
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
             stats.percentileofscore(snr_inf, cut_off), 'inf'))
 
@@ -623,16 +666,18 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
         # print('################################')
         # print(stats.percentileofscore(snr_int, cut_off))
         SNRs = [np.array(snr_int),
-                           np.array(snr_20),
-                           np.array(snr_40),
-                           np.array(snr_60),
-                           np.array(snr_120),
+                           np.array(snr_1),
+                           np.array(snr_2),
+                           np.array(snr_3),
+                           np.array(snr_4),
+                           np.array(snr_5),
                            np.array(snr_inf)]
         percentiles_SNRs = np.asarray([stats.percentileofscore(snr_int, cut_off),
-                                       stats.percentileofscore(snr_20, cut_off),
-                                       stats.percentileofscore(snr_40, cut_off),
-                                       stats.percentileofscore(snr_60, cut_off),
-                                       stats.percentileofscore(snr_120, cut_off),
+                                       stats.percentileofscore(snr_1, cut_off),
+                                       stats.percentileofscore(snr_2, cut_off),
+                                       stats.percentileofscore(snr_3, cut_off),
+                                       stats.percentileofscore(snr_4, cut_off),
+                                       stats.percentileofscore(snr_5, cut_off),
                                        stats.percentileofscore(snr_inf, cut_off)])
         if return_solution_stats:
             return (SNRs, percentiles_SNRs)
@@ -644,11 +689,11 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
     def compare_phase_variation():
         plotms(caltable_int, antenna='Mk2', scan='', yaxis='phase')
 
-        plotms(caltable_40, antenna='', scan='', yaxis='phase', plotindex=1,
+        plotms(caltable_3, antenna='', scan='', yaxis='phase', plotindex=1,
                clearplots=False, customsymbol=True, symbolsize=20,
                symbolcolor='ff0000', symbolshape='circle')
 
-        plotms(caltable_20, antenna='', scan='', yaxis='phase', plotindex=2,
+        plotms(caltable_2, antenna='', scan='', yaxis='phase', plotindex=2,
                clearplots=False, customsymbol=True, symbolsize=12,
                symbolcolor='green', symbolshape='square')
 
@@ -656,24 +701,24 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
                clearplots=False, customsymbol=True, symbolsize=8,
                symbolcolor='yellow', symbolshape='square')
 
-        plotms(caltable_60, antenna='', scan='', yaxis='phase', plotindex=4,
+        plotms(caltable_4, antenna='', scan='', yaxis='phase', plotindex=4,
                clearplots=False, customsymbol=True, symbolsize=4,
                symbolcolor='purple', symbolshape='square',
                width=1600, height=1080, showgui=True, overwrite=True,
                plotfile=os.path.dirname(g_name) + '/selfcal/plots/' + str(
                    n_interaction) +
-                        '_' + os.path.basename(g_name) + '_combine' + combine +
+                        '_' + os.path.basename(g_name) + '_combine' + '_calmode' + calmode + combine +
                         '_gtype_' + gaintype + special_name +
                         '_phase_variation_intervals.jpg')
 
     def compare_amp_variation():
         plotms(caltable_int, antenna='', scan='', yaxis='amp')
 
-        plotms(caltable_40, antenna='', scan='', yaxis='amp', plotindex=1,
+        plotms(caltable_3, antenna='', scan='', yaxis='amp', plotindex=1,
                clearplots=False, customsymbol=True, symbolsize=20,
                symbolcolor='ff0000', symbolshape='circle')
 
-        plotms(caltable_20, antenna='', scan='', yaxis='amp', plotindex=2,
+        plotms(caltable_2, antenna='', scan='', yaxis='amp', plotindex=2,
                clearplots=False, customsymbol=True, symbolsize=12,
                symbolcolor='green', symbolshape='square')
 
@@ -681,14 +726,15 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
                clearplots=False, customsymbol=True, symbolsize=8,
                symbolcolor='yellow', symbolshape='square')
 
-        plotms(caltable_60, antenna='', scan='', yaxis='amp', plotindex=4,
+        plotms(caltable_4, antenna='', scan='', yaxis='amp', plotindex=4,
                clearplots=False, customsymbol=True, symbolsize=4,
                symbolcolor='purple', symbolshape='square',
                width=1600, height=1080, showgui=True, overwrite=True,
                plotfile=os.path.dirname(g_name) + '/selfcal/plots/' + str(
                    n_interaction) +
-                        '_' + os.path.basename(
-                   g_name) + special_name + '_amp_variation_intervals.jpg')
+                        '_' + os.path.basename(g_name) + '_combine' + '_calmode' + calmode + combine +
+                        '_gtype_' + gaintype + special_name +
+                        '_amp_variation_intervals.jpg')
 
     #
     # def plot_gains():
