@@ -6528,7 +6528,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                                 min=eval(param) - dr * 5,
                                                 max=eval(param) + dr * 5)
 
-        smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
+        smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
     else:
         if init_constraints is not None:
             if constrained == True:
@@ -6557,7 +6557,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             else:
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
-                                    value=0.5, min=0.2, max=8.0)
+                                    value=0.5, min=0.3, max=8.0)
 
                         """
                         Constraining PA and q from the pre-analysis of the image
@@ -6584,8 +6584,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             #                         if ell + dell <= 1.0:
                             if ell * 2.0 <= 0.6:
                                 ell_max = ell * 2.0
-                                if ell_max <= 0.5:
-                                    ell_max = 0.5
+                                # if ell_max <= 0.5:
+                                #     ell_max = 0.5
                             else:
                                 ell_max = 0.75
 
@@ -6737,7 +6737,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 min=y0_min,
                                 max=y0_max)
 
-            smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
+            smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
         else:
             '''
             Run a complete free-optimization.
@@ -6752,7 +6752,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
-                smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=1.0)
+                smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -10269,7 +10269,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             rms=None, max_factor=None, plot_title=None, apply_mask=False,
             add_contours=True, extent=None, projection='offset', add_beam=False,
             vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
-            show_axis='on',
+            show_axis='on',flux_units='Jy',
             source_distance=None, scalebar_length=250 * u.pc,
             ax=None, save_name=None, special_name=''):
     """
@@ -10474,26 +10474,9 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     levels_white = np.geomspace(g.max(), 0.1 * g.max(), 6)
     if add_contours:
         try:
-            # from matplotlib.colors import LinearSegmentedColormap
-
-            # Define the "magma_r" colormap
-            # cmap_magma_r = plt.cm.get_cmap(CM)
-
-            # Create a custom contour color palette with a continuous transition from white to black
-            # contour_palette = ['#000000', '#444444', '#888888', '#DDDDDD']
             contour_palette = ['#000000', '#444444', '#666666', '#EEEEEE',
                                '#EEEEEE', '#FFFFFF']
-            # Create a custom colormap with reversed colors
-            # colors_reversed = cmap_magma_r(np.linspace(1, 0, 256))
-            # cmap_reversed = LinearSegmentedColormap.from_list("magma_reversed", colors_reversed)
 
-            # Create a contour plot using the reversed "magma_r" colormap and custom contour colors
-            # plt.contourf(X, Y, Z, cmap=cmap_reversed, levels=15)
-            # plt.colorbar()
-            # contour = plt.contour(X, Y, Z, colors=contour_palette, levels=6)
-            # plt.clabel(contour, inline=1, fontsize=10)
-
-            # plt.show()
 
             contour = ax.contour(g, levels=levels_g[::-1],
                                  colors=contour_palette,
@@ -10522,9 +10505,14 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             cb = plt.colorbar(im_plot, ax=ax,
                               cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
 
-            cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
-            cb.formatter = CustomFormatter(factor=1000, useMathText=True)
-            cb.update_ticks()
+            if flux_units == 'Jy':
+                cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
+                cb.formatter = CustomFormatter(factor=1000, useMathText=True)
+                cb.update_ticks()
+            if flux_units == 'any':
+                cb.set_label(r"Pixel Intensity", labelpad=10, fontsize=16)
+                cb.formatter = CustomFormatter(factor=10, useMathText=True)
+                cb.update_ticks()
 
             levels_colorbar2 = np.geomspace(1.0 * vmax, 3 * std,
                                             6)

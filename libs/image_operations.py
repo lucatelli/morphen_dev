@@ -109,7 +109,7 @@ def do_cutout(image, box_size=300, center=None, return_='data'):
         return (box)
 
 
-def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
+def do_cutout_2D(image_data, box_size=(300,300), center=None, return_='data'):
     """
     Fast cutout of a numpy array.
 
@@ -119,15 +119,15 @@ def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
     if center is None:
         x0, y0= nd.maximum_position(image_data)
         print('  >> Center --> ', x0, y0)
-        if x0-box_size>1:
-            xin, xen, yin, yen = x0 - box_size, x0 + box_size, \
-                                 y0 - box_size, y0 + box_size
+        if x0-box_size[0]>1:
+            xin, xen, yin, yen = x0 - box_size[0], x0 + box_size[0], \
+                                 y0 - box_size[1], y0 + box_size[1]
         else:
             print('Box size is larger than image!')
             return ValueError
     else:
-        xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, \
-            center[1] - box_size, center[1] + box_size
+        xin, xen, yin, yen = center[0] - box_size[0], center[0] + box_size[0], \
+            center[1] - box_size[1], center[1] + box_size[1]
     if return_ == 'data':
         data_cutout = image_data[xin:xen, yin:yen]
         return (data_cutout)

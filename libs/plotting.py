@@ -1376,3 +1376,60 @@ def fast_plot2(imagename, crop=False, box_size=128, center=None, with_wcs=True,v
     #         # cb=plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes([-0.0,0.38,0.02,0.23]))
     #         cb.set_label(r"Flux [Jy/Beam]")
     return (ax)
+
+
+#
+# In [6]: import numpy as np
+#    ...: import matplotlib.pyplot as plt
+#    ...: from astropy.io import fits
+#    ...: from astropy.wcs import WCS
+#    ...: from astropy.visualization import ZScaleInterval
+#    ...: from reproject import reproject_interp
+#    ...:
+#    ...: # Load the optical FITS image (VV705_r.fits)
+#    ...: optical_fits = fits.open('VV705_r.fits')
+#    ...: optical_data = optical_fits[0].data
+#    ...: optical_header = optical_fits[0].header
+#    ...:
+#    ...: # Create a WCS object for the optical image
+#    ...: optical_wcs = WCS(optical_header)
+#    ...:
+#    ...: # Load the radio contour data (vv705_radio.fits)
+#    ...: radio_fits = fits.open('vv705_radio.fits')
+#    ...: radio_data = radio_fits[0].data
+#    ...: radio_header = radio_fits[0].header
+#    ...:
+#    ...: # Extract the 2D slice from the 4D radio data (assuming the desired slice is at index 0 for each extra dimension)
+#    ...: radio_data_2d = radio_data
+#    ...:
+#    ...: # Create a WCS object for the 2D radio data
+#    ...: radio_wcs_2d = WCS(radio_header, naxis=[1, 2])
+#    ...:
+#    ...: # Reproject the 2D radio data to match the optical WCS and shape
+#    ...: radio_data_reprojected, _ = reproject_interp((radio_data_2d, radio_wcs_2d), optical_wcs, shape_out=optical_data.shape)
+#    ...:
+#    ...: # Calculate log-spaced contour levels based on the radio data
+#    ...: radio_peak = np.nanmax(radio_data_reprojected)
+#    ...: radio_std = np.nanstd(radio_data_reprojected)
+#    ...: contour_levels = np.geomspace(0.1 * radio_peak, 0.1 * radio_std, 10)
+#    ...:
+#    ...: # Create a figure and axes with WCS projection
+#    ...: fig = plt.figure(figsize=(8, 8))
+#    ...: ax = fig.add_subplot(111, projection=optical_wcs)
+#    ...:
+#    ...: # Plot the optical image
+#    ...: interval = ZScaleInterval()
+#    ...: vmin, vmax = interval.get_limits(optical_data)
+#    ...: ax.imshow(optical_data, cmap='magma', origin='lower')
+#    ...:
+#    ...: # Overlay radio contours on the optical image using log-spaced levels
+#    ...: ax.contour(radio_data_reprojected, levels=contour_levels[::-1], colors='red', linewidths=1, alpha=0.7)
+#    ...:
+#    ...: # Set axis labels and title
+#    ...: ax.set_xlabel('RA (J2000)')
+#    ...: ax.set_ylabel('Dec (J2000)')
+#    ...: ax.set_title('Optical Image with Log-Spaced Radio Contours (J2000)')
+#    ...:
+#    ...: # Show the plot
+#    ...: plt.grid(color='white', linestyle='--', linewidth=0.5)
+#    ...: plt.show()
