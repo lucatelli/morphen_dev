@@ -77,6 +77,10 @@ __date__ = '2023 05 10'
 print(__doc__)
 
 import os
+import sys
+sys.path.append('../libs/')
+import libs as mlibs
+import glob
 from casatasks import *
 import numpy as np
 try:
@@ -103,7 +107,7 @@ threshold = '20.0e-6Jy'
 FIELD = ''
 SPWS = ''
 ANTENNAS = ''
-refant = 'ea06,ea10'
+# refant = ''
 minblperant=3
 
 imsize = 4096
@@ -116,36 +120,6 @@ gain = 0.1
 pblimit = -0.1
 nterms = 3
 ext = ''
-
-#
-usemask = 'auto-multithresh'
-interactive = False
-# usemask='user'
-sidelobethreshold = 3.5
-noisethreshold = 10.0
-lownoisethreshold = 5.0
-minbeamfrac = 0.06
-growiterations = 75
-negativethreshold = 0.0
-"""
-sidelobethreshold = 3.5
-noisethreshold = 10.0
-lownoisethreshold = 4.0
-minbeamfrac = 0.06
-growiterations = 50
-negativethreshold = 15.0
-"""
-"""
-This works well for C and L bands
-sidelobethreshold=3.5
-noisethreshold=15.0
-lownoisethreshold=5.0
-minbeamfrac=0.06
-growiterations=50
-negativethreshold=15.0
-"""
-
-os.environ['SAVE_ALL_AUTOMASKS'] = "true"
 
 # gain settings
 solint_short = '24s'
@@ -476,7 +450,7 @@ def calibration_table_plot(table, stage='selfcal',
         plotms(vis=table, xaxis=xaxis, yaxis=yaxis, field='',
                gridcols=1, gridrows=1, coloraxis='spw', antenna='', plotrange=plotrange,
                width=800, height=540, dpi=600, overwrite=True, showgui=True,
-               correlation='LL,RR',
+               # correlation='LL,RR',
                plotfile=os.path.dirname(
                    table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
                    'all') + '.jpg')
@@ -489,7 +463,7 @@ def calibration_table_plot(table, stage='selfcal',
                    gridcols=1, gridrows=1, coloraxis='spw', antenna='',
                    plotrange=plotrange,
                    width=800, height=540, dpi=600, overwrite=True, showgui=False,
-                   correlation='LL,RR',
+                   # correlation='LL,RR',
                    plotfile=os.path.dirname(
                        table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
                        FIELD) + '.jpg')
@@ -498,7 +472,7 @@ def calibration_table_plot(table, stage='selfcal',
 
 def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uvrange='',
                     solnorm=solnorm, combine='', calmode='p', gaintype='G',solint_factor=1.0,
-                    gain_tables_selfcal=[''], special_name='',
+                    gain_tables_selfcal=[''], special_name='',refant = '', minblperant=4,
                     return_solution_stats=False):
     g_vis = g_name + '.ms'
     minsnr = minsnr
@@ -732,7 +706,8 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
                width=1600, height=1080, showgui=True, overwrite=True,
                plotfile=os.path.dirname(g_name) + '/selfcal/plots/' + str(
                    n_interaction) +
-                        '_' + os.path.basename(g_name) + '_combine' + '_calmode' + calmode + combine +
+                        '_' + os.path.basename(g_name) +
+                        '_combine' + '_calmode' + calmode + combine +
                         '_gtype_' + gaintype + special_name +
                         '_amp_variation_intervals.jpg')
 
@@ -742,8 +717,9 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
     #         gridrows=5,gridcols=5,iteraxis='antenna',coloraxis='spw')
 
     if return_solution_stats == True:
-        SNRs, percentiles_SNRs = make_plot_check(cut_off=cut_off,
-                                                 return_solution_stats=return_solution_stats)
+        SNRs, percentiles_SNRs = \
+            make_plot_check(cut_off=cut_off,
+                            return_solution_stats=return_solution_stats)
     else:
         make_plot_check(cut_off=cut_off)
     compare_phase_variation()
@@ -796,8 +772,9 @@ def run_wsclean(g_name, n_interaction, imsize='2048', cell='0.05asec',
 
 def self_gain_cal(g_name, n_interaction, gain_tables=[],
                   combine=combine, solnorm=False,
-                  spwmap=[],uvrange='',
+                  spwmap=[],uvrange='',append=False,solmode='',#L1R
                   minsnr=5.0, solint='inf', gaintype='G', calmode='p',
+                  interp = '',refant = '', minblperant = 4,
                   action='apply', flagbackup=True, PLOT=False, special_name=''):
     g_vis = g_name + '.ms'
 
@@ -825,7 +802,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
         gaincal(vis=g_vis, field=FIELD, caltable=caltable, spwmap=spwmap,
                 solint=solint, gaintable=gain_tables, combine=combine,
                 refant=refant, calmode=calmode, gaintype=gaintype,
-                uvrange=uvrange,
+                uvrange=uvrange,append=append,solmode=solmode,interp = interp,
                 minsnr=minsnr, solnorm=solnorm,minblperant=minblperant)
     else:
         print(' => Using existing caltable with same parameters asked.')
@@ -867,6 +844,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
         report_flag(summary_bef, 'field')
 
         applycal(vis=g_vis, gaintable=gain_tables, spwmap=spwmap,
+                 interp = interp,
                  flagbackup=False, calwt=True)
 
         print('     => Reporting data flagged after selfcal '
@@ -879,7 +857,6 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
                               with_CORRECTED=True, with_MODEL=False, with_DATA=False)
 
     return (gain_tables)
-
 
 
 def self_gain_blcal(g_name, field, n_interaction, gain_tables=[],
@@ -982,9 +959,376 @@ def self_gain_blcal(g_name, field, n_interaction, gain_tables=[],
     return (gain_tables)
 
 
+def run_rflag(g_vis, display='report', action='calculate',
+              timedevscale=4.0, freqdevscale=4.0, winsize=7, datacolumn='corrected'):
+    if action == 'apply':
+        print('Flag statistics before rflag:')
+        summary_before = flagdata(vis=g_vis, field='', mode='summary')
+        report_flag(summary_before, 'field')
+        flagmanager(vis=g_name + '.ms', mode='save', versionname='seflcal_before_rflag',
+                    comment='Before rflag at selfcal step.')
+    flagdata(vis=g_vis, mode='rflag', field='', spw='', display=display,
+             datacolumn=datacolumn, ntime='scan', combinescans=True,
+             extendflags=False,
+             winsize=winsize,
+             timedevscale=timedevscale, freqdevscale=freqdevscale,
+             flagnearfreq=False, flagneartime=False, growaround=True,
+             action=action, flagbackup=False, savepars=True
+             )
 
-run_mode = 'jupyter'
-# run_mode = 'terminal'
+    if action == 'apply':
+        flagdata(vis=g_vis, field='', spw='',
+                 datacolumn='data',
+                 mode='extend', action=action, display='report',
+                 flagbackup=False, growtime=75.0,
+                 growfreq=75.0, extendpols=False)
+
+    if action == 'apply':
+        flagmanager(vis=g_name + '.ms', mode='save', versionname='seflcal_after_rflag',
+                    comment='After rflag at selfcal step.')
+        try:
+            statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='corrected')
+        except:
+            statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='data')
+
+        print('Flag statistics after rflag:')
+        summary_after = flagdata(vis=g_vis, field='', mode='summary')
+        report_flag(summary_after, 'field')
+
+def find_refant(msfile, field,tablename):
+    """
+    This function comes from the e-MERLIN CASA Pipeline.
+    """
+    # Find phase solutions per scan:
+    # tablename = calib_dir +
+    gaincal(vis=msfile,
+            caltable=tablename,
+            field=field,
+            refantmode='flex',
+            solint = 'inf',
+            minblperant = 2,
+            gaintype = 'G',
+            calmode = 'p')
+    # find_casa_problems()
+    # Read solutions (phases):
+    tb.open(tablename+'/ANTENNA')
+    antenna_names = tb.getcol('NAME')
+    tb.close()
+    tb.open(tablename)
+    antenna_ids = tb.getcol('ANTENNA1')
+    #times  = tb.getcol('TIME')
+    flags = tb.getcol('FLAG')
+    phases = np.angle(tb.getcol('CPARAM'))
+    snrs = tb.getcol('SNR')
+    tb.close()
+    # Analyse number of good solutions:
+    good_frac = []
+    good_snrs = []
+    for i, ant_id in enumerate(np.unique(antenna_ids)):
+        cond = antenna_ids == ant_id
+        #t = times[cond]
+        f = flags[0,0,:][cond]
+        p = phases[0,0,:][cond]
+        snr = snrs[0,0,:][cond]
+        frac =  1.0*np.count_nonzero(~f)/len(f)*100.
+        snr_mean = np.nanmean(snr[~f])
+        good_frac.append(frac)
+        good_snrs.append(snr_mean)
+    sort_idx = np.argsort(good_frac)[::-1]
+    print('Antennas sorted by % of good solutions:')
+    for i in sort_idx:
+        print('{0:3}: {1:4.1f}, <SNR> = {2:4.1f}'.format(antenna_names[i],
+                                                               good_frac[i],
+                                                               good_snrs[i]))
+    if good_frac[sort_idx[0]] < 90:
+        print('Small fraction of good solutions with selected refant!')
+        print('Please inspect antennas to select optimal refant')
+        print('You may want to use refantmode= flex" in default_params')
+    pref_ant = antenna_names[sort_idx]
+    # if 'Lo' in antenna_names:
+    #     priorities = ['Pi','Da','Kn','De','Cm']
+    # else:
+    #     priorities = ['Mk2','Pi','Da','Kn', 'Cm', 'De']
+    # refant = ','.join([a for a in pref_ant if a in priorities])
+    pref_ant_list = ','.join(list(pref_ant))
+    return pref_ant_list
+
+
+# run_mode = 'jupyter'
+run_mode = 'terminal'
+if run_mode == 'terminal':
+
+    """
+    If running this in a terminal, you can safely set quiet=False. This is 
+    refers to the wsclean quiet parameter. If running this code in a Jupyter Notebook, 
+    please set quiet=True. Otherwise, jupyter can crash due to the very long 
+    output cells. 
+    """
+    quiet = False
+
+    steps = [
+        'startup',
+        'save_init_flags',
+        # 'fov_image',
+        # # 'run_rflag_init',
+        'test_image',
+        'select_refant',
+        '0',#initial test selfcal step
+        # '1',#start of the first trial of selfcal, phase only (p)
+        # '2',#continue first trial, use gain table from step 1; can be p or ap.
+        # # 'run_rflag_final',
+        # # '3',
+        # '4',
+    ]
+
+    path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band'
+            '/MCG12/selfcalibration/')
+    vis_list = ['MCG12-02-001.avg12s.calibrated']
+    proj_name = ''
+    for field in vis_list:
+        g_name = path + field + proj_name
+        g_vis = g_name + '.ms'
+        # refant = ''# 'ea18,ea09'
+
+        try:
+            steps_performed
+        except NameError:
+            steps_performed = []
+
+        if 'startup' in steps and 'startup' not in steps_performed:
+            """
+            Create basic directory structure for saving stuff.
+            """
+            print('==> Creating basic directory structure.')
+            if not os.path.exists(path + 'selfcal/'):
+                os.makedirs(path + 'selfcal/')
+            if not os.path.exists(path + 'selfcal/plots'):
+                os.makedirs(path + 'selfcal/plots')
+            image_list = {}
+            residual_list = {}
+            model_list = {}
+            image_statistics = {}
+            gain_tables_applied = {}
+            steps_performed = []
+            # start the CASA logger (open the window).
+            import casalogger.__main__
+            steps_performed.append('startup')
+
+        if 'save_init_flags' in steps and 'save_init_flags' not in steps_performed:
+            """
+            Create a backup file of the flags; run statwt.
+            """
+            if not os.path.exists(g_name + '.ms.flagversions/flags.Original/'):
+                print("     ==> Creating backup flags file 'Original'...")
+                flagmanager(vis=g_name + '.ms', mode='save', versionname='Original',
+                            comment='Original flags.')
+
+                print("     ==> Running statwt.")
+
+                if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
+                    statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='data')
+            else:
+                print("     ==> Skipping flagging backup init (exists).")
+                print("     ==> Restoring flags to original...")
+                flagmanager(vis=g_name + '.ms', mode='restore', versionname='Original')
+                # if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
+                #     print("     ==> Running statwt.")
+                #     statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='data')
+            print(" ==> Amount of data flagged at the start of selfcal.")
+            summary = flagdata(vis=g_name + '.ms', field='', mode='summary')
+            report_flag(summary, 'field')
+            steps_performed.append('save_init_flags')
+
+
+        if 'startup' not in steps_performed:
+            """
+            In case you rerun the code without restarting the kernel or re-starting 
+            the selfcal without running the startup step.
+            """
+            image_list = {}
+            residual_list = {}
+            model_list = {}
+            image_statistics = {}
+            gain_tables_applied = {}
+            import casalogger.__main__
+
+            steps_performed = []
+
+        if 'fov_image' in steps and 'fov_image' not in steps_performed:
+            """
+            Create a FOV image.
+            """
+            niter = 10000
+            robust = 0.5  # or 0.5 if lots of extended emission.
+            run_wsclean(g_name, imsize=1024 * 7, cell='0.2asec',
+                        robust=robust, base_name='FOV_phasecal_image',
+                        nsigma_automask='8.0', nsigma_autothreshold='3.0',
+                        n_interaction='0', savemodel=False, quiet=False,
+                        datacolumn='DATA', shift=None,
+                        # shift="'18:34:46.454 +059.47.32.191'",
+                        # uvtaper=['0.05arcsec'],
+                        niter=niter,
+                        PLOT=False)
+            file_list = glob.glob(f"{path}*MFS-image.fits")
+            file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['FOV_image'] = file_list[-1]
+            file_list = glob.glob(f"{path}*MFS-image.fits")
+            file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['FOV_residual'] = file_list[-1]
+            file_list = glob.glob(f"{path}*MFS-model.fits")
+            file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['FOV_model'] = file_list[-1]
+            steps_performed.append('fov_image')
+
+        if 'run_rflag_init' in steps:
+            """
+            Run automatic rflag on the data before selfcalibration.
+            """
+            run_rflag(g_vis, display='report', action='apply',
+                      timedevscale=4.0, freqdevscale=4.0, winsize=7, datacolumn='data')
+            steps_performed.append('run_rflag_init')
+
+
+        """
+        This is the moment we define global image/cleaning properties. 
+        These will be used in the subsequent steps of selfcalibration.
+        """
+        ########################################
+        imsize = 1024*3
+        cell = '0.066asec'
+        FIELD_SHIFT = None
+        ########################################
+
+        if 'test_image' in steps and 'test_image' not in steps_performed:
+        # if 'test_image' in steps and 'test_image':
+            """
+            After creating a FOV image, or checking info about other sources in the 
+            field (e.g. NVSS, FIRST, etc), you may want to create a basic 
+            image to that center (or None) to see how the image (size) 
+            will accomodate the source(s). This setting will be used in all the
+            subsequent steps of selfcalibration. 
+            
+            Note also that masks are not used in this step, but the image will be used 
+            to create a mask for the next step, which is the first step of 
+            selfcalibration. 
+            """
+            niter = 10000
+            robust = 0.5
+            run_wsclean(g_name, imsize=imsize, cell=cell,
+                        robust=robust, base_name='phasecal_image',
+                        nsigma_automask='10.0', nsigma_autothreshold='6.0',
+                        n_interaction='0', savemodel=False, quiet=quiet,
+                        datacolumn='DATA', shift=FIELD_SHIFT,
+                        # uvtaper=['0.05arcsec'],
+                        niter=niter,
+                        PLOT=False)
+
+            file_list = glob.glob(f"{path}*MFS-image.fits")
+            file_list.sort(key=os.path.getmtime, reverse=False)
+            print(file_list)
+            try:
+                image_list['test_image'] = file_list[-1]
+            except:
+                image_list['test_image'] = file_list
+            # file_list = glob.glob(f"{path}*MFS-image.fits")
+            # file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['test_residual'] = image_list['test_image'].replace(
+                'MFS-image.fits','MFS-residual.fits')
+            # file_list = glob.glob(f"{path}*MFS-model.fits")
+            # file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['test_model'] = image_list['test_image'].replace(
+                'MFS-image.fits','MFS-model.fits')
+
+
+            level_stats = mlibs.level_statistics(image_list['test_image'])
+            image_stats = mlibs.get_image_statistics(imagename=image_list['test_image'],
+                                                     dic_data=level_stats)
+
+            image_statistics['test_image'] = image_stats
+            if 'test_image' not in steps_performed:
+                steps_performed.append('test_image')
+
+        if 'select_refant' in steps and 'select_refant' not in steps_performed:
+            print(' ==> Estimating order of best referent antennas...')
+            tablename_refant = os.path.dirname(g_name) + '/selfcal/find_refant.phase'
+            refant = find_refant(msfile=g_vis, field='',
+                                 tablename=tablename_refant)
+            print(' ==> Preferential reference antenna order = ', refant)
+            steps_performed.append('select_refant')
+
+
+        if '0' in steps:
+            iteration = '0'
+            ############################################################################
+            #### 0. Zero interaction. Use a small/negative robust parameter,        ####
+            ####    to find the bright/compact emission(s).                         ####
+            ############################################################################
+            robust = 0.0  # decrease more if lots of failed solutions.
+            niter = 10000
+
+            if 'start_image' not in steps_performed:
+
+                mask = mlibs.mask_dilation(image_list['test_image'],
+                                           PLOT=False,
+                                           sigma=12,
+                                           iterations=3)[1]
+                mask_wslclean = mask * 1.0  # mask in wsclean is inverted
+                mask_name = image_list['test_image'].replace('.fits', '') + '_mask.fits'
+                mlibs.pf.writeto(mask_name, mask_wslclean, overwrite=True)
+                print(' ==> Using mask ', mask_name, ' in wsclean for deconvolution.')
+
+                start_image(g_name, n_interaction=iteration,
+                            imsize=imsize, cell=cell,
+                            # uvtaper=['0.05arcsec'],
+                            delmodel=True,
+                            # opt_args=' -multiscale -multiscale-scales 0 ',
+                            nsigma_automask='12.0',
+                            nsigma_autothreshold='6.0',
+                            # next time probably needs to use 7.0 instead of 3.0
+                            niter=niter, shift=FIELD_SHIFT,quiet=quiet,
+                            # uvtaper='0.04asec',
+                            savemodel=True, mask=mask_name,
+                            robust=robust, datacolumn='DATA')
+
+
+                file_list = glob.glob(f"{path}*MFS-image.fits")
+                file_list.sort(key=os.path.getmtime, reverse=False)
+                image_list['start_image'] = file_list[-1]
+                image_list['start_residual'] = image_list['start_image'].replace(
+                    'MFS-image.fits','MFS-residual.fits')
+                # file_list = glob.glob(f"{path}*MFS-model.fits")
+                # file_list.sort(key=os.path.getmtime, reverse=False)
+                image_list['start_model'] = image_list['start_image'].replace(
+                    'MFS-image.fits','MFS-model.fits')
+
+
+                level_stats = mlibs.level_statistics(image_list['start_image'])
+                image_stats = mlibs.get_image_statistics(imagename=image_list['start_image'],
+                                                         dic_data=level_stats)
+
+                image_statistics['start_image'] = image_stats
+                if 'start_image' not in steps_performed:
+                    steps_performed.append('start_image')
+
+
+            gaintype = 'G'
+            calmode = 'p'
+            combine = ''
+            cut_off = 1.5
+            SNRs, percentiles_SNRs = check_solutions(g_name, field, cut_off=cut_off,
+                                                     n_interaction=iteration,
+                                                     solnorm=solnorm, combine=combine,
+                                                     calmode=calmode,
+                                                     gaintype=gaintype,
+                                                     gain_tables_selfcal=[],
+                                                     return_solution_stats=True)
+
+
+        if 'run_rflag_final' in steps:
+            run_rflag(g_vis, display='report', action='apply',
+                      timedevscale=4.0, freqdevscale=4.0, winsize=7,
+                      datacolumn='corrected')
+            steps_performed.append('run_rflag_final')
 
 
 if run_mode == 'jupyter':
