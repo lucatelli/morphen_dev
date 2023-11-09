@@ -426,9 +426,9 @@ def make_plot_snr(caltable, cut_off, plot_snr=True, bins=50, density=True,
         plt.grid()
         if save_fig == True:
             plt.savefig(caltable.replace('.tb', '.jpg'), dpi=300, bbox_inches='tight')
-        plt.show()
+        # plt.show()
         # plt.clf()
-        # plt.close()
+        plt.close()
 
     print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
         stats.percentileofscore(snr, cut_off), ''))
@@ -447,13 +447,25 @@ def calibration_table_plot(table, stage='selfcal',
         plotrange = [-1, -1, -1, -1]
 
     if fields == '':
+
         plotms(vis=table, xaxis=xaxis, yaxis=yaxis, field='',
                gridcols=1, gridrows=1, coloraxis='spw', antenna='', plotrange=plotrange,
-               width=800, height=540, dpi=600, overwrite=True, showgui=True,
+               width=1000, height=400, dpi=600, overwrite=True, showgui=True,
                # correlation='LL,RR',
                plotfile=os.path.dirname(
                    table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
                    'all') + '.jpg')
+
+
+        plotms(vis=table, xaxis=xaxis, yaxis=yaxis, field='',avgbaseline=True,
+               gridcols=1, gridrows=1, coloraxis='spw', antenna='', plotrange=plotrange,
+               width=1000, height=400, dpi=600, overwrite=True, showgui=True,
+               # correlation='LL,RR',
+               plotfile=os.path.dirname(
+                   table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' +
+                        yaxis + '_avgbaseline_field_' + str(
+                   'all') + '.jpg')
+
     else:
 
         for FIELD in fields:
@@ -462,7 +474,7 @@ def calibration_table_plot(table, stage='selfcal',
                    # width=2048,height=1280,dpi=256,overwrite=True,showgui=False,
                    gridcols=1, gridrows=1, coloraxis='spw', antenna='',
                    plotrange=plotrange,
-                   width=800, height=540, dpi=600, overwrite=True, showgui=False,
+                   width=1000, height=400, dpi=600, overwrite=True, showgui=False,
                    # correlation='LL,RR',
                    plotfile=os.path.dirname(
                        table) + '/plots/' + stage + '/' + table_type + '_' + xaxis + '_' + yaxis + '_field_' + str(
@@ -593,7 +605,7 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
                     + special_name + '_gain_solutions_comparisons_norm.pdf')
         # plt.clf()
         # plt.close()
-        plt.show()
+        # plt.show()
 
         plt.figure()
         plt.figure()
@@ -634,7 +646,7 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
         print('P(<=' + str(cut_off) + ') = {0}  ({1})'.format(
             stats.percentileofscore(snr_inf, cut_off), 'inf'))
 
-        plt.show()
+        # plt.show()
         # print('################################')
         # print(np.mean(snr_int))
         # print('################################')
@@ -658,7 +670,7 @@ def check_solutions(g_name, field, cut_off=3.0, minsnr=0.01, n_interaction=0, uv
         else:
             pass
         # plt.clf()
-        # plt.close()
+        plt.close()
 
     def compare_phase_variation():
         plotms(caltable_int, antenna='Mk2', scan='', yaxis='phase')
@@ -771,7 +783,7 @@ def run_wsclean(g_name, n_interaction, imsize='2048', cell='0.05asec',
 
 
 def self_gain_cal(g_name, n_interaction, gain_tables=[],
-                  combine=combine, solnorm=False,
+                  combine=combine, solnorm=False,refantmode = 'strict',
                   spwmap=[],uvrange='',append=False,solmode='',#L1R
                   minsnr=5.0, solint='inf', gaintype='G', calmode='p',
                   interp = '',refant = '', minblperant = 4,
@@ -796,12 +808,13 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
                 '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb')
     if not os.path.exists(caltable):
         if calmode == 'ap' or calmode == 'a':
-            solonrm = True
+            solnorm = True
         else:
             solnorm = False
         gaincal(vis=g_vis, field=FIELD, caltable=caltable, spwmap=spwmap,
                 solint=solint, gaintable=gain_tables, combine=combine,
                 refant=refant, calmode=calmode, gaintype=gaintype,
+                refantmode = refantmode,
                 uvrange=uvrange,append=append,solmode=solmode,interp = interp,
                 minsnr=minsnr, solnorm=solnorm,minblperant=minblperant)
     else:
@@ -1054,6 +1067,45 @@ def find_refant(msfile, field,tablename):
     return pref_ant_list
 
 
+def estimate_solint(g_name, SNRs, cutoff=2.0):
+    # Your defined time bins
+    time_bins = ['int', '24s', '48s', '96s', '192s', '384s', 'inf']
+
+    # Initial cutoff value
+    # cutoff = 2.0
+
+    summary = flagdata(vis=g_name + '.ms', field='', mode='summary')
+    init_flags = 100 * summary['flagged'] / summary['total']
+
+    init_fraction = mlibs.scipy.stats.percentileofscore(SNRs[0], 0.5)
+    # max_flagged = 25.0  + init_fraction # Maximum fraction of flagged data (10%)
+    max_flagged = init_flags - init_fraction
+    print(f"Initial fraction of flagged data: {init_flags}%")
+    print(f"Estimated fraction of total flagged data from gaintable: {max_flagged}%")
+    found_optimal = False
+
+    while not found_optimal and cutoff >= 0.5:
+        #     SNR, flagged_data = analyze_SNR(time_bins)
+
+        for idx, snr_val in enumerate(SNRs):
+            percentile = mlibs.scipy.stats.percentileofscore(SNRs[idx], cutoff)
+
+            if percentile <= max_flagged:
+                print(f"Optimal SNR: {snr_val} for time bin {time_bins[idx]} seconds.")
+                found_optimal = True
+                break
+
+        if not found_optimal:
+            cutoff -= 0.5
+            print(
+                f"No SNR meets the condition for less than {max_flagged}% flagged data. "
+                f"Reducing cutoff to {cutoff} and re-running analysis.")
+
+    if cutoff < 0.5:
+        print(
+            "Unable to find an optimal SNR within the specified cutoff limits.")
+    return (time_bins[idx], cutoff)
+
 # run_mode = 'jupyter'
 run_mode = 'terminal'
 if run_mode == 'terminal':
@@ -1074,8 +1126,9 @@ if run_mode == 'terminal':
         'test_image',
         'select_refant',
         '0',#initial test selfcal step
-        # '1',#start of the first trial of selfcal, phase only (p)
-        # '2',#continue first trial, use gain table from step 1; can be p or ap.
+        '1',#start of the first trial of selfcal, phase only (p)
+        '2',#continue first trial, can be p or ap, but uses gain table from step 1;
+        'split_trial_1',#split the data after first trial
         # # 'run_rflag_final',
         # # '3',
         # '4',
@@ -1109,6 +1162,8 @@ if run_mode == 'terminal':
             model_list = {}
             image_statistics = {}
             gain_tables_applied = {}
+            trial_gain_tables = []
+            final_gain_tables = []
             steps_performed = []
             # start the CASA logger (open the window).
             import casalogger.__main__
@@ -1150,6 +1205,8 @@ if run_mode == 'terminal':
             model_list = {}
             image_statistics = {}
             gain_tables_applied = {}
+            trial_gain_tables = []
+            final_gain_tables = []
             import casalogger.__main__
 
             steps_performed = []
@@ -1257,7 +1314,7 @@ if run_mode == 'terminal':
             steps_performed.append('select_refant')
 
 
-        if '0' in steps:
+        if '0' in steps and '0' not in steps_performed:
             iteration = '0'
             ############################################################################
             #### 0. Zero interaction. Use a small/negative robust parameter,        ####
@@ -1318,10 +1375,274 @@ if run_mode == 'terminal':
             SNRs, percentiles_SNRs = check_solutions(g_name, field, cut_off=cut_off,
                                                      n_interaction=iteration,
                                                      solnorm=solnorm, combine=combine,
-                                                     calmode=calmode,
+                                                     calmode=calmode,refant=refant,
                                                      gaintype=gaintype,
                                                      gain_tables_selfcal=[],
                                                      return_solution_stats=True)
+
+            solint, minsnr =  estimate_solint(g_name, SNRs)
+            # solint = '12s'
+            # minsnr = 2.0
+
+            if minsnr < 1.5:
+                gaintype = 'T'
+            else:
+                gaintype = 'G'
+            minblperant = 3
+            # refant = 'ea10'
+            if '0' not in steps_performed:
+                gain_tables_selfcal_temp = self_gain_cal(g_name,
+                                                         n_interaction=iteration,
+                                                         minsnr=minsnr,
+                                                         solint=solint,
+                                                         flagbackup=True,
+                                                         gaintype=gaintype,
+                                                         combine=combine,
+                                                         refant=refant,
+                                                         calmode=calmode,
+                                                         action='apply',
+                                                         PLOT=True,
+                                                         gain_tables=[]
+                                                         )
+                trial_gain_tables.append(gain_tables_selfcal_temp)
+                gain_tables_applied['0'] = gain_tables_selfcal_temp
+                steps_performed.append('0')
+
+        if '1' in steps and '1' not in steps_performed:
+            iteration = '1'
+            ############################################################################
+            #### 1. First interaction. Increase a little the robust parameter,      ####
+            ####    start to consider more extended emission.                       ####
+            ############################################################################
+            niter = 50000
+            robust = 0.5
+
+            if 'update_model_1' not in steps_performed:
+                run_wsclean(g_name, robust=robust,
+                            imsize=imsize, cell=cell, base_name='selfcal_test',
+                            nsigma_automask='10.0', nsigma_autothreshold='3.0',
+                            n_interaction='', savemodel=False, quiet=quiet,
+                            with_multiscale=True,
+                            datacolumn='CORRECTED_DATA',
+                            # uvtaper=['0.08arcsec'],
+                            niter=niter, shift=FIELD_SHIFT,
+                            PLOT=False)
+
+                file_list_ = glob.glob(f"{path}*MFS-image.fits")
+                file_list_.sort(key=os.path.getmtime, reverse=False)
+                mask = mlibs.mask_dilation(file_list_[-1],
+                                           PLOT=False, sigma=10, iterations=3)[1]
+                mask_wslclean = mask * 1.0  # mask in wsclean is inverted
+                mask_name = file_list_[-1].replace('.fits', '') + '_mask.fits'
+                mlibs.pf.writeto(mask_name, mask_wslclean, overwrite=True)
+
+                run_wsclean(g_name, robust=robust,
+                            imsize=imsize, cell=cell,
+                            nsigma_automask='8.0', nsigma_autothreshold='2.0',
+                            n_interaction=iteration, savemodel=True, quiet=quiet,
+                            with_multiscale=True,
+                            datacolumn='CORRECTED_DATA', mask=mask_name,
+                            shift=FIELD_SHIFT,
+                            # uvtaper=['0.08arcsec'],
+                            niter=niter,
+                            PLOT=False)
+
+                file_list = glob.glob(f"{path}*MFS-image.fits")
+                file_list.sort(key=os.path.getmtime, reverse=False)
+
+                image_list['update_model_1_image'] = file_list[-1]
+                image_list['update_model_1_residual'] = image_list['update_model_1_image'].replace(
+                    'MFS-image.fits','MFS-residual.fits')
+                # file_list = glob.glob(f"{path}*MFS-model.fits")
+                # file_list.sort(key=os.path.getmtime, reverse=False)
+                image_list['update_model_1_model'] = image_list['update_model_1_image'].replace(
+                    'MFS-image.fits','MFS-model.fits')
+
+
+                level_stats = mlibs.level_statistics(image_list['update_model_1_image'])
+                image_stats = mlibs.get_image_statistics(imagename=image_list['update_model_1_image'],
+                                                         dic_data=level_stats)
+
+                image_statistics['update_model_1'] = image_stats
+                steps_performed.append('update_model_1')
+
+            gaintype = 'G'
+            calmode = 'p'
+            combine = ''
+            cut_off = 1.5
+            SNRs, percentiles_SNRs = check_solutions(g_name, field, cut_off=cut_off,
+                                                     n_interaction=iteration,
+                                                     solnorm=solnorm, combine=combine,
+                                                     calmode=calmode,refant=refant,
+                                                     gaintype=gaintype,
+                                                     gain_tables_selfcal=[],
+                                                     return_solution_stats=True)
+
+            solint, minsnr =  estimate_solint(g_name, SNRs)
+            solint = '60s'
+            gaintype = 'T'
+            calmode = 'p'
+            combine = ''
+            minsnr = 1.5
+            minblperant = 3
+            if '1' not in steps_performed:
+                gain_tables_selfcal_p1 = self_gain_cal(g_name,
+                                                       n_interaction=iteration,
+                                                       minsnr=minsnr,
+                                                       solint=solint,
+                                                       flagbackup=True,
+                                                       gaintype=gaintype,
+                                                       combine=combine,
+                                                       refant=refant,
+                                                       calmode=calmode,
+                                                       action='apply',
+                                                       PLOT=True,
+                                                       gain_tables=[]
+                                                       )
+
+                trial_gain_tables.append(gain_tables_selfcal_p1)
+                gain_tables_applied['1'] = gain_tables_selfcal_p1
+                steps_performed.append('1')
+
+        if '2' in steps and '2' not in steps_performed:
+            iteration = '2'
+            ############################################################################
+            #### 2. Second interaction. Increase more the robust parameter, or use  ####
+            ####    uvtapering. Consider even more extended emission (if there is). ####
+            ############################################################################
+            niter = 50000
+            robust = 1.0
+
+            if 'update_model_2' not in steps_performed:
+                run_wsclean(g_name, robust=robust,
+                            imsize=imsize, cell=cell, base_name='selfcal_test',
+                            nsigma_automask='6.0', nsigma_autothreshold='1.5',
+                            n_interaction='', savemodel=False, quiet=quiet,
+                            with_multiscale=True,
+                            datacolumn='CORRECTED_DATA',
+                            # uvtaper=['0.08arcsec'],
+                            niter=niter, shift=FIELD_SHIFT,
+                            PLOT=False)
+
+
+                file_list_ = glob.glob(f"{path}*MFS-image.fits")
+                file_list_.sort(key=os.path.getmtime, reverse=False)
+                mask = mlibs.mask_dilation(file_list_[-1],
+                                           PLOT=False, sigma=8, iterations=3)[1]
+                mask_wslclean = mask * 1.0  # mask in wsclean is inverted
+                mask_name = file_list_[-1].replace('.fits', '') + '_mask.fits'
+                mlibs.pf.writeto(mask_name, mask_wslclean, overwrite=True)
+
+                run_wsclean(g_name, robust=robust,
+                            imsize=imsize, cell=cell,
+                            nsigma_automask='8.0', nsigma_autothreshold='1.5',
+                            n_interaction=iteration, savemodel=True, quiet=quiet,
+                            with_multiscale=True,
+                            datacolumn='CORRECTED_DATA', mask=mask_name,
+                            shift=FIELD_SHIFT,
+                            # uvtaper=['0.08arcsec'],
+                            niter=niter,
+                            PLOT=False)
+
+                file_list = glob.glob(f"{path}*MFS-image.fits")
+                file_list.sort(key=os.path.getmtime, reverse=False)
+
+                image_list['update_model_2_image'] = file_list[-1]
+                image_list['update_model_2_residual'] = image_list[
+                    'update_model_2_image'].replace(
+                    'MFS-image.fits','MFS-residual.fits')
+                # file_list = glob.glob(f"{path}*MFS-model.fits")
+                # file_list.sort(key=os.path.getmtime, reverse=False)
+                image_list['update_model_2_model'] = image_list[
+                    'update_model_2_image'].replace(
+                    'MFS-image.fits','MFS-model.fits')
+
+
+                level_stats = mlibs.level_statistics(image_list['update_model_2_image'])
+                image_stats = mlibs.get_image_statistics(imagename=image_list[
+                    'update_model_2_image'],
+                                                         dic_data=level_stats)
+
+                image_statistics['update_model_2'] = image_stats
+                steps_performed.append('update_model_2')
+
+            gaintype = 'G'
+            calmode = 'ap'
+            combine = ''
+            cut_off = 1.5
+            SNRs, percentiles_SNRs = check_solutions(g_name, field, cut_off=cut_off,
+                                                     n_interaction=iteration,
+                                                     solnorm=solnorm, combine=combine,
+                                                     calmode=calmode,refant=refant,
+                                                     gaintype=gaintype,
+                                                     gain_tables_selfcal=gain_tables_applied['1'],
+                                                     return_solution_stats=True)
+
+            solint, minsnr =  estimate_solint(g_name, SNRs)
+            solint = '60s'
+            gaintype = 'T'
+            calmode = 'ap'
+            combine = ''
+            minsnr = 1.5
+            minblperant = 4
+            if '2' not in steps_performed:
+                gain_tables_selfcal_p2 = self_gain_cal(g_name,
+                                                       n_interaction=iteration,
+                                                       minsnr=minsnr,
+                                                       solint=solint,
+                                                       flagbackup=True,
+                                                       gaintype=gaintype,
+                                                       combine=combine,
+                                                       refant=refant,
+                                                       calmode=calmode,
+                                                       action='apply',
+                                                       PLOT=True,
+                                                       gain_tables=gain_tables_applied['1']
+                                                       )
+                trial_gain_tables.append(gain_tables_selfcal_p2)
+                gain_tables_applied['2'] = gain_tables_selfcal_p2
+                steps_performed.append('2')
+
+        if 'split_trial_1' in steps and 'split_trial_1' not in steps_performed:
+            vis_split_name_1 = g_name + '_trial_1.ms'
+            if not os.path.exists(vis_split_name_1):
+                print(' ==> Splitting data after first trial...')
+                split(vis=g_name + '.ms', outputvis=vis_split_name_1,
+                      datacolumn='corrected', keepflags=True)
+            niter = 150000
+            robust = 1.0
+            print(' ==> Imaging visibilities after first trial of selfcal...')
+            run_wsclean(vis_split_name_1, robust=robust,
+                        imsize=imsize, cell=cell, base_name='selfcal_image_trial1',
+                        nsigma_automask='3.0', nsigma_autothreshold='1.5',
+                        n_interaction='', savemodel=False, quiet=quiet,
+                        with_multiscale=True,
+                        datacolumn='DATA', shift=FIELD_SHIFT,
+                        # uvtaper=['0.08arcsec'],
+                        niter=niter,
+                        PLOT=False)
+
+
+            file_list = glob.glob(f"{path}*MFS-image.fits")
+            file_list.sort(key=os.path.getmtime, reverse=False)
+
+            image_list['selfcal_image_trial1'] = file_list[-1]
+            image_list['selfcal_residual_trial1'] = image_list[
+                'selfcal_image_trial1'].replace(
+                'MFS-image.fits', 'MFS-residual.fits')
+            # file_list = glob.glob(f"{path}*MFS-model.fits")
+            # file_list.sort(key=os.path.getmtime, reverse=False)
+            image_list['selfcal_model_trial1'] = image_list[
+                'selfcal_image_trial1'].replace(
+                'MFS-image.fits', 'MFS-model.fits')
+
+            level_stats = mlibs.level_statistics(image_list['selfcal_image_trial1'])
+            image_stats = mlibs.get_image_statistics(imagename=image_list[
+                'selfcal_image_trial1'],
+                                                     dic_data=level_stats)
+
+            image_statistics['selfcal_trial1'] = image_stats
+            steps_performed.append('split_trial_1')
 
 
         if 'run_rflag_final' in steps:
