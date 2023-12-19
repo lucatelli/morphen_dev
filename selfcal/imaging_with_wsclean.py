@@ -160,7 +160,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image'):
     if not os.path.exists(root_dir_sys + image_deepclean_name + ext):
         if running_container == 'native':
             os.system(
-                'wsclean-mp -name ' + root_dir + image_deepclean_name +
+                'mpirun -np 4 wsclean-mp -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
                 ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
@@ -170,7 +170,8 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image'):
         if running_container == 'singularity':
             os.system(
                 'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
-                ' ' + 'wsclean-mp -name ' + root_dir + image_deepclean_name +
+                ' ' + 'mpirun -np 4 wsclean-mp -name ' + root_dir +
+                image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
                 ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
@@ -237,6 +238,10 @@ if __name__ == "__main__":
                         help="New phase center to shift for imaging."
                              "Eg. --shift 13:15:30.68 +62.07.45.357")
 
+    parser.add_argument("--opt_args", type=str, nargs='?', default='',
+                        help="Optional/additional arguments to be passed to "
+                             "wsclean.")
+
     parser.add_argument("--sx", type=str, nargs='?', default='2048',
                         help="Image Size x-axis")
     parser.add_argument("--sy", type=str, nargs='?', default='2048',
@@ -245,6 +250,12 @@ if __name__ == "__main__":
                         help="Cell size")
     parser.add_argument("--niter", type=str, nargs='?', default='5000',
                         help="Number of iterations during cleaning.")
+
+    parser.add_argument("--maxuv_l", type=str, nargs='?', default=None,
+                        help="Max uv distance in lambda.")
+
+    parser.add_argument("--minuv_l", type=str, nargs='?', default=None,
+                        help="Min uv distance in lambda.")
 
     parser.add_argument("--nsigma_automask", type=str, nargs='?', default='10.0',
                         help="Sigma level for automasking in wsclean.")
@@ -337,7 +348,7 @@ if __name__ == "__main__":
     if deconvolution_mode == 'robust':
         if with_multiscale == True or with_multiscale == 'True':
             deconvolver = '-multiscale'
-            deconvolver_options = ( ' -multiscale-scales 0,5,20 '
+            deconvolver_options = ( ' -multiscale-scales 0,5,20,40'
                                     ' -multiscale-scale-bias '
                                    '0.8 -multiscale-gain 0.05 ')
             # deconvolver = ''
@@ -359,10 +370,14 @@ if __name__ == "__main__":
 
         deconvolver_args = (' '
                             '-channels-out 4 -join-channels '
-                            '-deconvolution-threads 24 -j 24 -parallel-reordering 16 '
+                            # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
+                            # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
+                            # '-deconvolution-threads 24 -j 24 -parallel-reordering 24 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            '-gridder wgridder -parallel-deconvolution 1024 '  # 
-                            '-no-mf-weighting -apply-primary-beam -circular-beam ' 
+                            '-gridder wgridder  ' #-wstack-nwlayers-factor 12  -wstack-nwlayers-factor 6
+                            '-parallel-deconvolution 3072 '  # -local-rms -local-rms-window 100
+                            '-no-mf-weighting -circular-beam ' # -beam-size 0.1arcsec     -beam-size 
+                            # 0.05arcsec
                             #-circular-beam 
                             # '-apply-primary-beam  -circular-beam '
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
@@ -397,9 +412,13 @@ if __name__ == "__main__":
     uvtaper_addargs = ''
     # uvtaper = uvtaper_mode + ' '+ uvtaper_args + ' ' +uvtaper_addmode + ' ' +
     # uvtaper_addargs
-
+    uvselection = ''
+    if args.maxuv_l is not None:
+        uvselection = ' -maxuv-l ' + args.maxuv_l + ' '
+    if args.minuv_l is not None:
+        uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.3 -gain 0.05 -nmiter 200'
+    gain_args = ' -mgain 0.4 -gain 0.05 -nmiter 200'
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
@@ -412,9 +431,10 @@ if __name__ == "__main__":
         quiet = ' -quiet '
     else:
         quiet = ' '
-    opt_args = (' -super-weight 15.0 -mem 80 -abs-mem 35 '
+    opt_args = (' -super-weight 3.0 -mem 80 -abs-mem 35 '
                 # '-pol RL,LR -no-negative '
-                ' -save-first-residual -save-weights -save-uv '
+                # ' -save-first-residual -save-weights -save-uv '-maxuv-l 3150000
+                ' '+uvselection+args.opt_args+' '
                 ' -log-time -field all ' + quiet + update_model_option + ' ')
     opt_args = opt_args + shift_options
 
