@@ -7,7 +7,7 @@ SPWS = ''
 ANTENNAS = ''
 # refant = ''
 minblperant=3
-solnorm = False
+solnorm = False # True will always be used for amp-selfcal!.
 combine = ''
 outlierfile = ''
 
@@ -15,7 +15,7 @@ outlierfile = ''
 quiet = False
 run_mode = 'terminal'
 
-path = ('/media/sagauga/stardust/LIRGI_Sample/VLA-Archive/A_config/23A-324/X_band/MCG12'
+path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/X_band/MCG12'
         '/autoselfcal/')
 vis_list = ['MCG12-02-001.calibrated.avg12s']  # do not use the .ms extension
 
@@ -25,13 +25,13 @@ steps = [
     # 'fov_image',
     # # # 'run_rflag_init',
     'test_image',
-    # 'select_refant',
-    # 'p0',#initial test selfcal step
-    # 'p1',#start of the first trial of selfcal, phase only (p)
-    # # # 'p2',#continue first trial, can be p or ap, but uses gain table from step 1;
-    # 'ap1',
-    # 'split_trial_1',#split the data after first trial
-    # 'report_results',#report results of first trial
+    'select_refant',
+    'p0',#initial test selfcal step
+    'p1',#start of the first trial of selfcal, phase only (p)
+    'p2',#continue first trial, can be p or ap, but uses gain table from step 1;
+    'ap1',
+    'split_trial_1',#split the data after first trial
+    'report_results',#report results of first trial
     # 'run_rflag_final',
 ]
 
@@ -49,15 +49,28 @@ cell_sizes_eMERLIN = {'L':'0.05arcsec',
 
 
 
+taper_sizes_eMERLIN = {'L':'0.2arcsec',
+                       'C':'0.04arcsec'}
+
+taper_sizes_JVLA = {'L':'1.0arcsec',
+                    'S':'0.5arcsec',
+                    'C':'0.3arcsec',
+                    'X':'0.2arcsec',
+                    'Ku':'0.1arcsec',
+                    'K':'0.03arcsec',
+                    'Ka':'0.04arcsec'}
+
+
+
 init_parameters = {'fov_image': {'imsize': 1024*8,
                                 'cell': '0.2arcsec',
                                 'basename': 'FOV_phasecal_image',
                                 'niter': 100,
                                 'robust': 0.5},
-                  'test_image': {'imsize': int(1024*1),
-                                 'imsizey': int(1024*1),
+                  'test_image': {'imsize': int(1024*2),
+                                 'imsizey': int(1024*2),
                                  'FIELD_SHIFT':None,
-                                 'cell': cell_sizes_JVLA['C'],
+                                 'cell': cell_sizes_JVLA['X'],
                                  'prefix': 'test_image',
                                  'niter': 10000,
                                  'robust': 0.0}
@@ -156,7 +169,8 @@ params_faint = {'name': 'faint',
                        'nsigma_automask' : '3.0',
                        'nsigma_autothreshold' : '1.5',
                        'uvtaper' : [''],
-                       'with_multiscale' : False,
+                       'with_multiscale' : True,
+                       'scales' : '0,5,20',
                        'compare_solints' : False},
                 'ap1': {'robust': 1.0,
                         'solint': '120s',
@@ -169,7 +183,8 @@ params_faint = {'name': 'faint',
                         'nsigma_automask' : '3.0',
                         'nsigma_autothreshold' : '1.5',
                         'uvtaper' : [''],
-                        'with_multiscale' : False,
+                        'with_multiscale' : True,
+                        'scales': '0,5,20',
                         'compare_solints' : False},
                 }
 
