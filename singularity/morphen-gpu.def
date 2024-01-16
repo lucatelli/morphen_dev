@@ -1,0 +1,216 @@
+Bootstrap: debootstrap
+MirrorURL: http://archive.ubuntu.com/ubuntu/
+OSVersion: jammy
+
+%labels
+
+	#singularity image will result in about 4GB
+	APPLICATION_NAME Ubuntu LTS + Nvidia CUDA + wsclean + IMFIT + JaX + CASA + Python Packages
+	OS_VERSION 22.04
+	APPLICATION_URL https://developer.nvidia.com/cuda-zone 
+
+	SYSTEM_NAME stardust
+	SYSTEM_SINGULARITY_VERSION 4.0.3-jammy
+	#SYSTEM_URL 
+
+	AUTHOR_NAME Geferson Lucatelli
+	AUTHOR_EMAIL gefersonlucatelli@gmail.com
+	CO_AUTHOR_NAME 
+
+%environment
+
+	# Set system locale
+	export LC_ALL=C
+
+	# Nvidia CUDA Path
+	export CPATH="/usr/local/cuda/include:$CPATH"
+	export PATH="/usr/local/cuda/bin:$PATH"
+	export PYTHONPATH="$PYTHONPATH:/opt/build/EveryBeam/lib/python3.8/dist-packages"
+	export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/:/usr/local/cuda/lib64:/opt/build/EveryBeam/lib:$LD_LIBRARY_PATH"
+	export CUDA_HOME="/usr/local/cuda"
+    source /home/singularity_user/.bashrc
+	source /home/singularity_user/miniconda3/etc/profile.d/conda.sh
+
+%post
+
+	##############################################################################
+	# Setting up Environment  
+	# Nvidia CUDA Path
+	#UBUNTU Host 22.04.3 jammy
+	export CPATH="/usr/local/cuda/include:$CPATH"
+	export PATH="/usr/local/cuda/bin:$PATH"
+	export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/:/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+	export CUDA_HOME="/usr/local/cuda"
+
+    # this is for Ubuntu host 23.10, but may not work.
+	#export CPATH="/usr/lib/cuda/include:$CPATH"
+	#export PATH="/usr/lib/cuda/bin:$PATH"
+	#export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/:/usr/lib/cuda/lib64:$LD_LIBRARY_PATH"
+	#export CUDA_HOME="/usr/lib/cuda"
+
+	# Fix command prompt in Singularity 3.5.2
+printf 'export PS1="\u@$SINGULARITY_NAME:\w$ "' > /.singularity.d/env/999-psvars.sh
+	###############################################################################
+
+	# Update Ubuntu Cache and begin install
+	
+	apt update -y
+	apt install -y software-properties-common
+	apt install -y wget gcc libxml2 curl gpg-agent build-essential
+	apt install -y apt-utils apt-transport-https git vim
+
+	apt-add-repository multiverse -y
+	apt-add-repository universe -y
+	apt-add-repository restricted -y
+	apt update -y
+
+	# Packages
+	apt-add-repository ppa:graphics-drivers/ppa -y
+	apt update -y
+	apt install -y nvidia-driver-535 nvidia-utils-535 libnvidia-common-535 nvidia-settings
+	apt install -y casacore-dev libgsl-dev libhdf5-dev libfftw3-dev libboost-dev libboost-date-time-dev libboost-filesystem-dev libboost-program-options-dev libboost-system-dev libboost-thread-dev libcfitsio-dev cmake g++ libblas-dev liblapack-dev python3 libpython3-dev python3-distutils python-is-python3
+	apt install -y nautilus wget2
+	apt install -y caja
+	
+    #MORPHEN 
+    mkdir /home/singularity_user
+    mkdir /home/singularity_user/apps
+    ## Install miniconda
+    cd /home/singularity_user/apps
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    chmod +x Miniconda3-latest-Linux-x86_64.sh
+    # sh Miniconda3-latest-Linux-x86_64.sh
+    sh Miniconda3-latest-Linux-x86_64.sh -b -p /home/singularity_user/miniconda3
+
+    export PATH="/home/singularity_user/miniconda3/bin:$PATH"
+    conda create -n morphen python=3.8 -y
+    #conda init
+    #source /root/.bashrc
+    #conda activate morphen
+
+	echo 'export PATH="/home/singularity_user/miniconda3/bin:$PATH"' >> /root/.bashrc
+	cp /root/.bashrc /home/singularity_user/.bashrc
+
+    #source /home/singularity_user/.bashrc
+    #echo 'source /home/singularity_user/.bashrc' >> $SINGULARITY_ENVIRONMENT
+	echo 'export PATH="/home/singularity_user/miniconda3/bin:$PATH"' >> $SINGULARITY_ENVIRONMENT
+
+
+    #cleanup
+    rm -r Miniconda3-latest-Linux-x86_64.sh
+
+    #OTHER ADDITIONAL PACKAGES
+	cd /home/singularity_user/apps/
+    wget https://www.mpe.mpg.de/~erwin/resources/imfit/binaries/imfit-1.9.0-linux-64.tar.gz
+    tar -xvf imfit-1.9.0-linux-64.tar.gz
+    chmod +x imfit-1.9.0/imfit
+    chmod +x imfit-1.9.0/imfit-mcmc
+    chmod +x imfit-1.9.0/makeimage
+    rm -r imfit-1.9.0-linux-64.tar.gz
+
+	apt install -y zsh
+	sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+    
+
+    # WSCLEAN AND RELATED SOFTWARES
+    ## Install EveryBeam
+	### EveryBeam dependencies https://everybeam.readthedocs.io/en/latest/build-instructions.html
+	apt -y install wget git make cmake g++ doxygen libboost-all-dev libhdf5-dev libfftw3-dev libblas-dev liblapack-dev libgsl-dev libxml2-dev libgtkmm-3.0-dev libpython3-dev python3-distutils
+	apt -y install casacore-dev libcfitsio-dev wcslib-dev
+	apt install -y python3-pip
+	mkdir -p /opt/build
+	cd /opt/build
+	pip3 install sphinx sphinx_rtd_theme breathe myst-parser
+	export GIT_SSL_NO_VERIFY=1
+	git clone --recursive -j4 https://git.astron.nl/RD/EveryBeam.git
+	cd EveryBeam
+	mkdir build && cd build
+	cmake -DCMAKE_INSTALL_PREFIX=/opt/build/EveryBeam ..
+	cmake -DBUILD_WITH_PYTHON=On .
+	make install
+	
+	#Create /opt/cuda for binding
+	# ubuntu host
+	mkdir -p /usr/local/cuda-12
+	
+	# Clean Up
+	apt clean
+	apt autoclean
+	apt autoremove -y
+	rm -rf "/.cache" "/root/.cache"
+
+	cat > /opt/build/conda-setup.sh <<EOF;    
+#!/bin/bash
+source /home/singularity_user/miniconda3/etc/profile.d/conda.sh
+conda activate morphen
+conda config --add channels conda-forge
+conda update --all -y
+
+conda install -c conda-forge casacore -y
+
+pip install casatools==6.4.4.31
+pip install casatasks==6.4.4.31 casaplotms casadata casaviewer casaplotserver casalogger
+
+# workaround installing casampi. Install mpi4py with conda, then install casampi with pip.
+conda install mpi4py -y
+pip install casampi
+
+pip install ipython notebook jupyter tqdm matplotlib corner sympy cmasher coloredlogs
+pip install numpy==1.24.3 astropy==5.2.2 pandas astroquery
+
+#pip install scipy==1.10.1
+pip install scipy --upgrade #issue with casatasks, I am not sure why
+conda update --all -y
+
+pip install lmfit==1.1.0 emcee==3.1.4 h5py==3.8.0 corner arviz==0.15.1
+conda install arviz -y
+
+pip install scikit-image==0.21.0 scikit-learn==1.2.2
+
+pip install petrofit
+conda install fitsio -y
+pip install photutils==1.7.0 sep
+
+pip install --upgrade pip
+pip install -U "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+rm -r /root/.cache/pip/
+
+
+EOF
+
+	chmod +x /opt/build/conda-setup.sh
+
+	# Create first-run script to complete installation
+	cat > /opt/build/first-run.sh <<EOF;    
+#!/bin/bash
+export IDGAPI_DIR=/usr/local/idg
+export GIT_SSL_NO_VERIFY=1
+cd /opt/build
+ln -s /usr/local/cuda-12 /usr/local/cuda
+for LIB in \$(ls /.singularity.d/libs); do ln -s /.singularity.d/libs/\$LIB /usr/lib/x86_64-linux-gnu/\$LIB; done
+git clone https://gitlab.com/astron-idg/idg.git
+cd idg
+mkdir build && cd build
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local/idg/ ..
+cmake -DBUILD_LIB_CUDA=ON . 
+make -j 4
+make install
+
+mkdir /include
+cd /opt/build
+git clone https://gitlab.com/aroffringa/wsclean.git
+cd wsclean
+git submodule update --init --recursive
+mkdir -p build
+cd build
+cmake -DPORTABLE=Yes -DIDGAPI_DIR=/usr/local/idg -DEveryBeam_DIR=/opt/build/EveryBeam/lib/everybeam ../
+make -j 4
+make install
+#/usr/lib/cuda
+
+EOF
+
+	chmod +x /opt/build/first-run.sh
+
+
