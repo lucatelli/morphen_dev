@@ -1,14 +1,17 @@
 # Self-calibration Strategy
 
-***This document is still on construction.***
+***This documentation is still under construction.***
 
 This module is designed to perform self-calibration on radio interferometric data.
 It uses the `wsclean` code as imager and `CASA` as a calibration tool.
 
-## Scripts
+## Scripts and Packages
 The self-calibration module within `morphen` consists of two main scripts and a library file:
 - [`auto_selfcal_wsclean.py`](https://github.com/lucatelli/morphen/blob/main/selfcal/auto_selfcal_wsclean.py):
   The script responsible to run the self-calibration.
+- [`config.py`](https://github.com/lucatelli/morphen/blob/main/selfcal/config.py): 
+  Configuration file used by `auto_selfcal_wsclean.py`. It contains all the relevant information 
+  to run the code.  
 - [`imaging_with_wsclean.py`](https://github.com/lucatelli/morphen/blob/main/selfcal/imaging_with_wsclean.py):
   A stand-alone wrapper to run `wsclean` with pre-defined arguments. 
   It handles `wsclean` installed natively or via singularity. 
@@ -29,6 +32,55 @@ Note that `CASA` packages refers to the modular version (installed with conda an
 We refer to [install_instructions.md](..%2Finstall_instructions.md) for details of a 
 full installation.
 
+Regarding `wsclean`, if you would like to build yourself, check https://wsclean.readthedocs.io/en/latest/installation.html 
+for installation instructions. 
+If you have `singularity` installed in a singularity container, you will need to modify two 
+lines in the `imaging_with_wsclean.py` script.
+1. In the line that parses the installation mode of `wsclean`, argument `--wsclean_install`, 
+   change the value from `default='native'` to `default='singularity'`.
+2. Then you will need to specify the location of the singularity container, below the line `if 
+   running_container == 'singularity':`. Specify the location of the container with 
+   `wsclean_dir = '/path/to/container/with/wsclean/container.simg'`.
+
+   
+
+### Running the code
+You can run the code in three different ways: from the command line (no interactive); using  the 
+`ipython` command line interface (interactive); or using a Jupyter notebook (interactive). The 
+jupyter mode was not tested yet. But in any way, we recommend using `ipython`. 
+
+Using `ipython`, you can run the code as:
+```shell
+sagauga@stardust:~$ conda activate morphen
+(morphen) sagauga@stardust:~$ ipython -i auto_selfcal_wsclean.py
+```
+or 
+```shell
+sagauga@stardust:~$ conda activate morphen
+(morphen) sagauga@stardust:~$ ipython
+Python 3.8.18 | packaged by conda-forge | (default, Dec 23 2023, 17:21:28) 
+Type 'copyright', 'credits' or 'license' for more information
+IPython 8.12.3 -- An enhanced Interactive Python. Type '?' for help.
+
+In [1]: exec(open('./auto_selfcal_wsclean.py').read())
+
+```
+
+In both cases, the ipython session will be open at the end, in case you require further 
+investigation of the results.
+
+You can also run the code from the command line as:
+```shell
+sagauga@stardust:~$ conda activate morphen
+(morphen) user@stardust:~$ python auto_selfcal_wsclean.py
+``` 
+
+Note: This script was only tested in a single machine. It was not tested in a cluster with 
+multiple nodes. We will need to build a singularity container with `wsclean` that is able to 
+paralelise the imaging jobs on multiple nodes. For that, clusters may require very specific 
+versions of MPI and other libraries, and those must be compatible with `wsclean`. 
+
+[//]: # (ipython auto_selfcal_wsclean.py -- -h)
 
 ### Limititations with `wsclean`
 - Different of `CASA`, `wsclean` does not have a feature to provide outlier-fields. So, your 
@@ -53,6 +105,8 @@ imaging, and it will perform very well even if you have large images. Also, this
   providing a mask before deconvolution.
 
 ### Issues during self-calibration
+***More info to be added here.***
+
 There were a few cases where we ran this code in some VLA observations, and the data 
 did not show any improvement. More investigation is required to understand why. It may 
 be due to antenna issues, etc. We kindly ask that if you encounter similar issues, 
@@ -104,42 +158,49 @@ some parts are not automated:
   that you must include in the imaging process? See the effects of not including 
   outlier bright sources during convolution. 
 
-
-  
+### Config file `config.py`
+In the configuration file `config.py`, you can set all the required information in order for the 
+code to work. Basically, you start by defining where your data is located:
+```python
+path = '/path/to/your/data/'
+vis_list = ['name_of_the_measurement_set']  # do not use the .ms extension
+```
+Details of how the parameter session in `config.py` file was written is explained sequence.
 
 ### General steps performed by the code
-The code will run all the steps that are defined in the `steps` list. Currently, 
-the following steps are available:
+The code will run all the steps that are defined in the `steps` list, in the config file 
+`config.py`. Currently, the following steps are available:
+
 ```python
- steps = [
-     'startup',
-     'save_init_flags',
-     'fov_image', # create a FOV image
-     'run_rflag_init', #not really required if not L-band
-     'test_image',
-     'select_refant',
-     '0',#initial test selfcal step
-     '1',#start of the first trial of selfcal, phase only (p)
-     '2',#continue first trial, can be p or ap, but uses gain table from step 1;
-     '3',#amplitude and phase self-calibration
-     'split_trial_1',#split the data after first trial
-     'report_results',#report results of first trial
-     'run_rflag_final',
- ]
+steps = [
+    'startup',  # create directory structure, start variables and clear visibilities.
+    'save_init_flags',  # save (or restore) the initial flags and run statwt
+    #'fov_image', # create a FOV image
+    #'run_rflag_init', # run rflag on the initial data (rarely used)
+    'test_image',#create a test image
+    'select_refant', #select reference antenna
+    'p0',#initial test  of selfcal, phase only (p)
+    'p1',#continue phase-only selfcal
+    'p2',#continue phase-only selfcal (incremental)
+    'ap1',#amp-selfcal (ap)
+    'split_trial_1',#split the data after first trial (and run wsclean)
+    'report_results',#report results of first trial
+    #'run_rflag_final',#run rflag on the final data
+]
 ```
 However, not all the steps may me excuted, depending on the data.
 After the initial imaging test,`test_image`, an evaluation is perfoemed to check what is the 
 total flux density of the radio map. If the source is too faint, only steps `0`and `3` will 
-be exceuted. If the source is bright, steps `0`, `1`, `2`, and `3` will be executed.
-Note that step `3` perform an phase-amplitude self-calibration. This is the most dangerous, and 
-a split will be performed before this step. So you will have both measurements sets 
+be exceuted. If the source is bright, steps `p0`, `p1`, `p2`, and `p3` will be executed.
+Note that step `p3` perform a phase-amplitude self-calibration. This is the most dangerous, and 
+a split will be performed before this step. So you will have both measurement sets 
 and images, before and after the amplitude self-calibration. Note that, usually, 
 amplitude self-calibration should not be performed for faint sources. Above, we 
-mentioned that for faint sources, step `0` and `3` will be executed, and that is for 
+mentioned that for faint sources, step `p0` and `p3` will be executed, and that is for 
 completeness purposes. The user must inspect and compare the quality of images in each 
 case, when dealing with faint sources. 
 
-#### Step-by-step summary
+#### Step-by-step explanation
 - `startup`:
   1. This step will create a directory structure where some files are going 
     to be saved. 
@@ -167,15 +228,47 @@ case, when dealing with faint sources.
 - `select_refant`: This will compute test gain solutions and sort all antennas into 
   a list, based on the fraction of good solutions. This list is passed to the argument 
   `refant` in the `CASA` task `gaincal`.
+- `p0`: This step will perform the first phase-only self-calibration, which comprises 
+  the following steps:
+  1. Create another test image (with the subscript `test_image_0`) that will be used to create a mask. 
+     In this imaging run, the `model` column will not be updated (`--no-update-model-required` 
+     in `wsclean`). 
+  2. Use the previous generated mask to limit where the convolution will be performed. 
+     This mask will be given to `wsclean` with the `-fits-mask` argument. Then and imaging run 
+     will happen, updating the `model` column in the end.
+  3. The task `gaincal` will be called to calculate the complex gain solutions. 
+     The solutions will be applied to the data with the task `applycal`.
+  4. After the solutions are applied, a self-cal test image will be created (with the 
+     subscript `selfcal_test_0`). This image will be used to evaluate the 
+     quality of the self-cal solutions. These image will be used later to compare how the 
+     quality changes across the self-calibration process.
+  5. Finally, this new image will be used to infer if the template of parameters used needs to 
+     be changed in all the subsequent steps. This may happen if the image quality had a 
+     significant improvement that resulted in a higher total flux density, SNR, etc.
+- `p1`: Continue the same phase-only run as `p0`, but with a different set of imaging and 
+  calibration parameters (unique to the `p1` step). This step will only be performed if the 
+  image has enough flux density. We provide more details about this later on. If excuted, the 
+  gain table generated in `p0` will be ignored.
+- `p2`: Continue the same phase-only run as `p1`, with different set of imaging and 
+  calibration parameters. This step will also be performed only if the image match the template 
+  parameter selection. If excuted, the gain table generated in `p1` will be used, hence the 
+  solutions in `p2` will be incremental to `p1`, correcting the residual phase errors on shorter 
+  time-scales.
+- `ap1`: This step will perform a phase-amplitude self-calibration. A split will be performed 
+  before this step, with a measurement set containing the phase-only corrections. If only `p0` 
+  was executed, `ap1` will use the phase solutions from `p0`. If `p1` and `p2` were executed, 
+  `ap1` will use the phase solutions from both. If `p2` was not executed, `ap1` will use `p1`. 
+  The exact `gaincal` parameters in each one of these stages are found in the `config.py` file.
+
+
 
 #### What the code tracks along the self-calibration process?
 
 - For consistency, outside the self-calibration routines, the code will call `wsclean` 
 to create `selfcal_test_images` after each complex gain solution applied to the data. 
-Some image will have the exact same imaging parameters. This will be easy to track how 
-image quality changes along every self-calibration step.
+We use these images to track how the image quality changes along every self-calibration step.
 - To each image, an `image_properties` dictionary will contain statistical image 
-  properties measured in each one of the images. A final .csv file will be created 
+  properties measured in each one of the images. A final `.csv` file will be created 
   containing all the information from all images (with each step specified).
 - An additional dictionary will be saved at the end with information of the gain 
   tables that were applied along the way. 
@@ -594,6 +687,10 @@ For some reason, when plotting `Amp:corrected/model` against `uvwave` with `plot
 of the `uvwave` axis can be large (e.g. >1e+50), or negative. The reason is unknown. 
 
 
+### Notes on performance
+For a typical C-band VLA observation, 64 chanels, 31 spws, with 16 minutes on source, and averaged 
+data to 12 seconds, the code takes about ~ 1 hr to run all the steps (excluding the `fov_image`, 
+`run_rflag_init` and `run_rflag_final` steps) on a i7-13700K (24 threads). 
 
 
 

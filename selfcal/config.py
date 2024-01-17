@@ -15,16 +15,18 @@ outlierfile = ''
 quiet = False
 run_mode = 'terminal'
 
-path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/X_band/MCG12'
-        '/autoselfcal/')
-vis_list = ['MCG12-02-001.calibrated.avg12s']  # do not use the .ms extension
+path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band/MCG08/autoselfcal/')
+vis_list = ['MCG08-11-002.avg12s.calibrated']  # do not use the .ms extension
+
+# path = '/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band/MCG05/autoselfcal/'
+# vis_list = ['MCG05-06-03-A.avg12s.calibrated']  # do not use the .ms extension
 
 steps = [
     'startup',  # create directory structure, start variables and clear visibilities.
     'save_init_flags',  # save (or restore) the initial flags and run statwt
-    # 'fov_image', # create a FOV image
-    # # # 'run_rflag_init', # run rflag on the initial data (rarely used)
-    'test_image',
+    #'fov_image', # create a FOV image
+    #'run_rflag_init', # run rflag on the initial data (rarely used)
+    'test_image',#create a test image
     'select_refant', #select reference antenna
     'p0',#initial test  of selfcal, phase only (p)
     'p1',#continue phase-only selfcal
@@ -32,9 +34,8 @@ steps = [
     'ap1',#amp-selfcal (ap)
     'split_trial_1',#split the data after first trial (and run wsclean)
     'report_results',#report results of first trial
-    # 'run_rflag_final',#run rflag on the final data
+    #'run_rflag_final',#run rflag on the final data
 ]
-
 
 cell_sizes_JVLA = {'L':'0.2arcsec',
                    'S':'0.1arcsec',
@@ -70,7 +71,7 @@ init_parameters = {'fov_image': {'imsize': 1024*8,
                   'test_image': {'imsize': int(1024*2),
                                  'imsizey': int(1024*2),
                                  'FIELD_SHIFT':None,
-                                 'cell': cell_sizes_JVLA['X'],
+                                 'cell': cell_sizes_JVLA['C'],
                                  'prefix': 'test_image',
                                  'niter': 10000,
                                  'robust': 0.0}
