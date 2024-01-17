@@ -21,18 +21,18 @@ vis_list = ['MCG12-02-001.calibrated.avg12s']  # do not use the .ms extension
 
 steps = [
     'startup',  # create directory structure, start variables and clear visibilities.
-    'save_init_flags',
-    # 'fov_image',
-    # # # 'run_rflag_init',
+    'save_init_flags',  # save (or restore) the initial flags and run statwt
+    # 'fov_image', # create a FOV image
+    # # # 'run_rflag_init', # run rflag on the initial data (rarely used)
     'test_image',
-    'select_refant',
-    'p0',#initial test selfcal step
-    'p1',#start of the first trial of selfcal, phase only (p)
-    'p2',#continue first trial, can be p or ap, but uses gain table from step 1;
-    'ap1',
-    'split_trial_1',#split the data after first trial
+    'select_refant', #select reference antenna
+    'p0',#initial test  of selfcal, phase only (p)
+    'p1',#continue phase-only selfcal
+    'p2',#continue phase-only selfcal (incremental)
+    'ap1',#amp-selfcal (ap)
+    'split_trial_1',#split the data after first trial (and run wsclean)
     'report_results',#report results of first trial
-    # 'run_rflag_final',
+    # 'run_rflag_final',#run rflag on the final data
 ]
 
 
