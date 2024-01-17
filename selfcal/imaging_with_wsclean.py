@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import argparse
 import os
+import glob
 
 data_range = [20e-06, 0.005]
 
@@ -132,22 +133,33 @@ def create_box(imagename):
     return (box_edge_str, ih)
 
 
-def imaging(g_name, field, uvtaper, robust, base_name='clean_image'):
+def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
+            continue_clean='False'):
     g_vis = g_name + '.ms'
     """
     # uvtaper_mode+uvtaper_args+'.'+uvtaper_addmode+uvtaper_addargs+
     """
     print(uvtaper_addmode, uvtaper_addargs, robust)
-    if uvtaper is not '':
+    if uvtaper != '':
         taper = 'taper_'
     else:
         taper = ''
 
-    image_deepclean_name = (base_name + '_' + g_name + '_' +
-                            imsizex + 'x' + imsizey + '_' + \
-                            cell + '_' + niter + '.' + weighting + '.' + \
-                            deconvolver[1:] + '.' + taper + \
-                            uvtaper + '.' + str(robust))
+    if continue_clean == 'True':
+        print('*************************************')
+        image_to_continue = glob.glob(f"{root_dir_sys}/*MFS-image.fits")
+        image_to_continue.sort(key=os.path.getmtime, reverse=False)
+        image_to_continue = os.path.basename(image_to_continue[-1])
+        image_deepclean_name = image_to_continue.replace('-MFS-image.fits','')
+        print('Using prefix from previous image: ', image_deepclean_name)
+
+
+    if continue_clean == 'False':
+        image_deepclean_name = (base_name + '_' + g_name + '_' +
+                                imsizex + 'x' + imsizey + '_' + \
+                                cell + '_' + niter + '.' + weighting + '.' + \
+                                deconvolver[1:] + '.' + taper + \
+                                uvtaper + '.' + str(robust))
 
     ext = ''
     if '-join-channels' in deconvolver_args:
@@ -157,8 +169,10 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image'):
 
     print(image_deepclean_name)
 
-    if not os.path.exists(root_dir_sys + image_deepclean_name + ext):
+    if not os.path.exists(root_dir_sys + image_deepclean_name + ext) or continue_clean == 'True':
+
         if running_container == 'native':
+            # 'mpirun -np 4 wsclean-mp'
             os.system(
                 'mpirun -np 4 wsclean-mp -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
@@ -223,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, nargs='?', default='DATA',  # 'CORRECTED_DATA'
                         help="Which data column to use")
 
-    parser.add_argument("--wsclean_install", type=str, nargs='?', default='native',
+    parser.add_argument("--wsclean_install", type=str, nargs='?', default='singularity',
                         help="How wsclean was installed (singularity or native)?")
 
     # To do: add option for wsclean singularity image path.
@@ -238,9 +252,8 @@ if __name__ == "__main__":
                         help="New phase center to shift for imaging."
                              "Eg. --shift 13:15:30.68 +62.07.45.357")
 
-    parser.add_argument("--opt_args", type=str, nargs='?', default='',
-                        help="Optional/additional arguments to be passed to "
-                             "wsclean.")
+    parser.add_argument("--scales", type=str, nargs='?', default="'0,5,20,40'",
+                        help="Scales to be used with the multiscale deconvolver.")
 
     parser.add_argument("--sx", type=str, nargs='?', default='2048',
                         help="Image Size x-axis")
@@ -265,6 +278,15 @@ if __name__ == "__main__":
 
     parser.add_argument("--quiet", type=str, nargs='?', default='False',
                         help="Print wsclean output?")
+
+    parser.add_argument("--continue_clean", type=str, nargs='?', default='False',
+                        help="Continue cleaning?")
+
+
+    parser.add_argument("--opt_args", type=str, nargs='?', default='',
+                        help="Optional/additional arguments to be passed to wsclean. "
+                             "Warning: Do not repeat previously defined arguments."
+                             "Example: ' -apply-facet-beam -dd-psf-grid 6 6 -facet-beam-update 60 '")
 
     # parser.add_argument("--opt_args", nargs=argparse.REMAINDER,
     #                     default=['-multiscale -multiscale-scales 0,8,16,32 '
@@ -310,7 +332,9 @@ if __name__ == "__main__":
     if running_container == 'singularity':
         mount_dir = root_dir_sys + ':/mnt'
         root_dir = '/mnt/'
-        wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
+        # wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
+        # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
+        wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_cpu_v2.simg'
         # wsclean_dir = '/home/sagauga/apps/wsclean_nvidia470_gpu.simg'
         # wsclean_dir = '/raid1/scratch/lucatelli/apps/wsclean_wg_eb.simg'
     if running_container == 'native':
@@ -348,13 +372,13 @@ if __name__ == "__main__":
     if deconvolution_mode == 'robust':
         if with_multiscale == True or with_multiscale == 'True':
             deconvolver = '-multiscale'
-            deconvolver_options = ( ' -multiscale-scales 0,5,20,40'
+            deconvolver_options = ( ' -multiscale-scales ' + args.scales +
                                     ' -multiscale-scale-bias '
                                    '0.8 -multiscale-gain 0.05 ')
             # deconvolver = ''
             # deconvolver_options = opt_args_list
             print(' ++>> ', deconvolver_options)
-            if deconvolver_options is not '' or []:
+            if deconvolver_options != '' or []:
                 if 'multiscale' in deconvolver_options:
                     print(' ++>> Using Multiscale deconvolver.')
                 # else:
@@ -372,11 +396,12 @@ if __name__ == "__main__":
                             '-channels-out 4 -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
-                            # '-deconvolution-threads 24 -j 24 -parallel-reordering 24 '
+                            '-deconvolution-threads 24 -j 24 -parallel-reordering 4 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
+                            # '-gridder idg -idg-mode hybrid '
                             '-gridder wgridder  ' #-wstack-nwlayers-factor 12  -wstack-nwlayers-factor 6
                             '-parallel-deconvolution 3072 '  # -local-rms -local-rms-window 100
-                            '-no-mf-weighting -circular-beam ' # -beam-size 0.1arcsec     -beam-size 
+                            '-no-mf-weighting ' # -beam-size 0.1arcsec     -beam-size 
                             # 0.05arcsec
                             #-circular-beam 
                             # '-apply-primary-beam  -circular-beam '
@@ -431,10 +456,15 @@ if __name__ == "__main__":
         quiet = ' -quiet '
     else:
         quiet = ' '
+
+    if args.continue_clean == 'True':
+        continue_clean = ' --continue '
+    else:
+        continue_clean = ' '
     opt_args = (' -super-weight 3.0 -mem 80 -abs-mem 35 '
-                # '-pol RL,LR -no-negative '
+                # '-pol RL,LR -no-negative -circular-beam -no-reorder '
                 # ' -save-first-residual -save-weights -save-uv '-maxuv-l 3150000
-                ' '+uvselection+args.opt_args+' '
+                ' '+uvselection+continue_clean+args.opt_args+' '
                 ' -log-time -field all ' + quiet + update_model_option + ' ')
     opt_args = opt_args + shift_options
 
@@ -453,7 +483,8 @@ if __name__ == "__main__":
                                        # base_name='image',
                                        base_name=base_name,
                                        field=field, robust=str(robust),
-                                       uvtaper=uvtaper)
+                                       uvtaper=uvtaper,
+                                       continue_clean=args.continue_clean)
 
             if image_statistics is not None:
                 image_statistics['robust'] = robust
