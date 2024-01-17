@@ -78,6 +78,7 @@ cell_sizes_JVLA = cf.cell_sizes_JVLA
 cell_sizes_eMERLIN = cf.cell_sizes_eMERLIN
 taper_sizes_eMERLIN = cf.taper_sizes_eMERLIN
 taper_sizes_JVLA = cf.taper_sizes_JVLA
+receiver = cf.receiver
 
 solnorm = cf.solnorm
 combine = cf.combine
@@ -209,16 +210,32 @@ def compute_image_stats(path,
     image_statistics[prefix] = img_props
     return(image_statistics,image_list)
 
-def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations):
-    mask = mlibs.mask_dilation(imagename,
-                               PLOT=False,
-                               rms=rms_mask,
-                               sigma=sigma_mask,
-                               iterations=mask_grow_iterations)[1]
-    """
-    Need to fix cases where the provided sigma_mask is too low and the mask is null. 
-    So, need to decrease sigma_mask (e.g. by steps of 2.) 
-    """
+def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
+
+    valid_sigma_mask = sigma_mask
+    while True:
+        print(' ++>> No mask found with sigma_mask:',valid_sigma_mask)
+        print(' ++>> Reducing sigma_mask by 2 until valid mask is found...')
+        mask_valid = mlibs.mask_dilation(imagename,
+                                         PLOT=PLOT,
+                                         rms=rms_mask,
+                                         sigma=valid_sigma_mask,
+                                         iterations=mask_grow_iterations)[1]
+        if mask_valid.sum() > 0:
+            break
+        valid_sigma_mask = valid_sigma_mask - 2.0
+
+        if valid_sigma_mask <= 6:
+            print("Reached minimum sigma threshold without finding a valid mask.")
+            break
+
+    mask_valid = mlibs.mask_dilation(imagename,
+                                     PLOT=PLOT,
+                                     rms=rms_mask,
+                                     sigma=valid_sigma_mask-1,
+                                     iterations=mask_grow_iterations)[1]
+
+    mask = mask_valid
     mask_wslclean = mask * 1.0  # mask in wsclean is inverted
     mask_name = imagename.replace('.fits', '') + '_mask.fits'
     mlibs.pf.writeto(mask_name, mask_wslclean, overwrite=True)
@@ -1777,6 +1794,30 @@ if run_mode == 'terminal':
                                                                    image_statistics=image_statistics,
                                                                    prefix='selfcal_test_0')
 
+                if image_statistics['selfcal_test_0']['total_flux_mask'] * 1000 < 10.0:
+                    """
+                    Check if using a taper will increase the flux density above 10 mJy.
+                    If yes, the source will not considered as `very faint`, and we may attempt a 
+                    second phase-selfcal run with the template `faint` (i.e. `p1` will be executed).
+                    If not, we will continue with the `very faint` template and will proceed to
+                    `ap1`. 
+                    """
+                    # modified_robust = robust + 0.5
+                    print('Deconvolving image with a taper.')
+                    run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
+                                robust=0.5, base_name='selfcal_test_0',
+                                nsigma_automask='5.0', nsigma_autothreshold='3.0',
+                                n_interaction='0', savemodel=False, quiet=quiet,
+                                datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
+                                with_multiscale=False, scales='0,5,20,40',
+                                uvtaper=taper_sizes_JVLA[receiver],
+                                niter=niter,
+                                PLOT=False)
+                    image_statistics, image_list = compute_image_stats(path=path,
+                                                                       image_list=image_list,
+                                                                       image_statistics=image_statistics,
+                                                                       prefix='selfcal_test_0')
+
                 selfcal_params = select_parameters(
                     image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
                 parameter_selection['p0_pos'] = selfcal_params
@@ -1784,6 +1825,7 @@ if run_mode == 'terminal':
                 trial_gain_tables.append(gain_tables_selfcal_temp)
                 gain_tables_applied['p0'] = gain_tables_selfcal_temp
                 steps_performed.append('p0')
+
 
 
 
@@ -2302,7 +2344,9 @@ if run_mode == 'terminal':
             plt.subplots_adjust(wspace=0.1, hspace=0.1)
             plt.tight_layout()
             plt.savefig(g_name + '_selfcal_results.pdf', dpi=300, bbox_inches='tight')
-            plt.show()
+            plt.clf()
+            plt.close()
+            # plt.show()
             # except:
             #     pass
 
@@ -2316,14 +2360,14 @@ if run_mode == 'terminal':
 
 
             niter = 150000
-            robust = 0.0
+            robust = 1.0
             run_wsclean(g_name, robust=robust,
                         imsize=global_parameters['imsize'],
                         imsizey=global_parameters['imsizey'],
                         cell=global_parameters['cell'],
                         base_name='selfcal_image_pos_rflag',
                         nsigma_automask='3.0', nsigma_autothreshold='1.5',
-                        n_interaction='', savemodel=False, quiet=quiet,
+                        n_interaction='', savemodel=False, quiet=True,
                         with_multiscale=True,
                         datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
                         # uvtaper=['0.1arcsec'],
