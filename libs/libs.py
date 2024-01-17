@@ -31,7 +31,6 @@ import os
 import sys
 
 import matplotlib.pyplot as plt
-import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from matplotlib.text import Text
 from matplotlib.patches import Ellipse
@@ -121,7 +120,7 @@ except:
     print('Jax/GPU Libraries not imported.')
     pass
 #setting the GPU memory fraction to be used of 25% should be fine!
-os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.12'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.40'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=6'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
@@ -143,9 +142,17 @@ os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=true "
 
 # sys.path.append('../../scripts/analysis_scripts/')
 sys.path.append('../analysis_scripts/')
-
+"""
+# from astroquery.ipac.ned import Ned
+# result_table = Ned.query_object("MCG12-02-001")
+# z = result_table['Redshift'].data.data
+"""
 #redshift for some sources.
-z_d = {'VV705': 0.04019,'UGC5101':0.03937,'UGC8696':0.03734, 'VV250':0.03106}
+z_d = {'VV705': 0.04019,
+       'UGC5101':0.03937,
+       'UGC8696':0.03734,
+       'MCG12' : 0.015698,
+       'VV250':0.03106}
 
 
 # def print_logger_header(title, logger):
@@ -540,6 +547,28 @@ def cosmo_stats(imagename,z,results=None):
     results['BA_pc'] = BA_pc.value
     return(results)
 
+def find_z_NED(source_name):
+    """
+    Find the redshift of a source (by name) from NED.
+
+    Parameters
+    ----------
+    source_name : str
+        Source name.
+            Example: 'VV705'
+
+    Returns
+    -------
+    redshift_NED : float, None
+    """
+    from astroquery.ipac.ned import Ned
+    result_table = Ned.query_object(source_name)
+    redshift_NED = result_table['Redshift'].data.data
+    if redshift_NED.shape[0] == 0:
+        return None
+    else:
+        return redshift_NED[0]
+
 
 """
  ___
@@ -572,24 +601,27 @@ def ctn(image):
         Note: For some reason, IA.open returns a rotated mirroed array, so we need
         to undo it by a rotation.
         '''
-    try:
-        ia = IA()
-        ia.open(image)
+    if isinstance(image, str) == True:
         try:
-            numpy_array = ia.getchunk()[:, :, 0, 0]
-        except:
-            numpy_array = ia.getchunk()[:, :]
-        ia.close()
-        # casa gives a mirroed and 90-degree rotated image :(
-        data_image = np.rot90(numpy_array)[::-1, ::]
-        return (data_image)
-    except:
-        try:
-            data_image = pf.getdata(image)
+            ia = IA()
+            ia.open(image)
+            try:
+                numpy_array = ia.getchunk()[:, :, 0, 0]
+            except:
+                numpy_array = ia.getchunk()[:, :]
+            ia.close()
+            # casa gives a mirroed and 90-degree rotated image :(
+            data_image = np.rot90(numpy_array)[::-1, ::]
             return (data_image)
         except:
-            print('Input image is not a fits file.')
-            return(ValueError)
+            try:
+                data_image = pf.getdata(image)
+                return (data_image)
+            except:
+                print('Input image is not a fits file.')
+                return(ValueError)
+    else:
+        print('Input image is not a string.')
 
 
 def cvi(imname):
@@ -814,64 +846,105 @@ def cut_image(img, center=None, size=(1024, 1024),
     return(cutout_filename,cutout_filename_res)
 
 
-def do_cutout(image, box_size=300, center=None, return_='data'):
+def do_cutout(image, box_size=(200,200), center=None, return_='data'):
     """
     Fast cutout of a numpy array.
 
     Returs: numpy data array or a box for that cutout, if asked.
     """
+    if isinstance(box_size, int):
+        box_size = (box_size,box_size)
 
     if center is None:
-        try:
+        if isinstance(image, str) == True:
             # imhd = imhead(image)
             st = imstat(image)
             print('  >> Center --> ', st['maxpos'])
-            xin, xen, yin, yen = st['maxpos'][0] - box_size, st['maxpos'][
-                0] + box_size, \
-                                 st['maxpos'][1] - box_size, st['maxpos'][
-                                     1] + box_size
-        except:
+            xin, xen, yin, yen = (st['maxpos'][0] - box_size[0],
+                                  st['maxpos'][0] + box_size[0],
+                                  st['maxpos'][1] - box_size[1],
+                                  st['maxpos'][1] + box_size[1])
+            data_cutout = ctn(image)[xin:xen, yin:yen]
+
+        else:
             try:
                 max_x, max_y = np.where(ctn(image) == ctn(image).max())
-                xin = max_x[0] - box_size
-                xen = max_x[0] + box_size
-                yin = max_y[0] - box_size
-                yen = max_y[0] + box_size
+                xin = max_x[0] - box_size[0]
+                xen = max_x[0] + box_size[0]
+                yin = max_y[0] - box_size[1]
+                yen = max_y[0] + box_size[1]
             except:
                 max_x, max_y = np.where(image == image.max())
-                xin = max_x[0] - box_size
-                xen = max_x[0] + box_size
-                yin = max_y[0] - box_size
-                yen = max_y[0] + box_size
+                xin = max_x[0] - box_size[0]
+                xen = max_x[0] + box_size[0]
+                yin = max_y[0] - box_size[1]
+                yen = max_y[0] + box_size[1]
+
+            data_cutout = image[xin:xen, yin:yen]
+
+
     else:
-        xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, center[1] - box_size, center[1] + box_size
+        xin, xen, yin, yen = (center[0] - box_size[0], center[0] + box_size[0],
+                              center[1] - box_size[1], center[1] + box_size[1])
+        if isinstance(image, str) == True:
+            data_cutout = ctn(image)[xin:xen, yin:yen]
+        else:
+            data_cutout = image[xin:xen, yin:yen]
+
     if return_ == 'data':
-        data_cutout = ctn(image)[xin:xen, yin:yen]
         return (data_cutout)
     if return_ == 'box':
         box = xin, xen, yin, yen  # [xin:xen,yin:yen]
         return (box)
 
 
-def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
+# def do_cutout_2D(image_data, box_size=300, center=None, return_='data'):
+#     """
+#     Fast cutout of a numpy array.
+#
+#     Returs: numpy data array or a box for that cutout, if asked.
+#     """
+#
+#     if center is None:
+#         x0, y0= nd.maximum_position(image_data)
+#         print('  >> Center --> ', x0, y0)
+#         if x0-box_size>1:
+#             xin, xen, yin, yen = x0 - box_size, x0 + box_size, \
+#                                  y0 - box_size, y0 + box_size
+#         else:
+#             print('Box size is larger than image!')
+#             return ValueError
+#     else:
+#         xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, \
+#             center[1] - box_size, center[1] + box_size
+#     if return_ == 'data':
+#         data_cutout = image_data[xin:xen, yin:yen]
+#         return (data_cutout)
+#     if return_ == 'box':
+#         box = xin, xen, yin, yen  # [xin:xen,yin:yen]
+#         return(box)
+
+def do_cutout_2D(image_data, box_size=(300,300), center=None, return_='data'):
     """
     Fast cutout of a numpy array.
 
     Returs: numpy data array or a box for that cutout, if asked.
     """
+    if isinstance(box_size, int):
+        box_size = (box_size,box_size)
 
     if center is None:
         x0, y0= nd.maximum_position(image_data)
         print('  >> Center --> ', x0, y0)
-        if x0-box_size>1:
-            xin, xen, yin, yen = x0 - box_size, x0 + box_size, \
-                                 y0 - box_size, y0 + box_size
+        if x0-box_size[0]>1:
+            xin, xen, yin, yen = x0 - box_size[0], x0 + box_size[0], \
+                                 y0 - box_size[1], y0 + box_size[1]
         else:
             print('Box size is larger than image!')
             return ValueError
     else:
-        xin, xen, yin, yen = center[0] - box_size, center[0] + box_size, \
-            center[1] - box_size, center[1] + box_size
+        xin, xen, yin, yen = center[0] - box_size[0], center[0] + box_size[0], \
+            center[1] - box_size[1], center[1] + box_size[1]
     if return_ == 'data':
         data_cutout = image_data[xin:xen, yin:yen]
         return (data_cutout)
@@ -1146,7 +1219,7 @@ def get_cell_size(imagename):
 
 def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                   dilation_size=None,iterations=2, dilation_type='disk',
-                  PLOT=False,show_figure=True):
+                  PLOT=False,show_figure=True,logger=None):
 
 
     from scipy import ndimage
@@ -1174,6 +1247,12 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
             if dilation_size == None:
                 dilation_size = 7
                 # dilation_size = 5
+    if logger is not None:
+        logger.debug(f" ==>  Dilation size is "
+                     f"{dilation_size} [px]")
+    else:
+        print(f" ==>  Dilation size is "
+                     f"{dilation_size} [px]")
 
     mask = (data >= sigma * std)
     mask3 = (data >= 3 * std)
@@ -1746,6 +1825,118 @@ def cvi(imname):
             pass
 
 
+def format_coords(dec_raw):
+    deg, rest = dec_raw.split('.', 1)
+    min, rest = rest.split('.', 1)
+    sec = rest
+    dec_formatted = f"{deg} {min} {sec}"
+    return (dec_formatted)
+
+
+def conver_str_coords(ra, dec):
+    from astropy.coordinates import Angle, SkyCoord
+    import astropy.units as u
+
+    #     # Example hour-angle coordinates
+    # #     ha_str = '13h15m34.9461s'
+    # #     dec_str = '+62d07m28.6912s'
+
+    #     # Convert the hour-angle and declination to angles
+    #     ha = Angle(ha_str,unit='hourangle')
+    #     print(ha)
+    #     dec = Angle(dec_str,unit='deg')
+
+    #     # Create a SkyCoord object with the coordinates and convert to ICRS frame
+    #     coords = SkyCoord(ha, dec, unit=(u.hourangle, u.deg), frame='icrs')
+
+    #     # Get the RA and Dec in degrees
+    #     ra_deg = coords.ra.deg
+    #     dec_deg = coords.dec.deg
+    coor = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame='icrs')
+    ra_deg = coor.ra.degree
+    dec_deg = coor.dec.degree
+    print(ra_deg, dec_deg)
+    return (ra_deg, dec_deg)
+
+
+def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_size=1024,
+                    special_name=''):
+    from astropy.io import fits
+    import os
+    from astropy.wcs import WCS
+    from astropy.nddata import Cutout2D
+    import astropy.units as u
+    import numpy as np
+    from astropy.coordinates import SkyCoord
+    # load image data and header
+    if ra_f == None:
+        imst = imstat(imagename)
+        print(imst['maxpos'])
+        print(imst['maxposf'])
+        coords = imst['maxposf'].split(',')
+        ra = coords[0]
+        dec = format_coords(coords[1])
+        print(ra, dec)
+        ra_f, dec_f = conver_str_coords(ra, dec)
+
+    with fits.open(imagename) as hdul:
+        image_data, header = hdul[0].data, hdul[0].header
+
+        # create a WCS object from the header
+        wcs = WCS(header, naxis=2)
+        # wcs.wcs.radesys = 'icrs'
+
+        # set the center and size of the cutout
+        #     ra_f,dec_f = conver_str_coords(ra,dec)
+        center_ra = ra_f  # center RA in degrees
+        center_dec = dec_f  # center Dec in degrees
+
+        # center = SkyCoord(ra=center_ra, dec=center_dec, unit='deg',from)
+        center = SkyCoord(ra=center_ra * u.degree, dec=center_dec * u.degree,
+                          frame='icrs')
+
+        # create a Cutout2D object
+        cutout = Cutout2D(image_data[0][0], center, cutout_size, wcs=wcs)
+        new_hdul = fits.HDUList(
+            [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+        new_hdul[0].header.update(cutout.wcs.to_header())
+        savename = os.path.dirname(imagename) + '/' + os.path.basename(imagename).replace(
+            '.fits', '.cutout' + special_name + '.fits')
+        new_hdul.writeto(savename, overwrite=True)
+
+    if residualname is not None:
+        with fits.open(residualname) as hdul:
+            image_data, header = hdul[0].data, hdul[0].header
+
+            # create a WCS object from the header
+            wcs = WCS(header, naxis=2)
+            # wcs.wcs.radesys = 'icrs'
+
+            # set the center and size of the cutout
+            #     ra_f,dec_f = conver_str_coords(ra,dec)
+            center_ra = ra_f  # center RA in degrees
+            center_dec = dec_f  # center Dec in degrees
+
+            # center = SkyCoord(ra=center_ra, dec=center_dec, unit='deg',from)
+            center = SkyCoord(ra=center_ra * u.degree, dec=center_dec * u.degree,
+                              frame='icrs')
+
+            # create a Cutout2D object
+            cutout = Cutout2D(image_data[0][0], center, cutout_size, wcs=wcs)
+            new_hdul = fits.HDUList(
+                [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+            new_hdul[0].header.update(cutout.wcs.to_header())
+            savename = os.path.dirname(residualname) + '/' + os.path.basename(
+                residualname).replace('.fits', '.cutout' + special_name + '.fits')
+            new_hdul.writeto(savename, overwrite=True)
+
+        # save the cutout image to a new FITS file
+
+
+#         return(savename)
+
+
+
 """
  ____  _        _
 / ___|| |_ __ _| |_ ___
@@ -2313,10 +2504,10 @@ def radialAverageBins(image, radbins, corners=True, center=None, **kwargs):
     return radbins, az, radavlist
 
 
-def get_image_statistics(imagename,cell_size,
+def get_image_statistics(imagename,cell_size=None,
                          mask_component=None,mask=None,
                          residual_name=None,region='', dic_data=None,
-                         sigma_mask=5,apply_mask=True,
+                         sigma_mask=6,apply_mask=True,
                          fracX=0.1, fracY=0.1):
     """
     Get some basic image statistics.
@@ -2327,6 +2518,9 @@ def get_image_statistics(imagename,cell_size,
     if dic_data == None:
         dic_data = {}
         dic_data['#imagename'] = os.path.basename(imagename)
+
+    if cell_size is None:
+        cell_size = get_cell_size(imagename)
 
     image_data = ctn(imagename)
     if mask is not None:
@@ -2502,13 +2696,39 @@ def level_statistics(img, cell_size=None, mask_component=None,
     """
     Function old name: plot_values_std
 
-    Estimate information for multiple bin levels of the emission.
-    It splits the range of image intensity values in four distinct regions:
+    Slice the intensity values of an image into distinct regions.
+    Then, compute information for each bin level of the emission.
+    The implemented splitting is:
 
         1. Inner region: peak intensity -> 0.1 * peak intensity
-        2. Mid region: 0.1 * peak intensity -> 10 * rms
-        3. Low region: 10 * rms -> 6 * rms
+        2. Mid-region: 0.1 * peak intensity -> 10 * rms
+        3. Low-region: 10 * rms -> 6 * rms
         4. Uncertain region: 6 * rms -> 3 * rms
+
+    Parameters
+    ----------
+    img : str
+        Path to the image.
+    cell_size : float, optional
+        Cell size of the image. The default is None. In that case, the function
+        get_cell_size will attempt to estimate it from the header of the image.
+    mask_component : array, optional
+        The default is None. This is designed to be used when an image is complex,
+        and one would like to study multiple components of the emission separately,
+        each one at a time.
+    sigma : float, optional
+        The default is 6. This is the number of standard deviations to be used during
+        mask dilation.
+    do_PLOT : bool, optional
+        The default is False. If True, the function will plot and save the image.
+    crop : bool, optional
+        The default is False. If True, the function will crop the image to a square
+        of size box_size.
+    box_size : int, optional
+        The default is 256. This is the size of the square to be used if crop=True.
+    data_2D : array, optional
+        The default is None. If not None, the function will use this array instead
+        and consider header information from img to be used with the array data_2D.
 
     """
     if cell_size is None:
@@ -2644,6 +2864,7 @@ def level_statistics(img, cell_size=None, mask_component=None,
     #       inner_flux / total_flux)
     # print('Outer Flux (ext)  fraction                > ', ext_flux / total_flux)
 
+    results['peak_of_flux'] = np.max(g)
     results['total_flux'] = total_flux
     results['inner_flux'] = inner_flux
     results['low_flux'] = low_flux
@@ -2895,10 +3116,16 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
         mask = mask
         apply_mask = False
         omask = None
-        print('     >> INFO: Using provided mask.')
+        if logger is not None:
+            logger.info(f"  >> Using provided mask.")
+        else:
+            print('     >> INFO: Using provided mask.')
 
     if apply_mask == True:
-        print('     >> CALC: Performing mask dilation.')
+        if logger is not None:
+            logger.info(f"  CALC >> Performing mask dilation.")
+        else:
+            print('     >> CALC: Performing mask dilation.')
         original_mask, mask_dilated = mask_dilation(imagename, cell_size=cell_size,
                                         sigma=sigma_mask,
                                         dilation_size=dilation_size,
@@ -2923,6 +3150,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     else:
         data_2D = ctn(imagename)
 
+    if logger is not None:
+        logger.info(f"  CALC >> Performing level statistics.")
+    else:
+        print('     >> CALC: Performing level statistics.')
+
     results_final = level_statistics(img=imagename, cell_size=cell_size,
                                     mask_component=mask_component,
                                     mask=mask, apply_mask=False,
@@ -2932,6 +3164,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     show_figure=False,
                                     add_save_name=add_save_name,
                                     SAVE=SAVE, ext='.jpg')
+    if logger is not None:
+        logger.info(f"  CALC >> Computing image properties.")
+    else:
+        print('     >> CALC: Computing image properties.')
+
     levels, fluxes, agrow, plt, \
         omask2, mask2, results_final = compute_image_properties(imagename,
                                                         residual=residualname,
@@ -2964,6 +3201,10 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     error_petro = False
     if do_petro == True:
         try:
+            if logger is not None:
+                logger.info(f"  CALC >> Computing Petrosian properties.")
+            else:
+                print('     >> CALC: Computing Petrosian properties.')
             r_list, area_arr, area_beam, p, flux_arr, error_arr, results_final, cat, \
                 segm, segm_deblend, sorted_idx_list = \
                 compute_petrosian_properties(data_2D, imagename,
@@ -2980,6 +3221,12 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                              add_save_name=add_save_name,
                                              npixels=npixels,logger=logger)
         except:
+            if logger is not None:
+                logger.warning(f"  CALC >> ERROR when computing Petrosian properties. "
+                               f"Will flag error_petro as True.")
+            else:
+                print("     >> CALC: ERROR when computing Petrosian properties. Will "
+                      "flag error_petro as True.")
             error_petro = True
     else:
         error_petro = True
@@ -3315,16 +3562,23 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     x0m, y0m, _, _ = momenta(g * mask, PArad_0=None, q_0=None)
     results['x0m'], results['y0m'] = x0m, y0m
 
-    # some geometrical measures
-    # calculate PA and axis-ratio
-    region_split = [i for i, x in enumerate(levels > sigma_50) if x][-1]
-    PA, q, x0col, y0col, PAm, qm, \
-        PAmi, qmi, PAmo, qmo, \
-        x0median, y0median, \
-        x0median_i, y0median_i, \
-        x0median_o, y0median_o = cal_PA_q(g * mask, Isequence=levels,
-                                          region_split=region_split,
-                                          SAVENAME=img.replace('.fits','_ellipsefit') + ext)
+    try:
+        # some geometrical measures
+        # calculate PA and axis-ratio
+        region_split = [i for i, x in enumerate(levels > sigma_50) if x][-1]
+        PA, q, x0col, y0col, PAm, qm, \
+            PAmi, qmi, PAmo, qmo, \
+            x0median, y0median, \
+            x0median_i, y0median_i, \
+            x0median_o, y0median_o = cal_PA_q(g * mask, Isequence=levels,
+                                            region_split=region_split,
+                                            SAVENAME=img.replace('.fits','_ellipsefit') + ext)
+    except:
+            PA, q, x0col, y0col, PAm, qm = 0.0, 0.0, x0max,y0max, 0.0, 0.0
+            PAmi, qmi, PAmo, qmo = 0.0, 0.0, 0.0, 0.0
+            x0median, y0median = x0max,y0max
+            x0median_i, y0median_i = x0max,y0max
+            x0median_o, y0median_o = x0max,y0max
 
     results['PA'], results['q'] = PA, q
     results['PAm'], results['qm'] = PAm, qm
@@ -10268,33 +10522,20 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             cmap_cont='terrain',
             rms=None, max_factor=None, plot_title=None, apply_mask=False,
             add_contours=True, extent=None, projection='offset', add_beam=False,
-            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=1,
+            vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=None,
             show_axis='on',flux_units='Jy',
             source_distance=None, scalebar_length=250 * u.pc,
             ax=None, save_name=None, special_name=''):
     """
-    Fast plotting of an astronomical image with/or without a wcs header.
-    imagename:
-        str or 2d array.
-        If str (the image file name with a wcs), it will attempt to read the wcs
-        and plot the coordinates axes.
+    Plots an image with a colorbar and contours.
 
-        If 2darray, will plot the data with generic axes.
-
-        support functions:
-            ctn() -> casa to numpy: A function designed mainly to read CASA fits images,
-                     but can be used to open any fits images.
-
-                     However, it does not read header/wcs.
-                     Note: THis function only works inside CASA environment.
-
-        <<finish documentation>>
-        -- changes:
-            - added scalebar plot
-            - change colors to a better colorblind friendly colormap
-            - added option to plot a beam
-            - added option to plot a colorbars
-
+    Parameters
+    ----------
+    imagename : str
+        Image file name of the fits image.
+    crop : bool, optional
+        Crop the image to the box_size. The default is False.
+    box_size : int, tuple optional
     """
     try:
         import cmasher as cmr
@@ -10314,7 +10555,11 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
               'Then you can use for example:'
               'CM = cmr.flamingo')
     if ax == None:
-        fig = plt.figure(figsize=figsize)
+        if isinstance(box_size, int):
+            fig = plt.figure(figsize=figsize)
+        else:
+            scale_fig_x = box_size[0]/box_size[1]
+            fig = plt.figure(figsize=(figsize[0]*scale_fig_x,figsize[1]))
     if isinstance(imagename, str) == True:
 
         if with_wcs == True:
@@ -10334,7 +10579,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             yin, yen, xin, xen = do_cutout(imagename, box_size=box_size,
                                            center=center, return_='box')
             g = g[xin:xen, yin:yen]
-            crop = False
+            # crop = False
 
         if apply_mask == True:
             _, mask_d = mask_dilation(imagename, cell_size=None,
@@ -10351,13 +10596,14 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         mask_d = 1
         # print('3', g)
 
-    if crop == True:
-        xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
-                                       center=center, return_='box')
-        g = g[xin:xen, yin:yen]
-        if apply_mask == True:
-            print('Masking emission....')
-            g = g * mask_d[xin:xen, yin:yen]
+        if crop == True:
+            xin, xen, yin, yen = do_cutout(imagename, box_size=box_size,
+                                           center=center, return_='box')
+            g = g[xin:xen, yin:yen]
+            if apply_mask == True:
+                print('Masking emission....')
+                g = g * mask_d[xin:xen, yin:yen]
+
     if rms is not None:
         std = rms
     else:
@@ -10375,26 +10621,32 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         else:
             std = mad_std(g)
 
-    try:
-        cell_size = get_cell_size(imagename)
-        axis_units_label = r'Offset [arcsec]'
-    except:
-        print(
-            'No cell or pixel size information in the image wcs/header. '
-            'Setting cell/pixel size = 1.')
+    if isinstance(imagename, str) == True:
+        try:
+            cell_size = get_cell_size(imagename)
+            axis_units_label = r'Offset [arcsec]'
+        except:
+            print(
+                'No cell or pixel size information in the image wcs/header. '
+                'Setting cell/pixel size = 1.')
+            cell_size = 1
+            axis_units_label = r'Offset [px]'
+    else:
         cell_size = 1
         axis_units_label = r'Offset [px]'
 
     dx = g.shape[0] / 2
+    dy = g.shape[1] / 2
     if ax == None:
-        if isinstance(imagename, str) == False:
-            projection = 'px'
 
         if (projection == 'celestial') and (with_wcs == True) and (isinstance(
                 imagename, str) == True):
             ax = fig.add_subplot(projection=ww.celestial)
             ax.set_xlabel('RA', fontsize=14)
             ax.set_ylabel('DEC', fontsize=14)
+
+        if isinstance(imagename, str) == False:
+            projection = 'px'
 
         if projection == 'offset':
             ax = fig.add_subplot()
@@ -10403,24 +10655,41 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             ax.set_xlabel(axis_units_label, fontsize=14)
 
         dx = g.shape[0] / 2
+        dy = g.shape[1] / 2
         if projection == 'px':
             ax = fig.add_subplot()
             cell_size = 1
             # dx = g.shape[0] / 2
             ax.set_xlabel('x pix')
-            # ax.set_ylabel('y pix')
+            ax.set_ylabel('y pix')
             axis_units_label = r'Offset [px]'
             ax.set_xlabel(axis_units_label, fontsize=14)
+            ax.set_ylabel(axis_units_label, fontsize=14)
 
 
     xticks = np.linspace(-dx, dx, 5)
+    yticks = np.linspace(-dy, dy, 5)
     xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 5)
-    if dx < 10:
+    yticklabels = np.linspace(-dy * cell_size, +dy * cell_size, 5)
+    # if dx < 10:
+    #     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+    # else:
+    #     xticklabels = ['{:.0f}'.format(xtick) for xtick in xticklabels]
+    # if dy < 10:
+    #     yticklabels = ['{:.2f}'.format(ytick) for ytick in yticklabels]
+    # else:
+    #     yticklabels = ['{:.0f}'.format(ytick) for ytick in yticklabels]
+
+    if (projection =='offset') or (projection == 'celestial'):
         xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
+        yticklabels = ['{:.2f}'.format(ytick) for ytick in yticklabels]
     else:
         xticklabels = ['{:.0f}'.format(xtick) for xtick in xticklabels]
-    ax.set_yticks(xticks, xticklabels)
+        yticklabels = ['{:.0f}'.format(ytick) for ytick in yticklabels]
+
+    ax.set_yticks(yticks, yticklabels)
     ax.set_xticks(xticks, xticklabels)
+    ax.set_aspect('equal')
 
     ax.tick_params(axis='y', which='both', labelsize=16, color='black',
                    pad=5)
@@ -10437,11 +10706,11 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         ax.grid()
 
     ax.axis(show_axis)
-    ax.axis(show_axis)
+    # ax.axis(show_axis)
 
     vmin = vmin_factor * std
     if extent == None:
-        extent = [-dx, dx, -dx, dx]
+        extent = [-dx, dx, -dy, dy]
     #     print(g)
 
     if vmax is not None:
@@ -10454,7 +10723,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
     norm0 = simple_norm(g, stretch='linear', max_percent=99.0)
     # # plot the first normalization (low level, transparent)
-    im_plot = ax.imshow(g, origin='lower',
+    im_plot = ax.imshow(g, origin='lower',aspect=aspect,
                         cmap='gray', norm=norm0, alpha=0.5, extent=extent)
 
     # cm = copy.copy(plt.cm.get_cmap(CM))
@@ -10467,24 +10736,28 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                         norm=norm,
                         aspect=aspect)  # ,vmax=vmax, vmin=vmin)#norm=norm
 
-    levels_g = np.geomspace(2.0 * g.max(), 5 * std, 6)
-    levels_low = np.asarray([4 * std, 3 * std])
-    levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 6)
-    levels_neg = neg_levels * std
-    levels_white = np.geomspace(g.max(), 0.1 * g.max(), 6)
+
     if add_contours:
         try:
+            levels_g = np.geomspace(2.0 * g.max(), 5 * std, 6)
+            levels_low = np.asarray([4 * std, 3 * std])
+            levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * g.max(), 6)
+            levels_neg = neg_levels * std
+            levels_white = np.geomspace(g.max(), 0.1 * g.max(), 6)
+
             contour_palette = ['#000000', '#444444', '#666666', '#EEEEEE',
                                '#EEEEEE', '#FFFFFF']
 
 
             contour = ax.contour(g, levels=levels_g[::-1],
                                  colors=contour_palette,
+                                 # aspect=aspect,
                                  linewidths=1.2, extent=extent,
                                  alpha=1.0)
 
             contour = ax.contour(g, levels=levels_low[::-1],
                                  colors='brown',
+                                 # aspect=aspect,
                                  # linestyles=['dashed', 'dashdot'],
                                  linewidths=1.0, extent=extent,
                                  alpha=1.0)
@@ -10547,10 +10820,10 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 b = imhd['restoringbeam']['minor']['value']
                 pa = imhd['restoringbeam']['positionangle']['value']
                 if projection == 'px':
-                    el = Ellipse((-dx * 0.85, -dx * 0.85), b, a, angle=pa,
+                    el = Ellipse((-dx * 0.85, -dy * 0.85), b, a, angle=pa,
                                  facecolor='black', alpha=1.0)
                 else:
-                    el = Ellipse((-dx * 0.85, -dx * 0.85), b / cell_size,
+                    el = Ellipse((-dx * 0.85, -dy * 0.85), b / cell_size,
                                  a / cell_size,
                                  angle=pa, facecolor='black', alpha=1.0)
 
@@ -10561,7 +10834,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
                 blabel_pos_x, blabel_pos_y = g.shape
                 blabel_pos_x = blabel_pos_x + dx
-                blabel_pos_y = blabel_pos_y + dx
+                blabel_pos_y = blabel_pos_y + dy
 
                 #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
                 #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
@@ -10597,7 +10870,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                                                  u.dimensionless_angles())
 
         scale_bar_length_pixels = length.value / cell_size
-        scale_bar_position = (-dx * 0.50, -dx * 0.9)
+        scale_bar_position = (-dx * 0.50, -dy * 0.9)
 
         ax.annotate('',
                     xy=(scale_bar_position[0] + scale_bar_length_pixels,
@@ -10615,13 +10888,13 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         # except:
         #     print('Error adding scalebar.')
 
-        if save_name != None:
-            #         if not os.path.exists(save_name+special_name+'.jpg'):
-            plt.savefig(save_name + special_name + '.jpg', dpi=300,
-                        bbox_inches='tight')
-            plt.savefig(save_name + special_name + '.pdf', dpi=600,
-                        bbox_inches='tight')
-    return (ax)
+        # if save_name != None:
+        #         if not os.path.exists(save_name+special_name+'.jpg'):
+        plt.savefig(save_name + special_name + '.jpg', dpi=300,
+                    bbox_inches='tight')
+        plt.savefig(save_name + special_name + '.pdf', dpi=600,
+                    bbox_inches='tight')
+    return ax
 
 def add_beam_to_image(imagename, ax, dx, cell_size):
     if isinstance(imagename, str) == True:
@@ -11502,6 +11775,46 @@ def save_results_csv(result_mini, save_name, ext='.csv', save_corr=True,
 """
 #Utils
 """
+
+def get_vis_amp_uvwave(vis,spwid,avg_in_time=True,wantedpol='RR,LL'):
+    msmd.open(vis)
+    scans = msmd.scansforintent('*TARGET*').tolist()
+    msmd.close()
+
+    ms.open(vis)
+    ms.selectinit(datadescid=spwid)
+    ms.select({'scan_number': scans})
+    ms.selectpolarization(wantedpol=wantedpol)
+    # ms.selectchannel(nchan=1)
+    mydata = ms.getdata(['time', 'amplitude', 'axis_info',
+                         'u', 'v',
+                         'flag'], ifraxis=True)
+    ms.close()
+
+    freq_axis = mydata['axis_info']['freq_axis']['chan_freq']
+    mydata['amplitude'][mydata['flag']] = np.nan
+    antsel = np.ones_like(mydata['axis_info']['ifr_axis']['ifr_shortname'], dtype='bool')
+
+    amp_avg_time = np.nanmean(mydata['amplitude'].T, axis=0)
+    amp_avg_chan = np.nanmean(mydata['amplitude'].T, axis=2)
+    amp_avg_chan_corr = np.nanmean(amp_avg_chan, axis=2)
+    amp_avg_chan_corr_time = np.nanmean(amp_avg_chan_corr, axis=0)
+
+    # freq_axis
+    lightspeed = 299792458.0  # speed of light in m/s
+    wavelen = (lightspeed / np.mean(freq_axis, axis=0)) * 1e3
+
+    uu = mydata['u'].T / wavelen
+    vv = mydata['v'].T / wavelen
+    uvwave = np.sqrt(vv ** 2.0 + uu ** 2.0)
+
+    if avg_in_time==True:
+        uvwave_final = np.nanmean(uvwave,axis=0)
+        amp_avg_final = amp_avg_chan_corr_time
+    else:
+        uvwave_final = uvwave
+        amp_avg_final = amp_avg_chan_corr
+    return(uvwave_final[antsel],amp_avg_final[antsel])
 
 
 def adjust_arrays(a, b):
