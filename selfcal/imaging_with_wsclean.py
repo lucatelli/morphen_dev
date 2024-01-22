@@ -4,137 +4,8 @@ import argparse
 import os
 import glob
 
-data_range = [20e-06, 0.005]
-
-
-def eview(imagename, contour=None,
-          data_range=[20e-06, 0.005],
-          colormap='Rainbow 2', scaling=-2.0, zoom=4, out=None):
-    if contour == None:
-        contour = imagename
-    # if out==None:
-    #     out = imagename + '_drawing.png'
-    imview(raster={
-        'file': imagename,
-        # 'range': data_range,
-        'colormap': colormap, 'scaling': scaling, 'colorwedge': True},
-        contour={'file': contour,
-                 'levels': [-0.1, 0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4,
-                            0.6, 0.8]},
-        # axes={'x':'Declination'} ,
-        # zoom={'blc': [3,3], 'trc': [3,3], 'coord': 'pixel'},
-        zoom=zoom,
-        out=out,
-        # scale=scale,
-        # dpi=dpi,
-        # orient=orient
-    )
-
-
-def get_image_statistics(imagename, residualname=None, region=''):
-    if residualname == None:
-        try:
-            residualname = imagename.replace('.image', '.residual')
-        except:
-            print('Please, provide the residual image name')
-
-    dic_data = {}
-    dic_data['imagename'] = imagename
-
-    stats_im = imstat(imagename=imagename, region=region)
-    stats_re = imstat(imagename=residualname)
-
-    box_edge, imhd = create_box(imagename)
-    stats_box = imstat(imagename=imagename, box=box_edge)
-
-    # determine the flux flux peak of image and residual
-    flux_peak_im = stats_im['max'][0]
-    flux_peak_re = stats_re['max'][0]
-    dic_data['max_im'] = flux_peak_im
-    dic_data['max_re'] = flux_peak_re
-
-    # determine the rms and std of residual and of image
-    rms_re = stats_re['rms'][0]
-    rms_im = stats_im['rms'][0]
-    rms_box = stats_box['rms'][0]
-
-    sigma_re = stats_re['sigma'][0]
-    sigma_im = stats_im['sigma'][0]
-    sigma_box = stats_box['sigma'][0]
-
-    dic_data['rms_im'] = rms_im
-    dic_data['rms_re'] = rms_re
-    dic_data['rms_box'] = rms_box
-
-    dic_data['DR'] = rms_re / flux_peak_im
-
-    # determine the image and residual flux
-    flux_im = stats_im['flux'][0]
-    flux_box = stats_box['flux'][0]
-    # flux_re = stats_re['flux']
-    dic_data['flux_im'] = flux_im
-    dic_data['flux_box'] = flux_box
-
-    sumsq_im = stats_im['sumsq'][0]
-    sumsq_re = stats_re['sumsq'][0]
-
-    q = sumsq_im / sumsq_re
-    # flux_ratio = flux_re/flux_im
-
-    snr_im = flux_im / rms_im
-    snr = flux_im / rms_re
-    snr_box = flux_im / rms_box
-
-    dic_data['snr'] = snr
-    dic_data['snr_box'] = snr
-    dic_data['snr_im'] = snr_im
-
-    peak_im_rms = flux_peak_im / rms_im
-    peak_re_rms = flux_peak_re / rms_re
-
-    dic_data['bmajor'] = imhd['restoringbeam']['major']['value']
-    dic_data['bminor'] = imhd['restoringbeam']['minor']['value']
-    dic_data['positionangle'] = imhd['restoringbeam']['positionangle']['value']
-
-    print(' Flux=%.5f Jy/Beam' % flux_im)
-    print(' Flux peak (image)=%.5f Jy' % flux_peak_im,
-          'Flux peak (residual)=%.5f Jy' % flux_peak_re)
-    print(' flux_im/sigma_im=%.5f' % snr_im, 'flux_im/sigma_re=%.5f' % snr)
-    print(' rms_im=%.5f' % rms_im, 'rms_re=%.5f' % rms_re)
-    print(' flux_peak_im/rms_im=%.5f' % peak_im_rms,
-          'flux_peak_re/rms_re=%.5f' % peak_re_rms)
-    print(' sumsq_im/sumsq_re=%.5f' % q)
-    return (dic_data)
-
-
-def create_box(imagename):
-    """
-    Create a box with 20% of the image
-    at an edge (upper left) of the image.
-    """
-    ihl = imhead(imagename, mode='list')
-    ih = imhead(imagename)
-
-    M = ihl['shape'][0]
-    N = ihl['shape'][1]
-    frac_X = int(0.1 * M)
-    frac_Y = int(0.1 * N)
-    slice_pos_X = 0.15 * M
-    slice_pos_Y = 0.85 * N
-
-    box_edge = np.asarray([slice_pos_X - frac_X,
-                           slice_pos_Y - frac_Y,
-                           slice_pos_X + frac_X,
-                           slice_pos_Y + frac_Y]).astype(int)
-
-    box_edge_str = str(box_edge[0]) + ',' + str(box_edge[1]) + ',' + \
-                   str(box_edge[2]) + ',' + str(box_edge[3])
-
-    return (box_edge_str, ih)
-
-
 def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
-            continue_clean='False'):
+            continue_clean='False',nc=4):
     g_vis = g_name + '.ms'
     """
     # uvtaper_mode+uvtaper_args+'.'+uvtaper_addmode+uvtaper_addargs+
@@ -174,17 +45,18 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
         if running_container == 'native':
             # 'mpirun -np 4 wsclean-mp'
             os.system(
-                'mpirun -np 4 wsclean-mp -name ' + root_dir + image_deepclean_name +
+                'mpirun -np '+str(nc)+' wsclean-mp -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
                 ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
                 ' ' + deconvolver + ' ' + deconvolver_options +
                 ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
-                ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
+                ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis
+                     )
         if running_container == 'singularity':
             os.system(
                 'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
-                ' ' + 'mpirun -np 4 wsclean-mp -name ' + root_dir +
+                ' ' + 'mpirun -np '+str(nc)+' wsclean-mp -name ' + root_dir +
                 image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
@@ -193,7 +65,6 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
                 ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
                 ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
 
-        print(' Image Statistics:')
         image_stats = {
             "#basename": image_deepclean_name + ext}  # get_image_statistics(image_deep_selfcal  + ext)
         image_stats['imagename'] = image_deepclean_name + ext
@@ -217,8 +88,6 @@ def parse_str_list(str_values):
 
 
 if __name__ == "__main__":
-    # Define and parse the command-line arguments
-
     parser = argparse.ArgumentParser(description="Helper for wsclean imaging.")
     parser.add_argument("--p", type=str, help="The path to the MS file.")
     parser.add_argument("--f", nargs='?', default=False,
@@ -244,6 +113,15 @@ if __name__ == "__main__":
 
     parser.add_argument("--update_model", type=str, nargs='?', default='False',
                         help="Update model after cleaning?")
+
+    parser.add_argument("--deconvolution_mode", type=str, nargs='?', default='good',
+                        help="This is not a wsclean parameter. "
+                             "If 'good' will use a proper set of wsclean arguments to perform a "
+                             "good deconvolution, but slower. If 'fast' will not use complex "
+                             "deconvolution, "
+                             "e.g. no multi-scale, no MFS, etc. This is not intended for final "
+                             "science data. It is intended for quick-look data.")
+
 
     parser.add_argument("--with_multiscale", type=str, nargs='?', default='False',
                         help="Use multiscale deconvolver?")
@@ -288,29 +166,11 @@ if __name__ == "__main__":
                              "Warning: Do not repeat previously defined arguments."
                              "Example: ' -apply-facet-beam -dd-psf-grid 6 6 -facet-beam-update 60 '")
 
-    # parser.add_argument("--opt_args", nargs=argparse.REMAINDER,
-    #                     default=['-multiscale -multiscale-scales 0,8,16,32 '
-    #                             '-multiscale-scale-bias 0.75 '],
-    #                     help="Optional arguments passed to wsclean.")
-
-    # parser.add_argument("--opt_args", type=str, nargs='*',
-    #                     default=' -multiscale -multiscale-scales 0,8,16,'
-    #                             '32 -multiscale-scale-bias 0.75 ',
-    #                     help="Optional arguments passed to wsclean.")
-
-    # parser.add_argument("--opt_args", type=str, nargs='*',
-    #                     default=' -multiscale -multiscale-scales 0,8,16,'
-    #                             '32 -multiscale-scale-bias 0.75 ',
-    #                     help="Optional arguments passed to wsclean as a single string.")
-
 
     parser.add_argument("--save_basename", type=str, nargs='?', default='image',
                         help="optional basename for saving image files.")
 
     args = parser.parse_args()
-    # args, extra_args = parser.parse_known_args()
-    # opt_args = args.opt_args
-    # opt_args_list = opt_args.split()
 
     if args.update_model == 'True':
         update_model_option = ' -update-model-required '
@@ -335,6 +195,8 @@ if __name__ == "__main__":
         # wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_cpu_v2.simg'
+        # wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_v1.simg'
+        # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         # wsclean_dir = '/home/sagauga/apps/wsclean_nvidia470_gpu.simg'
         # wsclean_dir = '/raid1/scratch/lucatelli/apps/wsclean_wg_eb.simg'
     if running_container == 'native':
@@ -358,18 +220,12 @@ if __name__ == "__main__":
         if running_container == 'singularity':
             mask_file = ' -fits-mask ' + root_dir+os.path.basename(args.mask) + ' '
 
-    # auto_threshold = '-threshold 1.0e-6Jy'
-    # threshold = '-threshold 5.0e-6Jy'
-    # base_name = '1_update_model'
-    # base_name = '1_selfcal_image'
-
-
     # data to run deconvolution
     data_column = ' -data-column ' + args.data
     with_multiscale = args.with_multiscale
     ### Selecting the deconvolver
-    deconvolution_mode = 'robust'
-    if deconvolution_mode == 'robust':
+    # deconvolution_mode = 'good'
+    if args.deconvolution_mode == 'good':
         if with_multiscale == True or with_multiscale == 'True':
             deconvolver = '-multiscale'
             deconvolver_options = ( ' -multiscale-scales ' + args.scales +
@@ -385,54 +241,48 @@ if __name__ == "__main__":
                 #     print(' ++>> Using Hogbom deconvolver.')
                 #     deconvolver = 'multiscale'
 
+        else:
+            deconvolver = ' '
+            deconvolver_options = (' ')
 
             # deconvolver_options = ('-multiscale-max-scales 5 -multiscale-scale-bias 0.5 ')
-
-        else:
-            deconvolver = ''
-            deconvolver_options = ('')
-
+        nc = 4
         deconvolver_args = (' '
-                            '-channels-out 4 -join-channels '
+                            '-channels-out '+str(nc)+' -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
-                            '-deconvolution-threads 24 -j 24 -parallel-reordering 4 '
+                            '-deconvolution-threads 24 -j 24 -parallel-reordering 16 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            # '-gridder idg -idg-mode hybrid '
                             '-gridder wgridder  ' #-wstack-nwlayers-factor 12  -wstack-nwlayers-factor 6
-                            '-parallel-deconvolution 3072 '  # -local-rms -local-rms-window 100
-                            '-no-mf-weighting ' # -beam-size 0.1arcsec     -beam-size 
-                            # 0.05arcsec
-                            #-circular-beam 
-                            # '-apply-primary-beam  -circular-beam '
+                            '-no-mf-weighting ' # -circular-beam -beam-size 0.1arcsec     
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
-                            # '-local-rms -local-rms-window 25 -parallel-deconvolution 1024 '
-                            # '-local-rms-method rms '
                             '-save-source-list '
-                            '-fit-spectral-pol 3 '
+                            '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(nc)+' '
                             '')
-    if deconvolution_mode == 'FOV':
+    if args.deconvolution_mode == 'fast':
         deconvolver = ' '
         deconvolver_options = (' ')
-        deconvolver_args = ('-gridder idg -idg-mode hybrid -save-source-list '
-                            '-deconvolution-threads 1 -parallel-deconvolution 1024 ')
+        deconvolver_args = (' -save-source-list '
+                            ' -deconvolution-threads 24 -j 24 -parallel-reordering 12 '
+                            ' -parallel-deconvolution 2048') #-parallel-gridding 24
 
     # image parameters
     weighting = 'briggs'
-    # robust = '0.5'
     imsizex = args.sx
     imsizey = args.sy
     cell = args.cellsize
     niter = args.niter
 
+    """
     # taper options (this is a to-do)
-    # uvtaper_mode = '-taper-tukey'
-    # uvtaper_args = '900000'
-    # uvtaper_addmode = '-maxuv-l'
-    # uvtaper_addargs = '800000'
-    # taper_mode='-taper-gaussian '
-    # uvtaper_mode = '-taper-gaussian'
-    # uvtaper_args = '0.05asec'
+    uvtaper_mode = '-taper-tukey'
+    uvtaper_args = '900000'
+    uvtaper_addmode = '-maxuv-l'
+    uvtaper_addargs = '800000'
+    taper_mode='-taper-gaussian '
+    uvtaper_mode = '-taper-gaussian'
+    uvtaper_args = '0.05asec'
+    """
     uvtaper_addmode = ''
     uvtaper_addargs = ''
     # uvtaper = uvtaper_mode + ' '+ uvtaper_args + ' ' +uvtaper_addmode + ' ' +
@@ -484,7 +334,8 @@ if __name__ == "__main__":
                                        base_name=base_name,
                                        field=field, robust=str(robust),
                                        uvtaper=uvtaper,
-                                       continue_clean=args.continue_clean)
+                                       continue_clean=args.continue_clean,
+                                       nc=int(1*nc))
 
             if image_statistics is not None:
                 image_statistics['robust'] = robust
