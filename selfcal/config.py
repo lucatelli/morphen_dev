@@ -1,5 +1,6 @@
 """
 Configuration of different template parameters for self-calibration and imaging.
+This is intended to be used as a first trial of self-calibration.
 """
 
 FIELD = ''
@@ -12,20 +13,25 @@ combine = ''
 outlierfile = ''
 
 
-quiet = False
+quiet = True
 run_mode = 'terminal'
 
-path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band/MCG08/autoselfcal/')
-vis_list = ['MCG08-11-002.avg12s.calibrated']  # do not use the .ms extension
+path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/L_band/UGC5101/autoselfcal'
+        '/UGC5101_IRAS09320.calibrated.avg12s_spw2-8/')
+vis_list = ['UGC5101_IRAS09320.calibrated.avg12s_spw2-8']
+FIELD_SHIFT = "'09:35:47.628 +61.18.41.311'"
 
-# path = '/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band/MCG05/autoselfcal/'
-# vis_list = ['MCG05-06-03-A.avg12s.calibrated']  # do not use the .ms extension
+
+#VLA
+receiver = 'X'
+instrument = 'EVLA' # or 'eM'
+
 
 steps = [
     'startup',  # create directory structure, start variables and clear visibilities.
     'save_init_flags',  # save (or restore) the initial flags and run statwt
-    #'fov_image', # create a FOV image
-    #'run_rflag_init', # run rflag on the initial data (rarely used)
+    # 'fov_image', # create a FOV image
+    # 'run_rflag_init', # run rflag on the initial data (rarely used)
     'test_image',#create a test image
     'select_refant', #select reference antenna
     'p0',#initial test  of selfcal, phase only (p)
@@ -34,8 +40,9 @@ steps = [
     'ap1',#amp-selfcal (ap)
     'split_trial_1',#split the data after first trial (and run wsclean)
     'report_results',#report results of first trial
-    #'run_rflag_final',#run rflag on the final data
+    # 'run_rflag_final',#run rflag on the final data
 ]
+
 
 cell_sizes_JVLA = {'L':'0.2arcsec',
                    'S':'0.1arcsec',
@@ -61,17 +68,25 @@ taper_sizes_JVLA = {'L':'1.0arcsec',
                     'K':'0.03arcsec',
                     'Ka':'0.04arcsec'}
 
+cell_size = cell_sizes_JVLA[receiver]
+taper_size = taper_sizes_JVLA[receiver]
+
+"""
+#eMERLIN
+cell_size = cell_sizes_eMERLIN[receiver]
+taper_size = taper_sizes_eMERLIN[receiver]
+"""
 
 
-init_parameters = {'fov_image': {'imsize': 1024*8,
-                                'cell': '0.2arcsec',
+init_parameters = {'fov_image': {'imsize': 1024*6,
+                                'cell': '0.5arcsec',
                                 'basename': 'FOV_phasecal_image',
                                 'niter': 100,
                                 'robust': 0.5},
-                  'test_image': {'imsize': int(1024*2),
-                                 'imsizey': int(1024*2),
+                  'test_image': {'imsize': int(1024*3),
+                                 'imsizey': int(1024*3),
                                  'FIELD_SHIFT':None,
-                                 'cell': cell_sizes_JVLA['C'],
+                                 'cell': cell_size,
                                  'prefix': 'test_image',
                                  'niter': 10000,
                                  'robust': 0.0}
@@ -86,65 +101,44 @@ global_parameters = {'imsize': init_parameters['test_image']['imsize'],
                      'uvtaper' : [''],
                      'niter':100000}
 
-
 """
-===================
-
-SELFCAL STRATEGY
-
-===================
-
-calmode        solint(sec)    niter (for CLEAN)
-
-------------  --------------  ------------------
-p                 120                200       
-p                 120                300
-ap                inf                300
-p                 120                400
-p                  64                500
-p                  64                750
-ap               3600                750
-p                  64               1000
-p                  32               1250
-p                  32               1500
-ap                120               1500
-p                  32               2000
-p                  16               3000
-p                  16               5000
-ap                 32              10000
-------------------------------------------------
-
-
+Selfcal parameters to be used for very faint sources, 
+with a total integrated flux density lower than 10 mJy.
 """
-
 params_very_faint = {'name': 'very_faint',
                      'p0': {'robust': 0.5,
-                            'solint' : '96s',
-                            'sigma_mask': 12,
+                            'solint' : '240s' if instrument == 'eM' else '96s',
+                            'sigma_mask': 8.0 if instrument == 'eM' else 12,
                             'combine': 'spw',
                             'gaintype': 'T',
                             'calmode': 'p',
-                            'minsnr': 1.5,
+                            'minsnr': 0.75 if instrument == 'eM' else 1.5,
                             'spwmap': [],#leavy empty here. It will be filled later
                             'nsigma_automask' : '3.0',
                             'nsigma_autothreshold' : '1.5',
                             'uvtaper' : [''],
-                            'with_multiscale' : False},
+                            'with_multiscale' : False,
+                            'compare_solints' : False},
                      'ap1': {'robust': 1.0,
-                             'solint': '96s',
+                             'solint': '96s',#increase if e-MERLIN
                              'sigma_mask': 6,
                              'combine': 'spw',
                              'gaintype': 'T',
                              'calmode': 'ap',
-                             'minsnr': 1.5,
+                             'minsnr': 0.75 if instrument == 'eM' else 1.5,
                              'spwmap': [],#leavy empty here. It will be filled later
                              'nsigma_automask' : '3.0',
                              'nsigma_autothreshold' : '1.5',
                              'uvtaper' : [''],
-                             'with_multiscale' : True},
+                             'with_multiscale' : False,
+                             'compare_solints' : False},
                      }
 
 
+"""
+Selfcal parameters to be used for faint sources, 
+with a total integrated flux density between 10 and 20 mJy.
+"""
 params_faint = {'name': 'faint',
                 'p0': {'robust': 0.0,
                        'solint' : '96s',
@@ -172,7 +166,7 @@ params_faint = {'name': 'faint',
                        'uvtaper' : [''],
                        'with_multiscale' : True,
                        'scales' : '0,5,20',
-                       'compare_solints' : False},
+                       'compare_solints' : False,},
                 'ap1': {'robust': 1.0,
                         'solint': '120s',
                         'sigma_mask': 6,
@@ -190,16 +184,21 @@ params_faint = {'name': 'faint',
                 }
 
 
-#Selfcal parameters to be used for standard sources, with a total integrated
-# flux density between ~20 mJy and 0.1 Jy.
+
+"""
+Selfcal parameters to be used for standard sources, 
+with a total integrated flux density between 20 and 50 mJy.
+"""
 params_standard_1 = {'name': 'standard_1',
-                   'p0': {'robust': -0.5,
+                   'p0': {
+                          # 'robust': 0.0 if receiver == 'K' or receiver=='Ka' else -0.5,
+                          'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
                           'solint' : '240s',
-                          'sigma_mask': 15,
+                          'sigma_mask': 15.0 if instrument == 'eM' else 25.0,
                           'combine': '',
                           'gaintype': 'T',
                           'calmode': 'p',
-                          'minsnr': 1.5,
+                          'minsnr': 1.5,# if K band or Ka band, try 1.0 if high flagging
                           'spwmap': [],
                           'nsigma_automask' : '5.0',
                           'nsigma_autothreshold' : '2.5',
@@ -207,23 +206,23 @@ params_standard_1 = {'name': 'standard_1',
                           'with_multiscale' : False,
                           'scales' : '0,5,20',
                           'compare_solints' : False},
-                   'p1': {'robust': 0.0,
-                          'solint' : '180s',
-                          'sigma_mask': 12,
+                   'p1': {'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
+                          'solint' : '96s',
+                          'sigma_mask': 15,
                           'combine': '',
-                          'gaintype': 'G',
+                          'gaintype': 'T' if receiver in ('K', 'Ka') else 'G',
                           'calmode': 'p',
-                          'minsnr': 1.5,
+                          'minsnr': 1.0 if receiver in ('K', 'Ka') else 1.5,
                           'spwmap': [],
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
                           'uvtaper' : [''],
-                          'with_multiscale' : True,
+                          'with_multiscale' : False,
                           'scales' : '0,5,20',
                           'compare_solints' : False},
-                   'p2': {'robust': 0.5,
-                          'solint': '120s',
-                          'sigma_mask': 7,
+                   'p2': {'robust': 0.0,
+                          'solint': '60s',
+                          'sigma_mask': 8,
                           'combine': '',
                           'gaintype': 'T',
                           'calmode': 'p',
@@ -232,11 +231,11 @@ params_standard_1 = {'name': 'standard_1',
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
                           'uvtaper' : [''],
-                          'with_multiscale' : True,
+                          'with_multiscale' : False,
                           'scales': '0,5,10,20,40',
                           'compare_solints' : False},
-                   'ap1': {'robust': 1.0,
-                           'solint': '120s',
+                   'ap1': {'robust': 0.5,
+                           'solint': '60s',
                            'sigma_mask': 6,
                            'combine': '',
                            'gaintype': 'T',
@@ -246,17 +245,20 @@ params_standard_1 = {'name': 'standard_1',
                            'nsigma_automask' : '3.0',
                            'nsigma_autothreshold' : '1.5',
                            'uvtaper' : [''],
-                           'with_multiscale' : True,
+                           'with_multiscale' : False,
                            'scales': '0,5,10,20,40',
                            'compare_solints' : False},
                  }
 
 
-
+"""
+Selfcal parameters to be used for standard sources, 
+with a total integrated flux density between 50 and 100 mJy.
+"""
 params_standard_2 = {'name': 'standard_2',
-                   'p0': {'robust': -0.5,
+                   'p0': {'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
                           'solint' : '96s',
-                          'sigma_mask': 25, #set to 15 if e-MERLIN
+                          'sigma_mask': 15.0 if instrument == 'eM' else 40.0,
                           'combine': '',
                           'gaintype': 'T',
                           'calmode': 'p',
@@ -268,9 +270,9 @@ params_standard_2 = {'name': 'standard_2',
                           'with_multiscale' : False,
                           'scales': '0,5,10',
                           'compare_solints' : False},
-                   'p1': {'robust': -0.5,
+                   'p1': {'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
                           'solint' : '60s',
-                          'sigma_mask': 15,
+                          'sigma_mask': 20,
                           'combine': '',
                           'gaintype': 'G',
                           'calmode': 'p',
@@ -279,7 +281,7 @@ params_standard_2 = {'name': 'standard_2',
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
                           'uvtaper' : [''],
-                          'with_multiscale' : False,
+                          'with_multiscale' : True,
                           'scales': '0,5,10,20',
                           'compare_solints' : False},
                    'p2': {'robust': 0.5,
@@ -312,12 +314,14 @@ params_standard_2 = {'name': 'standard_2',
                            'compare_solints' : False},
                  }
 
-#Selfcal parameters to be used for bright sources, with a total integrated
-# flux density above 0.1 Jy
+"""
+Selfcal parameters to be used for bright sources, 
+with a total integrated flux density above 0.1 Jy.
+"""
 params_bright = {'name': 'bright',
-                 'p0': {'robust': -1.0,
+                 'p0': {'robust': -0.5 if receiver in ('K', 'Ka') else -1.0,
                         'solint' : '48s',
-                        'sigma_mask': 50,
+                        'sigma_mask': 60,
                         'combine': '',
                         'gaintype': 'G',
                         'calmode': 'p',
@@ -329,9 +333,9 @@ params_bright = {'name': 'bright',
                         'with_multiscale' : False,
                         'scales': '0,5,10',
                         'compare_solints' : False},
-                 'p1': {'robust': -0.5,
+                 'p1': {'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
                         'solint' : '48s',
-                        'sigma_mask': 25,#set to 15 if e-MERLIN
+                        'sigma_mask': 15.0 if instrument == 'eM' else 40.0,
                         'combine': '',
                         'gaintype': 'G',
                         'calmode': 'p',
@@ -345,7 +349,7 @@ params_bright = {'name': 'bright',
                         'compare_solints': False},
                  'p2': {'robust': 0.5,
                         'solint': '24s',
-                        'sigma_mask': 18,
+                        'sigma_mask': 12.0 if instrument == 'eM' else 18.0,
                         'combine': '',
                         'gaintype': 'G',
                         'calmode': 'p',
@@ -359,7 +363,7 @@ params_bright = {'name': 'bright',
                         'compare_solints': False},
                  'ap1': {'robust': 0.5,
                          'solint': '24s',
-                         'sigma_mask': 12,
+                         'sigma_mask': 8.0 if instrument == 'eM' else 12.0,
                          'combine': '',
                          'gaintype': 'G',
                          'calmode': 'ap',
