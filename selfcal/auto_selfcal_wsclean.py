@@ -2,10 +2,10 @@
                                                           ..___|**_
                                                   .|||||||||*+@+*__*++.
                                               _||||.           .*+;].,#_
-                                         _|||*_                _    .@@@#@.
+          Morphen                        _|||*_                _    .@@@#@.
                                    _|||||_               .@##@#| _||_
    Radio Self-Calibration     |****_                   .@.,/\..@_.
-                             #///#+++*|    .       .@@@;#.,.\@.
+          Module             #///#+++*|    .       .@@@;#.,.\@.
                               .||__|**|||||*||*+@#];_.  ;,;_
      Geferson Lucatelli                        +\*_.__|**#
                                               |..      .]]
@@ -19,9 +19,13 @@
 
 This module consists of performing interferometric imaging with wsclean and
 running CASA's task gaincal for self-calibration.
-It was tested for VLA (L,S,C,X,Ku,K,Ka bands) and eMERLIN (C band) observations.
-However, fainter sources or higher-frequency observations (e.g. < 10 mJy)
-may not work well. The user is advised to run the code in an interactive session (ipython),
+It was tested for VLA (L,S,C,X,Ku) and eMERLIN (C band) observations.
+
+Faint sources or higher-frequency observations (e.g. < 10 mJy)
+may not work well. So, more experiments are required for
+K and Ka VLA bands and eMERLIN fainter sources.
+
+The user is advised to run the code in an interactive session (ipython),
 step-by-step, and check the results of each step.
 Check the config.py file at:
 https://github.com/lucatelli/morphen/blob/main/selfcal/config.py
@@ -66,7 +70,7 @@ msmd = casatools.msmetadata()
 ms = casatools.ms()
 tb = casatools.table()
 
-import config as cf
+import config_test as cf
 from importlib import reload
 reload(cf)
 
@@ -79,6 +83,8 @@ cell_sizes_eMERLIN = cf.cell_sizes_eMERLIN
 taper_sizes_eMERLIN = cf.taper_sizes_eMERLIN
 taper_sizes_JVLA = cf.taper_sizes_JVLA
 receiver = cf.receiver
+cell_size = cf.cell_size
+taper_size = cf.taper_size
 
 solnorm = cf.solnorm
 combine = cf.combine
@@ -117,11 +123,19 @@ def select_parameters(total_flux,snr=None):
 def get_spwmap(vis):
     lobs = listobs(vis=vis)
     extract_spwids = {key: lobs[key] for key in lobs if 'scan_' in key}
-    spwids = list(
-        extract_spwids[list(extract_spwids.keys())[0]]['0']['SpwIds'])
-    # ref_spw_map = [spwids[0]] * len(spwids)
-    ref_spw_map = [spwids[0]] * (spwids[0] + len(spwids))
-    spwmap = [ref_spw_map]
+
+    unique_spwids = set()
+
+    for key in extract_spwids:
+        nested_dict = extract_spwids[key]
+        for inner_key in nested_dict:
+            spwids = nested_dict[inner_key]['SpwIds']
+            # Convert the array to a sorted tuple and add to the set
+            unique_spwids.add(tuple(sorted(spwids)))
+
+    # Convert the set of tuples back to a sorted list of lists
+    unique_spwids_lists = sorted([list(t) for t in unique_spwids])
+    spwmap = [[item for lst in unique_spwids_lists for item in [lst[0]] * len(lst)]]
     return(spwmap)
 
 def print_table(data):
@@ -141,14 +155,6 @@ def print_table(data):
     tableprint.table(rows, headers)
     pass
 
-# add_params = {'uvtaper' : '0.04arcsec'}
-
-
-
-
-# proj_name = '.calibrated'
-
-
 def report_flag(summary, axis):
     for id, stats in summary[axis].items():
         print('%s %s: %5.1f percent flagged' % (
@@ -156,11 +162,11 @@ def report_flag(summary, axis):
     pass
 
 
-
 def compute_image_stats(path,
                         image_list,
                         image_statistics,
-                        prefix=''):
+                        prefix='',
+                        selfcal_step=None):
     """
     This function will compute statistics of a cleaned image from a wsclean run
     at a given self-cal step (provided an image prefix). It will also store
@@ -181,28 +187,36 @@ def compute_image_stats(path,
     """
     file_list = glob.glob(f"{path}*{prefix}*MFS-image.fits")
     file_list.sort(key=os.path.getmtime, reverse=False)
-    # print(file_list)
-    # model_prefix = prefix.replace('MFS-image', 'MFS-model')
-    # residual_prefix = prefix.replace('MFS-image', 'MFS-residual')
     try:
         image_list[prefix] = file_list[-1]
     except:
         image_list[prefix] = file_list
-    # file_list = glob.glob(f"{path}*MFS-image.fits")
-    # file_list.sort(key=os.path.getmtime, reverse=False)
     image_list[prefix+'_residual'] = image_list[prefix].replace(
         'MFS-image.fits', 'MFS-residual.fits')
-    # file_list = glob.glob(f"{path}*MFS-model.fits")
-    # file_list.sort(key=os.path.getmtime, reverse=False)
     image_list[prefix+'_model'] = image_list[prefix].replace(
         'MFS-image.fits', 'MFS-model.fits')
 
-    level_stats = mlibs.level_statistics(image_list[prefix])
+    if (selfcal_step == 'test_image') or (selfcal_step == 'p0'):
+        """
+        We must be more conservative when creating masks to compute the total flux density 
+        before self-calibration. The image may contain artifacts above the default sigma 
+        threshold of 6.0, and may lead to overestimation of the total flux density.
+        An alternative sigma is 8. Note that the mask dilation is a very powerful approach and 
+        very sensitive to the sigma threshold. A sigma of 8 results large differences in 
+        relation to a sigma of 6. 
+        """
+        sigma = 8.0
+    else:
+        sigma = 6.0
+
+    level_stats = mlibs.level_statistics(image_list[prefix],sigma=sigma)
     image_stats = mlibs.get_image_statistics(imagename=image_list[prefix],
-                                             dic_data=level_stats)
+                                             dic_data=level_stats,
+                                             sigma_mask=sigma)
     img_props = mlibs.compute_image_properties(image_list[prefix],
                                                image_list[prefix+'_residual'],
                                                results = image_stats,
+                                               sigma_mask = sigma,
                                                show_figure=False)[-1]
 
 
@@ -242,10 +256,20 @@ def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
     return(mask_name)
 
 def sinusoidal_function(t, A, omega, phi, offset):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     return A * np.sin(omega * t + phi) + offset
 
 
 def fit_function_and_estimate_coherence(time, phase,PLOT=False):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     # Initial guess for the parameters: amplitude, angular frequency, phase shift, and offset
     guess_amplitude = (np.max(phase) - np.min(phase)) / 2
     # guess_omega = 2 * np.pi / np.ptp(time)  # Assume a period equal to the range of time
@@ -288,6 +312,11 @@ def fit_function_and_estimate_coherence(time, phase,PLOT=False):
 
 
 def estimate_local_coherence_time(time, phase,PLOT=False):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     # Normalize phase
     phase_normalized = phase - np.mean(phase)
 
@@ -321,6 +350,11 @@ def estimate_local_coherence_time(time, phase,PLOT=False):
     return coherence_time
 
 def table_phase_time0(vis,gain_table,spw,intent='*TARGET*',ant = None):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     # msmd = casatools.msmetadata()
     # ms = casatools.ms()
     # tb = casatools.table()
@@ -375,6 +409,11 @@ def table_phase_time0(vis,gain_table,spw,intent='*TARGET*',ant = None):
         solint = int(np.nanmean(co_times_spw))
     return(solint)
 def table_phase_time(vis,gain_table,spw,intent='*TARGET*',ant = None):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     # msmd = casatools.msmetadata()
     # ms = casatools.ms()
     # tb = casatools.table()
@@ -424,132 +463,11 @@ def table_phase_time(vis,gain_table,spw,intent='*TARGET*',ant = None):
         print(f"Estimated Coherence Time for spw {spw} : {coherence_time} seconds")
         # print(f"Residual Standard Deviation: {residual_std} degrees")
 
-    # co_times_scan = np.zeros((len(scans), len(unique_spwids), len(antennae)))
-    # co_times_scan2 = np.zeros((len(scans), len(unique_spwids)))
-    # # for i in range(len(scans)):
-    # # scan = scans[i]
-    # # for j in tqdm(range(len(unique_spwids))):
-    # #     spw = unique_spwids[j]
-    # #     match = spwid == spw
-    # #     for k in range(len(antennae)):
-    # #         ant = antennae[k]
-    # #         match &= antennae == int(ant)
-    # #         chunks_time = np.array_split((time[match]- time[match][0]), len(scans))
-    # #         chunks_phase = np.array_split(np.mean((np.angle(gain[:,0,
-    # #                                                         match].T)*180/np.pi),axis=1),len(scans))
-    # #         for i in range(len(chunks_time)):
-    # #             timee = chunks_time[i]
-    # #             phase = chunks_phase[i]
-    # #             coherence_time, residual_std = fit_function_and_estimate_coherence(timee, phase)
-    # #             co_times_scan[i,j,k] = coherence_time
-    # #             # print(f"Estimated Coherence Time for scan {scan} : {coherence_time} seconds")
-    # #             # print(f"Residual Standard Deviation: {residual_std} degrees")
-    #
-    # for j in tqdm(range(len(unique_spwids))):
-    #     spw = unique_spwids[j]
-    #     match = spwid == spw
-    #     # for k in range(len(antennae)):
-    #         # ant = antennae[k]
-    #         # match &= antennae == int(ant)
-    #     # try:
-    #     chunks_time = np.array_split((time[match]- time[match][0]), len(scans))
-    #     chunks_phase = np.array_split(np.mean((np.angle(gain[:,0,
-    #                                                     match].T)*180/np.pi),axis=1),len(scans))
-    #     for i in range(len(chunks_time)):
-    #         timee = chunks_time[i]
-    #         phase = chunks_phase[i]
-    #         # coherence_time, residual_std = fit_function_and_estimate_coherence(timee, phase)
-    #         # co_times_scan2[i,j] = coherence_time/(2*np.pi)
-    #         coherence_time = estimate_local_coherence_time(timee, phase)
-    #         co_times_scan2[i] = coherence_time
-    #         # print(f"Estimated Coherence Time for scan {scan} : {coherence_time} seconds")
-    #         # print(f"Residual Standard Deviation: {residual_std} degrees")
-    #     # except:
-    #     #     pass
-
     if np.isnan(np.nanmean(co_times_spw)) == True:
         solint = np.inf
     else:
         solint = int(np.nanmean(co_times_spw))
     return(solint)
-
-def eview(imagename, contour=None,
-          data_range=None,  # [-2.52704e-05, 0.0159025],[-5.55876e-06,
-          # 0.00450872]
-          colormap='Rainbow 2', scaling=-2.0, zoom=1, out=None):
-    if data_range == None:
-        st = imstat(imagename)
-        min_data = 0.000001#-1.0 * st['rms'][0]
-        max_data = 0.3 * st['max'][0]
-        data_range = [min_data, max_data]
-    if contour == None:
-        contour = imagename
-    # if out==None:
-    #     out = imagename + '_drawing.png'
-    imview(raster={
-        'file': imagename,
-        'range': data_range,
-        'colormap': colormap, 'scaling': scaling, 'colorwedge': True},
-        contour={'file': contour,
-                 'levels': [-0.1, 0.01, 0.05, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.6, 0.8]},
-        # include negative cont
-        # axes={'x':'Declination'} ,
-        # zoom={'blc': [3,3], 'trc': [3,3], 'coord': 'pixel'},
-        zoom=zoom,
-        out=out,
-        # scale=scale,
-        # dpi=dpi,
-        # orient=orient
-    )
-
-
-# .replace('/','')
-
-
-def get_image_statistics(imagename, residualname=None):
-    if residualname == None:
-        try:
-            residualname = imagename.replace('.image', '.residual')
-        except:
-            print('Please, provide the residual image name')
-    stats_im = imstat(imagename=imagename)
-    stats_re = imstat(imagename=residualname)
-
-    # determine the flux flux peak of image and residual
-    flux_peak_im = stats_im['max'][0]
-    flux_peak_re = stats_re['max'][0]
-
-    # determine the rms and std of residual and of image
-    rms_re = stats_re['rms'][0]
-    rms_im = stats_im['rms'][0]
-    sigma_re = stats_re['sigma'][0]
-    sigma_im = stats_im['sigma'][0]
-
-    # determine the image and residual flux
-    flux_im = stats_im['flux'][0]
-    # flux_re = stats_re['flux']
-
-    sumsq_im = stats_im['sumsq'][0]
-    sumsq_re = stats_re['sumsq'][0]
-
-    q = sumsq_im / sumsq_re
-    # flux_ratio = flux_re/flux_im
-
-    snr_im = flux_im / sigma_im
-    snr = flux_im / sigma_re
-
-    peak_im_rms = flux_peak_im / rms_im
-    peak_re_rms = flux_peak_re / rms_re
-
-    print(' Flux=%.5f Jy/Beam' % flux_im)
-    print(' Flux peak (image)=%.5f Jy' % flux_peak_im,
-          'Flux peak (residual)=%.5f Jy' % flux_peak_re)
-    print(' flux_im/sigma_im=%.5f' % snr_im, 'flux_im/sigma_re=%.5f' % snr)
-    print(' rms_im=%.5f' % rms_im, 'rms_re=%.5f' % rms_re)
-    print(' flux_peak_im/rms_im=%.5f' % peak_im_rms,
-          'flux_peak_re/rms_re=%.5f' % peak_re_rms)
-    print(' sumsq_im/sumsq_re=%.5f' % q)
-
 
 def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                       with_CORRECTED=False):
@@ -561,13 +479,6 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
            plotfile=os.path.dirname(
                g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected-model.jpg')
 
-    # plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
-    #        antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
-    #        ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
-    #        width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-    #        plotfile=os.path.dirname(
-    #            g_vis) + '/selfcal/plots/' + name + '_uvdist_amp_corrected-model.jpg')
-
     plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
            antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
            ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
@@ -577,13 +488,6 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
            plotfile=os.path.dirname(
                g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected_div_model.jpg')
 
-    # plotms(vis=g_vis, xaxis='uvdist', yaxis='amp',
-    #        antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
-    #        ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
-    #        width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-    #        plotrange=[-1, -1, 0, 5],
-    #        plotfile=os.path.dirname(
-    #            g_vis) + '/selfcal/plots/' + name + '_uvdist_amp_corrected_div_model.jpg')
 
     if with_MODEL == True:
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp', avgantenna=True,
@@ -594,12 +498,6 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_model.jpg')
 
-        # plotms(vis=g_vis, xaxis='uvdist', yaxis='amp', avgantenna=True,
-        #        antenna=ANTENNAS, spw=SPWS, coloraxis='baseline',
-        #        ydatacolumn='model', avgchannel='64', avgtime='360',
-        #        width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-        #        plotfile=os.path.dirname(
-        #            g_vis) + '/selfcal/plots/' + name + '_uvdist_amp_model.jpg')
 
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
@@ -618,13 +516,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                # plotrange=[-1,-1,-1,0.3],
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_data.jpg')
-        # plotms(vis=g_vis, xaxis='uvdist', yaxis='amp', avgantenna=True,
-        #        antenna=ANTENNAS, spw=SPWS, coloraxis='baseline',
-        #        ydatacolumn='data', avgchannel='64', avgtime='360',
-        #        width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-        #        # plotrange=[-1,-1,0,0.3],
-        #        plotfile=os.path.dirname(
-        #            g_vis) + '/selfcal/plots/' + name + '_uvdist_amp_data.jpg')
+
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
                ydatacolumn='data', avgchannel='', avgtime='360',
@@ -642,13 +534,7 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected.jpg')
-        # plotms(vis=g_vis, xaxis='uvdist', yaxis='amp', avgantenna=True,
-        #        antenna=ANTENNAS, spw=SPWS,
-        #        # plotrange=[-1,-1,0,0.3],
-        #        ydatacolumn='corrected', avgchannel='64', avgtime='360',
-        #        width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-        #        plotfile=os.path.dirname(
-        #            g_vis) + '/selfcal/plots/' + name + '_uvdist_amp_corrected.jpg')
+
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
                ydatacolumn='corrected', avgchannel='', avgtime='360',
@@ -680,9 +566,7 @@ def start_image(g_name, n_interaction, imsize='2048', imsizey=None, cell='0.05as
         base_name = str(n_interaction)+'_start_image_'
     else:
         base_name = base_name
-    # if delmodel == True:
-    #     delmod(g_vis)
-    #     clearcal(g_vis)
+
 
 
     os.system("export OPENBLAS_NUM_THREADS=1 && python imaging_with_wsclean.py --f " +
@@ -699,7 +583,7 @@ def start_image(g_name, n_interaction, imsize='2048', imsizey=None, cell='0.05as
 
     if PLOT == True:
         plot_visibilities(g_vis=g_vis, name=base_name,
-                          with_MODEL=True, with_DATA=True)
+                          with_MODEL=True, with_DATA=True, with_CORRECTED=True)
 
     pass
 
@@ -1127,7 +1011,9 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
                   spwmap=[],uvrange='',append=False,solmode='',#L1R
                   minsnr=5.0, solint='inf', gaintype='G', calmode='p',
                   interp = '',refant = '', minblperant = 4,
-                  action='apply', flagbackup=True, PLOT=False, special_name=''):
+                  action='apply', flagbackup=True,
+                  PLOT=False, with_CORRECTED=True, with_MODEL=True, with_DATA=False,
+                  special_name=''):
     g_vis = g_name + '.ms'
 
     cal_basename = '_selfcal_'
@@ -1208,7 +1094,9 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
 
         if PLOT == True:
             plot_visibilities(g_vis=g_vis, name=base_name,
-                              with_CORRECTED=True, with_MODEL=False, with_DATA=False)
+                              with_CORRECTED=with_CORRECTED,
+                              with_MODEL=with_MODEL,
+                              with_DATA=with_DATA)
 
     return (gain_tables)
 
@@ -1314,6 +1202,11 @@ def find_refant(msfile, field,tablename):
     return pref_ant_list
 
 def find_optimal_parameters(snr_data, max_frac_flag_current=0.15):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     snr_thresholds = np.linspace(1.2, 3.0, int((3.0-1.2)*10+13))
     best_time_interval = None
     best_snr_threshold = None
@@ -1338,18 +1231,13 @@ def find_optimal_parameters(snr_data, max_frac_flag_current=0.15):
 
     return best_time_interval, best_snr_threshold
 
-# Example usage with assumed SNR data
-# snr_data = {
-#     '12s': np.array([...]),
-#     '24s': np.array([...]),
-#     # ... other time intervals
-# }
-
-# optimal_time_interval, optimal_snr_threshold = find_optimal_parameters(snr_data)
-# print(f"Optimal Time Interval: {optimal_time_interval}, Optimal SNR Threshold: {optimal_snr_threshold}")
-
 def find_multiple_solint(opt_solint,
                          solint_template = [384, 192, 96, 48, 24, 12]):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     for t in solint_template:
         if t <= opt_solint:
             return t
@@ -1358,6 +1246,11 @@ def find_multiple_solint(opt_solint,
 
 
 def estimate_solint(g_name, SNRs, cutoff=1.5):
+    """
+    ###############
+    *** TESTING ***
+    ###############
+    """
     # Solution interval template.
     time_bins = ['24s', '48s', '96s', '192s', '384s', 'inf']
 
@@ -1408,27 +1301,6 @@ if run_mode == 'terminal':
     please set quiet=True. Otherwise, jupyter can crash due to the very long 
     output cells. 
     """
-
-
-    # steps = [
-    #     'startup',#create directory structure, start variables and clear visibilities.
-    #     'save_init_flags',
-    #     # 'fov_image',
-    #     # # # 'run_rflag_init',
-    #     'test_image',
-    #     # 'select_refant',
-    #     # 'p0',#initial test selfcal step
-    #     # 'p1',#start of the first trial of selfcal, phase only (p)
-    #     # # # 'p2',#continue first trial, can be p or ap, but uses gain table from step 1;
-    #     # 'ap1',
-    #     # 'split_trial_1',#split the data after first trial
-    #     # 'report_results',#report results of first trial
-    #     # 'run_rflag_final',
-    # ]
-
-    # path = ('/media/sagauga/galnet/LIRGI_Sample/VLA-Archive/A_config/23A-324/C_band/MCG12'
-    #         '/autoselfcal/')
-    # vis_list = ['MCG12-02-001.calibrated.avg12s'] #do not use the .ms extension
     for field in vis_list:
         g_name = path + field
         g_vis = g_name + '.ms'
@@ -1557,19 +1429,10 @@ if run_mode == 'terminal':
         ########################################
         imsize = global_parameters['imsize']
         imsizey = global_parameters['imsizey']
-        # cell = cell_sizes_JVLA['K'] #'0.066asec'
         cell = global_parameters['cell']
-        # FIELD_SHIFT = "'18:34:13.399  +59.51.33.355'" # NGC6670
-        # FIELD_SHIFT = "'00:54:05.849  +72.58.58.979'" # MCG12 S band
-
-        # imsize = 1024 * 3
-        # imsizey = 1024 * 3
-        # cell = cell_sizes_JVLA['K'] #'0.066asec'
         FIELD_SHIFT = global_parameters['FIELD_SHIFT']
         niter = global_parameters['niter']
-
-        # FIELD_SHIFT = "'13:37:54.620  +48.16.52.714'"
-        # FIELD_SHIFT = "'13:37:54.620  +48.16.52.714'"
+        # e.g.
         # FIELD_SHIFT = "'13:37:30.309  +48.17.42.830'" #NGC5256
         ########################################
 
@@ -1602,7 +1465,8 @@ if run_mode == 'terminal':
             image_statistics,image_list = compute_image_stats(path=path,
                                                               image_list=image_list,
                                                               image_statistics=image_statistics,
-                                                              prefix=prefix)
+                                                              prefix=prefix,
+                                                              selfcal_step='test_image')
 
             current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
             modified_robust = None
@@ -1628,7 +1492,8 @@ if run_mode == 'terminal':
                 image_statistics,image_list = compute_image_stats(path=path,
                                                                   image_list=image_list,
                                                                   image_statistics=image_statistics,
-                                                                  prefix=prefix)
+                                                                  prefix=prefix,
+                                                                  selfcal_step='test_image')
 
 
             if 'test_image' not in steps_performed:
@@ -1643,12 +1508,6 @@ if run_mode == 'terminal':
             p0_params = parameter_selection['test_image']['p0']
             print_table(p0_params)
 
-            # if selfcal_params['name'] == 'params_very_faint':
-            #     """
-            #     If source is very faint, only `p0` should be run.
-            #     """
-            #     steps.remove('p1')
-            #     steps.remove('p2')
 
         except:
             print('No test image found. Have you run the test_image step?')
@@ -1660,13 +1519,6 @@ if run_mode == 'terminal':
             #### 0. Zero interaction. Use a small/negative robust parameter,        ####
             ####    to find the bright/compact emission(s).                         ####
             ############################################################################
-
-            
-
-            # robust = 0.5  # decrease more if lots of failed solutions.
-            # sigma_mask = 15
-
-
 
             if modified_robust is not None:
                 p0_params['robust'] = modified_robust
@@ -1703,7 +1555,8 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
-                                                                   prefix=prefix)
+                                                                   prefix=prefix,
+                                                                   selfcal_step='p0')
 
                 mask_name = create_mask(image_list['test_image_0'],
                                         rms_mask=rms_mask,
@@ -1721,14 +1574,15 @@ if run_mode == 'terminal':
                             # next time probably needs to use 7.0 instead of 3.0
                             niter=niter, shift=FIELD_SHIFT,quiet=quiet,
                             uvtaper=p0_params['uvtaper'],
-                            savemodel=True, mask=mask_name,PLOT=False,
+                            savemodel=True, mask=mask_name,PLOT=True,
                             robust=p0_params['robust'], datacolumn='DATA')
 
 
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
-                                                                   prefix='start_image')
+                                                                   prefix='start_image',
+                                                                   selfcal_step='test_image')
 
                 if 'start_image' not in steps_performed:
                     steps_performed.append('start_image')
@@ -1775,13 +1629,14 @@ if run_mode == 'terminal':
                                                          # interp='linearPD,'
                                                          #        'linearflagrel',
                                                          action='apply',
-                                                         PLOT=False,
+                                                         PLOT=True,
                                                          gain_tables=[]
                                                          )
 
                 run_wsclean(g_name, robust=0.5,
-                            imsize=imsize, imsizey=imsizey, cell=cell, base_name='selfcal_test_0',
-                            nsigma_automask=p0_params['nsigma_automask'], 
+                            imsize=imsize, imsizey=imsizey, cell=cell,
+                            base_name='selfcal_test_0',
+                            nsigma_automask=p0_params['nsigma_automask'],
                             nsigma_autothreshold=p0_params['nsigma_autothreshold'],
                             n_interaction='', savemodel=False, quiet=quiet,
                             with_multiscale=p0_params['with_multiscale'],
@@ -1792,15 +1647,16 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
-                                                                   prefix='selfcal_test_0')
+                                                                   prefix='selfcal_test_0',
+                                                                   selfcal_step='p0')
 
                 if image_statistics['selfcal_test_0']['total_flux_mask'] * 1000 < 10.0:
                     """
                     Check if using a taper will increase the flux density above 10 mJy.
-                    If yes, the source will not considered as `very faint`, and we may attempt a 
+                    If yes, the source will not considered as `very faint`, and we may attempt a
                     second phase-selfcal run with the template `faint` (i.e. `p1` will be executed).
                     If not, we will continue with the `very faint` template and will proceed to
-                    `ap1`. 
+                    `ap1`.
                     """
                     # modified_robust = robust + 0.5
                     print('Deconvolving image with a taper.')
@@ -1810,7 +1666,7 @@ if run_mode == 'terminal':
                                 n_interaction='0', savemodel=False, quiet=quiet,
                                 datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
                                 with_multiscale=False, scales='0,5,20,40',
-                                uvtaper=taper_sizes_JVLA[receiver],
+                                uvtaper=taper_size,
                                 niter=niter,
                                 PLOT=False)
                     image_statistics, image_list = compute_image_stats(path=path,
@@ -1818,16 +1674,29 @@ if run_mode == 'terminal':
                                                                        image_statistics=image_statistics,
                                                                        prefix='selfcal_test_0')
 
-                selfcal_params = select_parameters(
-                    image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
-                parameter_selection['p0_pos'] = selfcal_params
+
+
+                # parameter_selection['p0_pos']['p0']['spwmap'] = p0_params['spwmap']
+
 
                 trial_gain_tables.append(gain_tables_selfcal_temp)
                 gain_tables_applied['p0'] = gain_tables_selfcal_temp
                 steps_performed.append('p0')
 
+        try:
+            selfcal_params = select_parameters(
+                image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
+            parameter_selection['p0_pos'] = selfcal_params
+            print(' ++++>> Template of Parameters to be used for now on:',
+                  parameter_selection['p0_pos']['name'])
+            if parameter_selection['p0_pos']['p0']['combine'] == 'spw':
+                parameter_selection['p0_pos']['p0']['spwmap'] = get_spwmap(g_vis)
+        except:
+            pass
 
-
+        """
+        https://indico.skatelescope.org/event/1125/registrations/562/?token=95198664-bbf9-47a3-bb02-8212f82c8104
+        """
 
         if (('p1' in steps) and ('p1' not in steps_performed) and
                 ('p1' in parameter_selection['p0_pos'])):
@@ -1875,20 +1744,23 @@ if run_mode == 'terminal':
 
                 steps_performed.append('update_model_1')
 
-            current_snr = image_statistics['1_update_model_image']['snr']
-            if p1_params['compare_solints'] == True:
-                SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf =  (
-                    check_solutions(g_name, field, cut_off=1.5,
-                                    n_interaction=iteration,
-                                    solnorm=solnorm,
-                                    combine=p1_params['combine'],
-                                    calmode=p1_params['calmode'], refant=refant,
-                                    gaintype=p1_params['gaintype'],
-                                    # interp='cubic,cubic',
-                                    gain_tables_selfcal=[],
-                                    # gain_tables_selfcal=gain_tables_applied['p0'],
-                                    return_solution_stats=True))
+            # current_snr = image_statistics['1_update_model_image']['snr']
+            # if p1_params['compare_solints'] == True:
+            #     SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf =  (
+            #         check_solutions(g_name, field, cut_off=1.5,
+            #                         n_interaction=iteration,
+            #                         solnorm=solnorm,
+            #                         combine=p1_params['combine'],
+            #                         calmode=p1_params['calmode'], refant=refant,
+            #                         gaintype=p1_params['gaintype'],
+            #                         # interp='cubic,cubic',
+            #                         gain_tables_selfcal=[],
+            #                         # gain_tables_selfcal=gain_tables_applied['p0'],
+            #                         return_solution_stats=True))
             minblperant = 3
+            if p1_params['combine'] == 'spw':
+                p1_params['spwmap'] = get_spwmap(g_vis)
+
             if 'p1' not in steps_performed:
                 gain_tables_selfcal_p1 = self_gain_cal(g_name,
                                                        n_interaction=iteration,
@@ -1898,6 +1770,7 @@ if run_mode == 'terminal':
                                                        gaintype=p1_params['gaintype'],
                                                        combine=p1_params['combine'],
                                                        refant=refant,
+                                                       spwmap=p1_params['spwmap'],
                                                        calmode=p1_params['calmode'],
                                                        # interp='cubic,cubic',
                                                        action='apply',
@@ -1990,7 +1863,7 @@ if run_mode == 'terminal':
 
                 steps_performed.append('update_model_2')
             #
-            current_snr = image_statistics['2_update_model_image']['snr']
+            # current_snr = image_statistics['2_update_model_image']['snr']
             # SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf =  (
             #     check_solutions(g_name, field, cut_off=cut_off,
             #                                          n_interaction=iteration,
@@ -2046,14 +1919,29 @@ if run_mode == 'terminal':
                       datacolumn='corrected', keepflags=True)
 
 
+            if 'p1' in parameter_selection['p0_pos'].keys():
+                ref_step_spwmap = 'p1'
+            else:
+                ref_step_spwmap = 'p0'
+
             if (parameter_selection['p0_pos']['ap1']['combine'] == 'spw') and (
-                    parameter_selection['p0_pos']['p0']['spwmap'] != []):
-                parameter_selection['p0_pos']['ap1']['spwmap'] = parameter_selection['p0_pos']['p0']['spwmap'].copy()
+                    parameter_selection['p0_pos'][ref_step_spwmap]['spwmap'] != []):
+                """
+                If `combine = 'spw'` is set to be used with `ap1`, we need to check if it was also 
+                used during `p0` or `p1`. If it was used, we need to reuse the `spwmap` from 
+                `p0` or `p1` and append to the one to be used in `ap1`. 
+                
+                Note that if `p1` was ran, solutions from `p0` are ignored. We just need the 
+                spwmap for one of them.
+                """
+                parameter_selection['p0_pos']['ap1']['spwmap'] = (
+                    parameter_selection['p0_pos'][ref_step_spwmap]['spwmap'].copy())
                 parameter_selection['p0_pos']['ap1']['spwmap'].append(get_spwmap(g_vis)[0])
 
             if (parameter_selection['p0_pos']['ap1']['combine'] == '') and (
-                    parameter_selection['p0_pos']['p0']['spwmap'] != []):
-                parameter_selection['p0_pos']['ap1']['spwmap'] = parameter_selection['p0_pos']['p0']['spwmap'].copy()
+                    parameter_selection['p0_pos'][ref_step_spwmap]['spwmap'] != []):
+                parameter_selection['p0_pos']['ap1']['spwmap'] = (
+                    parameter_selection['p0_pos'][ref_step_spwmap]['spwmap'].copy())
                 parameter_selection['p0_pos']['ap1']['spwmap'].append([])
 
 
@@ -2159,57 +2047,25 @@ if run_mode == 'terminal':
                 split(vis=g_name + '.ms', outputvis=vis_split_name_1,
                       datacolumn='corrected', keepflags=True)
             niter = 150000
-            robust = "0.0,1.0,0.5"
+            ROBUSTS = [-0.5,0.5] #[-2.0,0.0,0.5,1.0]
             print(' ==> Imaging visibilities after first trial of selfcal...')
-            run_wsclean(g_name + '_trial_1', robust=robust,
-                        imsize=imsize, imsizey=imsizey, cell=cell, 
-                        base_name='selfcal_image',
-                        nsigma_automask = global_parameters['nsigma_automask'],
-                        nsigma_autothreshold = global_parameters['nsigma_autothreshold'],
-                        n_interaction='', savemodel=False, quiet=quiet,
-                        with_multiscale=True,
-                        datacolumn='DATA', shift=FIELD_SHIFT,
-                        uvtaper=[''],
-                        niter=niter,
-                        PLOT=False)
-            # robust = "1.0"
-            # print(' ==> Imaging visibilities after first trial of selfcal...')
-            # run_wsclean(g_name + '_trial_1_comb_spw.ms', robust=robust,
-            #             imsize=imsize, cell=cell, base_name='selfcal_image',
-            #             nsigma_automask='3.0', nsigma_autothreshold='2.0',
-            #             n_interaction='', savemodel=False, quiet=quiet,
-            #             with_multiscale=True,
-            #             datacolumn='DATA', shift=FIELD_SHIFT,
-            #             # uvtaper=['0.1arcsec'],
-            #             niter=niter,
-            #             PLOT=False)
-            #
-            # print(' ==> Imaging visibilities after first trial of selfcal...')
-            # run_wsclean(g_name + '_trial_1_apinf.ms', robust=robust,
-            #             imsize=imsize, cell=cell, base_name='selfcal_image',
-            #             nsigma_automask='3.0', nsigma_autothreshold='2.0',
-            #             n_interaction='', savemodel=False, quiet=quiet,
-            #             with_multiscale=True,
-            #             datacolumn='DATA', shift=FIELD_SHIFT,
-            #             uvtaper=['0.1arcsec'],
-            #             niter=niter,
-            #             PLOT=False)
-            #
-            # print(' ==> Imaging visibilities after first trial of selfcal...')
-            # run_wsclean(g_name + '_trial_1_ap192.ms', robust=robust,
-            #             imsize=imsize, cell=cell, base_name='selfcal_image',
-            #             nsigma_automask='3.0', nsigma_autothreshold='2.0',
-            #             n_interaction='', savemodel=False, quiet=quiet,
-            #             with_multiscale=True,
-            #             datacolumn='DATA', shift=FIELD_SHIFT,
-            #             uvtaper=['0.1arcsec'],
-            #             niter=niter,
-            #             PLOT=False)
+            for robust in ROBUSTS:
+                run_wsclean(g_name + '_trial_1', robust=robust,
+                            imsize=imsize, imsizey=imsizey, cell=cell,
+                            base_name='selfcal_image',
+                            nsigma_automask = global_parameters['nsigma_automask'],
+                            nsigma_autothreshold = global_parameters['nsigma_autothreshold'],
+                            n_interaction='', savemodel=False, quiet=quiet,
+                            with_multiscale=True,
+                            datacolumn='DATA', shift=FIELD_SHIFT,
+                            # uvtaper=['0.08asec'],
+                            niter=niter,
+                            PLOT=False)
 
-            image_statistics, image_list = compute_image_stats(path=path,
-                                                               image_list=image_list,
-                                                               image_statistics=image_statistics,
-                                                               prefix='selfcal_image')
+                image_statistics, image_list = compute_image_stats(path=path,
+                                                                   image_list=image_list,
+                                                                   image_statistics=image_statistics,
+                                                                   prefix='selfcal_image')
 
             steps_performed.append('split_trial_1')
 
