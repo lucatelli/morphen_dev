@@ -44,26 +44,33 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
 
         if running_container == 'native':
             # 'mpirun -np 4 wsclean-mp'
-            os.system(
+            command_exec = (
                 'mpirun -np '+str(nc)+' wsclean-mp -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
                 ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
                 ' ' + deconvolver + ' ' + deconvolver_options +
                 ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
-                ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis
-                     )
-        if running_container == 'singularity':
-            os.system(
-                'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
-                ' ' + 'mpirun -np '+str(nc)+' wsclean-mp -name ' + root_dir +
-                image_deepclean_name +
-                ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
-                ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
-                ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
-                ' ' + deconvolver + ' ' + deconvolver_options +
-                ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
                 ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
+            print('Command to be executed by WSClean: ')
+            print(command_exec)
+            os.system(command_exec)
+
+        if running_container == 'singularity':
+            command_exec = (
+            'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
+            ' ' + 'mpirun -np ' + str(nc) + ' wsclean-mp -name ' + root_dir +
+            image_deepclean_name +
+            ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
+            ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
+            ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
+            ' ' + deconvolver + ' ' + deconvolver_options +
+            ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
+            ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
+
+            print('Command to be executed by Singularity > WSClean: ')
+            print(command_exec)
+            os.system(command_exec)
 
         image_stats = {
             "#basename": image_deepclean_name + ext}  # get_image_statistics(image_deep_selfcal  + ext)
@@ -100,9 +107,6 @@ if __name__ == "__main__":
                         const=True, default=[''],
                         help="List of sky-tapers values")
 
-    parser.add_argument("--mask", nargs='?', default=None,
-                        const=True, help="A fits-file mask to be used.")
-
     parser.add_argument("--data", type=str, nargs='?', default='DATA',  # 'CORRECTED_DATA'
                         help="Which data column to use")
 
@@ -131,7 +135,8 @@ if __name__ == "__main__":
                              "Eg. --shift 13:15:30.68 +62.07.45.357")
 
     parser.add_argument("--scales", type=str, nargs='?', default="'0,5,20,40'",
-                        help="Scales to be used with the multiscale deconvolver.")
+                        help="Scales to be used with the multiscale deconvolver in WSClean. "
+                             "If None, scales will be determined automatically by WSClean.")
 
     parser.add_argument("--sx", type=str, nargs='?', default='2048',
                         help="Image Size x-axis")
@@ -148,11 +153,14 @@ if __name__ == "__main__":
     parser.add_argument("--minuv_l", type=str, nargs='?', default=None,
                         help="Min uv distance in lambda.")
 
-    parser.add_argument("--nsigma_automask", type=str, nargs='?', default='10.0',
+    parser.add_argument("--nsigma_automask", type=str, nargs='?', default='5.0',
                         help="Sigma level for automasking in wsclean.")
 
-    parser.add_argument("--nsigma_autothreshold", type=str, nargs='?', default='0.5',
+    parser.add_argument("--nsigma_autothreshold", type=str, nargs='?', default='2.0',
                         help="Sigma level for autothreshold in wsclean.")
+
+    parser.add_argument("--mask", nargs='?', default=None,
+                        const=True, help="A fits-file mask to be used.")
 
     parser.add_argument("--quiet", type=str, nargs='?', default='False',
                         help="Print wsclean output?")
@@ -228,9 +236,15 @@ if __name__ == "__main__":
     if args.deconvolution_mode == 'good':
         if with_multiscale == True or with_multiscale == 'True':
             deconvolver = '-multiscale'
-            deconvolver_options = ( ' -multiscale-scales ' + args.scales +
-                                    ' -multiscale-scale-bias '
-                                   '0.8 -multiscale-gain 0.05 ')
+            deconvolver_options = ' -multiscale-scale-bias 0.75 -multiscale-gain 0.05 '
+            if (args.scales is None) or (args.scales == 'None'):
+                deconvolver_options = deconvolver_options
+            else:
+                deconvolver_options = (deconvolver_options + ' -multiscale-scales ' + args.scales
+                                       + ' -multiscale-max-scales 6 ')
+
+            print('++++====>>>> Deconvolver Options:')
+            print(deconvolver_options)
             # deconvolver = ''
             # deconvolver_options = opt_args_list
             print(' ++>> ', deconvolver_options)
@@ -251,10 +265,11 @@ if __name__ == "__main__":
                             '-channels-out '+str(nc)+' -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
-                            '-deconvolution-threads 24 -j 24 -parallel-reordering 16 '
+                            '-deconvolution-threads 16 -j 16 -parallel-reordering 12 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            '-gridder wgridder  ' #-wstack-nwlayers-factor 12  -wstack-nwlayers-factor 6
-                            '-no-mf-weighting ' # -circular-beam -beam-size 0.1arcsec     
+                            '-gridder wgridder -wstack-nwlayers-factor 1 '
+                            # '-circular-beam ' #-circular-beam -beam-size 0.1arcsec
+                            '-no-mf-weighting -parallel-deconvolution 2048 ' 
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
                             '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(nc)+' '
@@ -293,7 +308,7 @@ if __name__ == "__main__":
     if args.minuv_l is not None:
         uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.4 -gain 0.05 -nmiter 200'
+    gain_args = ' -mgain 0.3 -gain 0.05 -nmiter 500 -super-weight 3.0 '
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
@@ -311,7 +326,7 @@ if __name__ == "__main__":
         continue_clean = ' --continue '
     else:
         continue_clean = ' '
-    opt_args = (' -super-weight 3.0 -mem 80 -abs-mem 35 '
+    opt_args = (' -mem 80 -abs-mem 35 '
                 # '-pol RL,LR -no-negative -circular-beam -no-reorder '
                 # ' -save-first-residual -save-weights -save-uv '-maxuv-l 3150000
                 ' '+uvselection+continue_clean+args.opt_args+' '
