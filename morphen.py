@@ -220,6 +220,10 @@ class radio_image_analysis():
             self.cell_size = 1
 
         _logging_.logger.info("Computing image level statistics.")
+        if self.z is None:
+            _logging_.logger.warning("The redshift of the source was not specified."
+                                     "Conversions to physical units will not be "
+                                     "performed.")
         # _logging_.file_handler.info("Computing image level statistics.")
 
         # self.image_level_statistics = \
@@ -301,7 +305,7 @@ class source_extraction():
         - AstroDendro
         - Photutils
     """
-    def __init__(self, input_data,z=0.05,ids_to_add=[1,2],
+    def __init__(self, input_data,z=0.05,ids_to_add=[1],
                  crop=False, box_size=256,
                  apply_mask=False, mask=None, dilation_size = None,
                  sigma_level=3, sigma_mask=6, vmin_factor=3, mask_component=None,
@@ -631,7 +635,8 @@ class sersic_multifit_radio():
         (self.results_fit, self.lmfit_results, self.lmfit_results_1st_pass,
          self.errors_fit, self.models, self.results_compact_conv_morpho,
          self.results_compact_deconv_morpho, self.results_ext_conv_morpho,
-         self.results_ext_deconv_morpho) = \
+         self.results_ext_deconv_morpho,
+         self.components_deconv_props, self.components_conv_props, self.class_resuts) = \
             mlibs.run_image_fitting(imagelist=[self.input_data.filename],
                                     residuallist=[self.input_data.residualname],
                                     aspect=self.aspect,
@@ -644,7 +649,7 @@ class sersic_multifit_radio():
                                     method1=self.method1,
                                     method2=self.method2,
                                     mask=self.SE.mask,
-                                    mask_for_fit=self.mask_fit,
+                                    # mask_for_fit=self.mask_fit,
                                     save_name_append='',
                                     fix_n=self.fix_n,
                                     tr_solver = self.tr_solver,
@@ -717,13 +722,17 @@ class sersic_multifit_radio():
         mlibs.print_logger_header(title="Extended Component Sizes",
                             logger=_logging_.logger)
         _logging_.logger.info(f" >=> C50 Extended Deconv Radii = "
-                              f"{self.C50ext_radii_deconv[0]:.2f} {self.size_unit}")
+                              f"{self.C50ext_radii_deconv[0]:.2f} {self.size_unit} "
+                              f"[flagged={self.results_ext_deconv_morpho['flag50'][0]}]")
         _logging_.logger.info(f" >=> C50 Extended Conv Radii = "
-                              f"{self.C50ext_radii_conv[0]:.2f} {self.size_unit}")
+                              f"{self.C50ext_radii_conv[0]:.2f} {self.size_unit} "
+                              f"[flagged={self.results_ext_conv_morpho['flag50'][0]}]")
         _logging_.logger.info(f" >=> C95 Extended Deconv Radii = "
-                              f"{self.C95ext_radii_deconv[0]:.2f} {self.size_unit}")
+                              f"{self.C95ext_radii_deconv[0]:.2f} {self.size_unit}"
+                              f"[flagged={self.results_ext_deconv_morpho['flag9095'][0]}]")
         _logging_.logger.info(f" >=> C95 Extended Conv Radii = "
-                              f"{self.C95ext_radii_conv[0]:.2f} {self.size_unit}")
+                              f"{self.C95ext_radii_conv[0]:.2f} {self.size_unit}"
+                              f"[flagged={self.results_ext_conv_morpho['flag9095'][0]}]")
 
 class sersic_multifit_general():
     """
@@ -746,8 +755,8 @@ class sersic_multifit_general():
                  sigma=6.0, use_mask_for_fit=False,
                  bkg_rms_map = None,
                  loss='cauchy', tr_solver='exact',
-                 regularize=True, f_scale=0.5, ftol=1e-13,
-                 xtol=1e-13, gtol=1e-13,
+                 regularize=True, f_scale=0.5, ftol=1e-12,
+                 xtol=1e-12, gtol=1e-12,
                  init_params=0.2, final_params=5.0,
                  convolution_mode='GPU',method1='least_squares',
                  method2='least_squares',z = 0.01,
@@ -810,8 +819,8 @@ class sersic_multifit_general():
                            ncomponents=self.SE.n_components,
                            constrained=self.constrained,
                            self_bkg=self.self_bkg,
-                           rms_map = self.bkg_rms_map,
-                           # rms_map=self.SE.bkg,
+                           # rms_map = self.bkg_rms_map,
+                           rms_map=self.SE.bkg,
                            # rms_map=None,
                            fix_n=self.fix_n,
                            fix_value_n=self.fix_value_n,
@@ -1141,6 +1150,8 @@ if __name__ == '__main__':
                         const=True,
                         help='Perform Sersic Image Fitting for radio data.')
 
+
+
     parser.add_argument('--solver2', type=str, default='least_squares',
                         help='2nd run solver method (nelder or least_squares).')
 
@@ -1151,6 +1162,16 @@ if __name__ == '__main__':
 
     parser.add_argument('--redshift', type=float, default=0.01,
                         help='Redshift of the source.')
+
+    parser.add_argument('-general_fit',  '--general_fit',
+                        required=False,  nargs='?',  default=False,
+                        const=True,
+                        help='Perform Sersic Image Fitting.')
+
+    parser.add_argument('-obs_type',  '--obs_type',
+                        required=False,  nargs='?',  default='radio',
+                        const=True,
+                        help='Which kind of observations (radio or other?)')
 
     # parser.add_argument('-sersic_optical',  '--sersic_optical',
     #                     required=False,  nargs='?',  default=False,
@@ -1172,7 +1193,7 @@ if __name__ == '__main__':
             radio_image_analysis(input_data)
         if "--find_sources" in sys.argv:
             SE = source_extraction(input_data,sigma=args.sigma,
-                              ell_size_factor=args.ell_size_factor)
+                              ell_size_factor=args.ell_size_factor,obs_type=args.obs_type)
             if "--sersic_radio" in sys.argv:
                 if args.residualname != None:
                     SMFR = sersic_multifit_radio(input_data, SE,
@@ -1184,3 +1205,10 @@ if __name__ == '__main__':
                 else:
                     print("Error: Please, provide a residual image (e.g. the one "
                           "generate during interferometric deconvolution).")
+
+            if "--general_fit" in sys.argv:
+                if args.psfname != None:
+                    SMFR = sersic_multifit_general(input_data, SE,
+                                                 method2=args.solver2)
+                else:
+                    print("Error: Please, provide a psf image.")

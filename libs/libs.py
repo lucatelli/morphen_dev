@@ -3053,6 +3053,10 @@ def shape_measures(imagename, residualname, z, mask_component=None, sigma_mask=6
                                                         add_save_name=add_save_name,
                                                         SAVE=SAVE)
     error_petro = False
+    if z is not None:
+        z = z
+    else:
+        z = 0.01
 
     results_final['error_petro'] = error_petro
     if mask_component is not None:
@@ -3244,7 +3248,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     if z is not None:
         z = z
     else:
-        z = 0.1
+        z = 0.01
     if error_petro == False:
         r_list_arcsec = r_list * cell_size
         Rp_arcsec = results_final['Rp'] * cell_size
@@ -6810,7 +6814,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                                 min=eval(param) - dr * 5,
                                                 max=eval(param) + dr * 5)
 
-        smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
+        smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
     else:
         if init_constraints is not None:
             if constrained == True:
@@ -7019,7 +7023,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 min=y0_min,
                                 max=y0_max)
 
-            smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
+            smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
         else:
             '''
             Run a complete free-optimization.
@@ -7034,7 +7038,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
-                smodel2D.set_param_hint('s_a', value=0.5, min=0.1, max=5.0)
+                smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -7493,7 +7497,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
              residualname=None,which_residual='shuffled',
              init_params=0.25, final_params=4.0, constrained=True,
              fix_n=True, fix_value_n=False, dr_fix=3,
-             fix_x0_y0=False, psf_name=None, convolution_mode='CPU',
+             fix_x0_y0=False, psf_name=None, convolution_mode='GPU',
              convolve_cutout=False, cut_size=512, self_bkg=False, rms_map=None,
              fix_geometry=True, contrain_nelder=False, workers=6,mask_region = None,
              special_name='', method1='least_squares', method2='least_squares',
@@ -7733,6 +7737,8 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
 
     if convolve_cutout is True:
         """
+        WARNING: DO NOT USE FOR NOW!
+        
         Instead of convolving the entire image,
         convolve only a box.
         Can be 10x faster.
@@ -8232,8 +8238,119 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
     return (model_dict, image_results_conv, image_results_deconv)
 
 
+def compute_model_properties(model_list,  # the model list of each component
+                             which_model,  # `convolved` or `deconvolved`?
+                             residualname,
+                             rms,  # the native rms from the data itself.
+                             z=None):
+    """
+    Helper function function to calculate model component properties.
+
+    For each model component fitted to a data using the sercic profile, perform morphometry on each
+    component image, both deconvolved and convolved images.
+    """
+    model_properties = {}
+    kk = 1
+    for model_component in model_list:
+        properties, _, _ = measures(imagename=model_component,
+                                          residualname=residualname,
+                                          z=z,
+                                          sigma_mask=6.0,
+                                          vmin_factor=3.0,
+                                          # data_2D=mlibs.ctn(model_component),
+                                          rms=rms)
+
+        model_properties[f"model_c_{which_model}_{kk}_props"] = properties.copy()
+        # model_properties[f"model_c_{which_model}_{kk}_props"]['model_file'] = model_component
+        model_properties[f"model_c_{which_model}_{kk}_props"]['comp_ID'] = kk
+        model_properties[f"model_c_{which_model}_{kk}_props"][
+            'model_file'] = os.path.basename(model_component)
+        kk = kk + 1
+
+    return (model_properties)
+
+
+def evaluate_compactness(deconv_props, conv_props):
+    """
+    Determine if a model component of a radio structure is compact or extended.
+
+    It uses the concentration index determined from the areas A20, A50, A80 and A90.
+
+    """
+    import pandas as pd
+    ncomps = deconv_props['comp_ID'].shape[0]
+
+    Spk_ratio = np.asarray(conv_props['peak_of_flux']) / np.asarray(deconv_props['peak_of_flux'])
+    I50_ratio = np.asarray(deconv_props['I50']) / np.asarray(conv_props['I50'])
+    class_criteria = {}
+    for i in range(ncomps):
+        class_criteria[f"comp_ID_{i + 1}"] = {}
+        if Spk_ratio[i] < 0.5:
+            class_criteria[f"comp_ID_{i + 1}"]['Spk_class'] = 'C'
+        if Spk_ratio[i] >= 0.5:
+            class_criteria[f"comp_ID_{i + 1}"]['Spk_class'] = 'D'
+
+        if I50_ratio[i] < 0.5:
+            class_criteria[f"comp_ID_{i + 1}"]['I50_class'] = 'C'
+        if I50_ratio[i] >= 0.5:
+            class_criteria[f"comp_ID_{i + 1}"]['I50_class'] = 'D'
+
+        AC1_conv_check = conv_props['AC1'].iloc[i]
+        AC2_conv_check = conv_props['AC2'].iloc[i]
+        AC1_deconv_check = deconv_props['AC1'].iloc[i]
+        AC2_deconv_check = deconv_props['AC2'].iloc[i]
+        print(AC1_conv_check)
+
+        # if (AC1_conv_check >= 1.0) or (AC1_conv_check == np.inf):
+        #     class_criteria[f"comp_ID_{i+1}"]['AC1_conv_class'] = 'C'
+        # if (AC2_conv_check >= 1.0) or AC2_conv_check == np.inf:
+        #     class_criteria[f"comp_ID_{i+1}"]['AC2_conv_class'] = 'C'
+        if AC1_deconv_check >= 1.0:
+            class_criteria[f"comp_ID_{i + 1}"]['AC1_deconv_class'] = 'C'
+        if AC1_deconv_check < 1.0:
+            class_criteria[f"comp_ID_{i + 1}"]['AC1_deconv_class'] = 'D'
+        if AC2_deconv_check >= 0.75:
+            class_criteria[f"comp_ID_{i + 1}"]['AC2_deconv_class'] = 'C'
+        if AC2_deconv_check < 0.75:
+            class_criteria[f"comp_ID_{i + 1}"]['AC2_deconv_class'] = 'D'
+
+    class_results_df = pd.DataFrame(class_criteria)
+    for i in range(ncomps):
+        dessision_compact = np.sum(class_results_df[f"comp_ID_{i + 1}"] == 'C')
+        # dessision_diffuse = np.sum(class_results_df[f"comp_ID_{i+1}"]=='D')
+        if dessision_compact > 2:
+            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'C'
+        if dessision_compact < 2:
+            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'D'
+        if dessision_compact == 2:
+            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'U'  # uncertain
+    return (class_criteria)
+
+def format_nested_data(nested_data):
+    """
+    Format to a data frame a list of nested dictionaries.
+
+    Parameters
+    ----------
+    nested_data : list of dictionaries
+        The list of dictionaries to be formatted.
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        The formatted data frame.
+    """
+    processed_data = []
+    for item in nested_data:
+        for model_name, props in item.items():
+            props['model_name'] = model_name  # Add the model name to the dictionary
+            processed_data.append(props)
+    df = pd.DataFrame(processed_data)
+    return(df)
+
+
 def run_image_fitting(imagelist, residuallist, sources_photometries,
-                      n_components, comp_ids, mask= None, mask_for_fit=None,
+                      n_components, comp_ids=[], mask= None, mask_for_fit=None,
                       which_residual='shuffled',
                       save_name_append='', z=None, aspect=None,
                       convolution_mode='GPU', workers=6,
@@ -8262,16 +8379,20 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
     lmfit_results_1st_pass = []
     errors_fit = []
     models = []
-    list_results_compact_conv_morpho = []
-    list_results_compact_deconv_morpho = []
-    list_results_ext_conv_morpho = []
-    list_results_ext_deconv_morpho = []
+    list_results_compact_conv_morpho = []   # store the morphological properties
+                                            # of the sum of all convolved compact components
+    list_results_compact_deconv_morpho = [] # store the morphological properties
+                                            # of the sum of all deconvolved compact components
+    list_results_ext_conv_morpho = []       # store the morphological properties
+                                            # of the sum of all convolved extended components
+    list_results_ext_deconv_morpho = []     # store the morphological properties
+                                            # of the sum of all deconvolved extended components
+    list_individual_deconv_props = []       # store the morphological properties
+                                            # of each deconvolved component.
+    list_individual_conv_props = []         # store the morphological properties
+                                            # of each convolved component.
 
-    all_comps_ids = np.arange(1, n_components + 1).astype('str')
-    mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
-    ext_ids = list(all_comps_ids[~mask_compact_ids])
-    print('#######################')
-    print(ext_ids,all_comps_ids)
+
     for i in range(len(imagelist)):
         #         model_dict_results = {}
         # try:
@@ -8343,6 +8464,52 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         lmfit_results.append(result_mini.params)
         lmfit_results_1st_pass.append(result_1.params)
         special_name = save_name_append
+
+        deconv_model_properties = compute_model_properties(model_list=image_results_deconv[:-1],
+                                                           which_model='deconv',
+                                                           residualname=crop_residual,
+                                                           rms=rms_std_res
+                                                           )
+
+        conv_model_properties = compute_model_properties(model_list=image_results_conv[:-2],
+                                                         which_model='conv',
+                                                         residualname=crop_residual,
+                                                         rms=rms_std_res
+                                                         )
+        list_individual_deconv_props.append(deconv_model_properties)
+        list_individual_conv_props.append(conv_model_properties)
+
+        deconv_props = pd.DataFrame(deconv_model_properties).T
+        conv_props = pd.DataFrame(conv_model_properties).T
+        class_results = evaluate_compactness(deconv_props, conv_props)
+        # for l in class_results.keys():
+        #     ID = 1
+        #     deconv_props.loc[l, 'comp_ID'] = ID
+
+
+        deconv_props.to_csv(image_results_deconv[-1].replace('.fits','_component_properties.csv'),
+                            header=True,index=False)
+        conv_props.to_csv(image_results_conv[-2].replace('.fits','_component_properties.csv'),
+                          header=True, index=False)
+
+
+
+
+
+        # comp_ids = []
+        if comp_ids == []:
+            for key in class_results.keys():
+                ID = 1
+                if class_results[key]['final_class'] == 'C':
+                    comp_ids.append(str(ID))
+
+        all_comps_ids = np.arange(1, n_components + 1).astype('str')
+        mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
+        ext_ids = list(all_comps_ids[~mask_compact_ids])
+        print('  ++>> Total component IDs modelled:', all_comps_ids)
+        print('  ++>> IDs attributed to compact structures:', comp_ids)
+        print('  ++>> IDs attributed to extended structures:', ext_ids)
+
         compact_model = 0
         extended_model = 0
         compact_model_deconv = 0
@@ -8382,6 +8549,16 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         parameter_results['#imagename'] = os.path.basename(crop_image)
         parameter_results['residualname'] = os.path.basename(crop_residual)
         parameter_results['beam_size_px'] = psf_beam_zise
+
+        # print('++++++++++++++++++++++++++++++++++++++++')
+        # print('++++++++++++++++++++++++++++++++++++++++')
+        # print('++++++++++++++++++++++++++++++++++++++++')
+        # print(compact_model)
+        # print(mask)
+        # print(mask_region)
+        # print('++++++++++++++++++++++++++++++++++++++++')
+        # print('++++++++++++++++++++++++++++++++++++++++')
+        # print('++++++++++++++++++++++++++++++++++++++++')
 
         results_compact_conv_morpho, _ = \
             shape_measures(imagename=crop_image,
@@ -8507,7 +8684,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             pd.DataFrame(list_results_compact_conv_morpho),
             pd.DataFrame(list_results_compact_deconv_morpho),
             pd.DataFrame(list_results_ext_conv_morpho),
-            pd.DataFrame(list_results_ext_deconv_morpho))
+            pd.DataFrame(list_results_ext_deconv_morpho),
+            list_individual_deconv_props,
+            list_individual_conv_props,class_results)
 
 
 
