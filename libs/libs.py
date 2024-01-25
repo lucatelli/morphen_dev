@@ -16,13 +16,13 @@
                                               ...._@* __ .....     ]]+ ..   _
                                                   .. .       . .. .|.|_ ..
 
-Using testig library file.
+Using testing library file.
 """
-__version__ = '0.3.1alpha-0'
+__version__ = '0.3.1alpha-1'
 __codename__ = 'Pelicoto'
 __author__  = 'Geferson Lucatelli'
-__email__   = 'geferson.lucatelli@postgrad.manchester.ac.uk'
-__date__    = '2023 08 31'
+__email__   = 'geferson.lucatelli@postgrad.manchester.ac.uk; gefersonlucatelli@gmail.com'
+__date__    = '2024 01 25'
 print(__doc__)
 print('Version',__version__, '('+__codename__+')')
 print('By',__author__)
@@ -116,25 +116,25 @@ try:
     import jax.numpy as jnp
     import jax.scipy as jscipy
 except:
-    print('Jax was not imported correctly, Sersic Fitting Will FAIL! ')
+    print('Jax was not imported/installed correctly, Sersic Fitting Will FAIL! ')
     print('Jax/GPU Libraries not imported.')
     pass
 #setting the GPU memory fraction to be used of 25% should be fine!
-os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.40'
-os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.50'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'true'
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=6'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 
-os.environ["NUM_CPUS"] = "16"  # Set the desired number of CPU threads here
+os.environ["NUM_CPUS"] = "24"  # Set the desired number of CPU threads here
 # os.environ["XLA_FLAGS"] = "--xla_cpu_threads=2"
-os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=16"  # Set the desired number of CPU
+os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=24"  # Set the desired number of CPU
 # threads here
 
-os.environ['MKL_NUM_THREADS']='16'
-os.environ['OPENBLAS_NUM_THREADS']='16'
-os.environ["NUM_INTER_THREADS"]="16"
-os.environ["NUM_INTRA_THREADS"]="16"
+os.environ['MKL_NUM_THREADS']='24'
+os.environ['OPENBLAS_NUM_THREADS']='24'
+os.environ["NUM_INTER_THREADS"]="24"
+os.environ["NUM_INTRA_THREADS"]="24"
 #
 os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=true "
                            "intra_op_parallelism_threads=16")
@@ -1033,13 +1033,14 @@ def tcreate_beam_psf(imname, cellsize=None,size=(128,128),app_name='',
         majoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
 
-    else:
+    if (aspect == 'elliptical') or (aspect is None):
+    # else:
         print('INFO: Using Elliptical Gaussian for Gaussian beam convolution.')
         minoraxis = str(imhd['restoringbeam']['minor']['value']) + str(
             imhd['restoringbeam']['minor']['unit'])
         majoraxis = str(imhd['restoringbeam']['major']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
-
+    print(f"++==>>  PSF major/minor axis = ', {majoraxis} X {minoraxis}")
 
     pa = str(imhd['restoringbeam']['positionangle']['value']) + str(
         imhd['restoringbeam']['positionangle']['unit'])
@@ -1929,6 +1930,7 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
             savename = os.path.dirname(residualname) + '/' + os.path.basename(
                 residualname).replace('.fits', '.cutout' + special_name + '.fits')
             new_hdul.writeto(savename, overwrite=True)
+    return (ra_f, dec_f)
 
         # save the cutout image to a new FITS file
 
@@ -3527,12 +3529,27 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     mask_L80_idx = [i for i, x in enumerate(mask_L80) if x]
     mask_L90_idx = [i for i, x in enumerate(mask_L90) if x]
     mask_L95_idx = [i for i, x in enumerate(mask_L95) if x]
-
+    """
+    The tries and exceptions bellow are temporary solutions to avoid 
+    errors when there are not enough pixels or no signal at all, when computing 
+    the growth curve.    
+    """
     try:
         sigma_20 = levels[mask_L20_idx[-1]]
+        flag20 = False
     except:
-        sigma_20 = levels[mask_L50_idx[-1]]
-    sigma_50 = levels[mask_L50_idx[-1]]
+        flag20 = True
+        try:
+            sigma_20 = levels[mask_L50_idx[-1]]
+        except:
+            sigma_20 = last_level * std
+
+    try:
+        sigma_50 = levels[mask_L50_idx[-1]]
+        flag50 = False
+    except:
+        flag50 = True
+        sigma_50 = last_level * std
     try:
         sigma_80 = levels[mask_L80_idx[-1]]
         sigma_90 = levels[mask_L90_idx[-1]]
@@ -3602,10 +3619,19 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
             L20 = Lgrow[mask_L50_idx[-1]]
         except:
             L20 = 0.0
-    L50_norm = Lgrow_norm[mask_L50_idx[-1]]  # ~ 0.5
-    L50 = Lgrow[mask_L50_idx[-1]]
-    L80_norm = Lgrow_norm[mask_L80_idx[-1]]  # ~ 0.8
-    L80 = Lgrow[mask_L80_idx[-1]]
+            L20_norm = 0.9999
+    try:
+        L50_norm = Lgrow_norm[mask_L50_idx[-1]]  # ~ 0.5
+        L50 = Lgrow[mask_L50_idx[-1]]
+    except:
+        L50_norm = 0.9999
+        L50 = 0.0
+    try:
+        L80_norm = Lgrow_norm[mask_L80_idx[-1]]  # ~ 0.8
+        L80 = Lgrow[mask_L80_idx[-1]]
+    except:
+        L80_norm = 0.9999
+        L80 = 0.0
     try:
         """
         Not enough pixels
@@ -3821,6 +3847,8 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     results['C90'] = sigma_90 / std
     results['C90radii'] = C90radii
     results['npix90'] = npix90
+    results['flag20'] = flag20
+    results['flag50'] = flag50
     results['flag9095'] = flag9095
     results['flagL9095'] = flagL9095
 
@@ -7622,7 +7650,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         if convolution_mode == 'GPU':
             if logger is not None:
                 logger.debug(f"---------------------------------------")
-                logger.debug(f" <<< PERFORMING CONVOLUTION WITH GPU >>> ")
+                logger.debug(f" <<< PERFORMING CONVOLUTION WITH JAX >>> ")
                 logger.debug(f"---------------------------------------")
             PSF_BEAM = jnp.array(PSF_BEAM_raw)
 
@@ -7944,7 +7972,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         # print(model_temp[0])
         model = model + model_temp
         # print(model)
-        bkg_comp_i = FlatSky(background, params['s_a'].value) / ncomponents
+        bkg_comp_i = FlatSky_cpu(background, params['s_a'].value) / ncomponents
         model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
 
 
@@ -8215,6 +8243,20 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       fix_n=[True, True, True, True, True, True, False],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
                       dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None):
+    """
+    Support function to run the image fitting to a image or to a list of images.
+
+    Note. This function was implemented to  help with my own research, but it may be useable in
+    some contexts. It is not a general function, and it is not well documented.
+
+    What it does:
+    For a multi-component source, this function will handle information individually for
+    each component and store information in a dictionary.
+
+
+
+    """
+
     results_fit = []
     lmfit_results = []
     lmfit_results_1st_pass = []
