@@ -70,7 +70,7 @@ msmd = casatools.msmetadata()
 ms = casatools.ms()
 tb = casatools.table()
 
-import config_test as cf
+import config as cf
 from importlib import reload
 reload(cf)
 
@@ -105,6 +105,7 @@ params_faint = cf.params_faint
 params_standard_1 = cf.params_standard_1
 params_standard_2 = cf.params_standard_2
 params_bright = cf.params_bright
+params_trial_2 = cf.params_trial_2
 
 def select_parameters(total_flux,snr=None):
     if total_flux < 10:
@@ -1085,7 +1086,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
 
         applycal(vis=g_vis, gaintable=gain_tables, spwmap=spwmap,
                  interp = interp,
-                 flagbackup=False, calwt=True)
+                 flagbackup=False, calwt=False)
 
         print('     => Reporting data flagged after selfcal '
               'apply interaction', n_interaction, '...')
@@ -1121,7 +1122,7 @@ def run_rflag(g_vis, display='report', action='calculate',
 
     if action == 'apply':
         flagdata(vis=g_vis, field='', spw='',
-                 datacolumn='data',
+                 datacolumn=datacolumn,
                  mode='extend', action=action, display='report',
                  flagbackup=False, growtime=75.0,
                  growfreq=75.0, extendpols=False)
@@ -1131,11 +1132,11 @@ def run_rflag(g_vis, display='report', action='calculate',
                     comment='After rflag at selfcal step.')
         try:
             print(' ==> Running statwt on split data pos rflag...')
-            statwt(vis=g_vis, statalg='chauvenet', timebin='360s',
+            statwt(vis=g_vis, statalg='chauvenet', timebin='24s',
                    datacolumn='corrected',minsamp = 3)
         except:
             print(' ==> Running statwt on split data pos rflag...')
-            statwt(vis=g_vis, statalg='chauvenet', timebin='360s',
+            statwt(vis=g_vis, statalg='chauvenet', timebin='24s',
                    datacolumn='data', minsamp = 3)
 
         print(' ==> Flag statistics after rflag:')
@@ -1351,14 +1352,14 @@ if run_mode == 'terminal':
                 print("     ==> Running statwt.")
 
                 if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
-                    statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='data')
+                    statwt(vis=g_vis, statalg='chauvenet', timebin='24s', datacolumn='data')
             else:
                 print("     ==> Skipping flagging backup init (exists).")
                 print("     ==> Restoring flags to original...")
                 flagmanager(vis=g_name + '.ms', mode='restore', versionname='Original')
                 if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
                     print("     ==> Running statwt.")
-                    statwt(vis=g_vis, statalg='chauvenet', timebin='60s', datacolumn='data')
+                    statwt(vis=g_vis, statalg='chauvenet', timebin='24s', datacolumn='data')
             print(" ==> Amount of data flagged at the start of selfcal.")
             summary = flagdata(vis=g_name + '.ms', field='', mode='summary')
             report_flag(summary, 'field')
@@ -1500,18 +1501,19 @@ if run_mode == 'terminal':
                 steps_performed.append('test_image')
 
 
-        try:
-            # current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
-            selfcal_params = select_parameters(image_statistics['test_image']['total_flux_mask'] * 1000)
-            parameter_selection['test_image'] = selfcal_params
-            print('Initial Template of Parameters:')
-            p0_params = parameter_selection['test_image']['p0']
-            print_table(p0_params)
-
-
-        except:
-            print('No test image found. Have you run the test_image step?')
-        #
+        if params_trial_2 is not None:
+            p0_params = params_trial_2['p0']
+        else:
+            try:
+                # current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
+                selfcal_params = select_parameters(image_statistics['test_image']['total_flux_mask'] * 1000)
+                parameter_selection['test_image'] = selfcal_params
+                print('Initial Template of Parameters:')
+                p0_params = parameter_selection['test_image']['p0']
+                print_table(p0_params)
+            except:
+                print('No test image found. Have you run the test_image step?')
+            #
 
         if 'p0' in steps and 'p0' not in steps_performed:
             iteration = '0'
@@ -1683,20 +1685,20 @@ if run_mode == 'terminal':
                 gain_tables_applied['p0'] = gain_tables_selfcal_temp
                 steps_performed.append('p0')
 
-        try:
-            selfcal_params = select_parameters(
-                image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
-            parameter_selection['p0_pos'] = selfcal_params
-            print(' ++++>> Template of Parameters to be used for now on:',
-                  parameter_selection['p0_pos']['name'])
-            if parameter_selection['p0_pos']['p0']['combine'] == 'spw':
-                parameter_selection['p0_pos']['p0']['spwmap'] = get_spwmap(g_vis)
-        except:
-            pass
+        if params_trial_2 is not None:
+            parameter_selection['p0_pos'] = params_trial_2
+        else:
+            try:
+                selfcal_params = select_parameters(
+                    image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
+                parameter_selection['p0_pos'] = selfcal_params
+                print(' ++++>> Template of Parameters to be used for now on:',
+                      parameter_selection['p0_pos']['name'])
+                if parameter_selection['p0_pos']['p0']['combine'] == 'spw':
+                    parameter_selection['p0_pos']['p0']['spwmap'] = get_spwmap(g_vis)
+            except:
+                pass
 
-        """
-        https://indico.skatelescope.org/event/1125/registrations/562/?token=95198664-bbf9-47a3-bb02-8212f82c8104
-        """
 
         if (('p1' in steps) and ('p1' not in steps_performed) and
                 ('p1' in parameter_selection['p0_pos'])):
@@ -1761,6 +1763,10 @@ if run_mode == 'terminal':
             if p1_params['combine'] == 'spw':
                 p1_params['spwmap'] = get_spwmap(g_vis)
 
+            if params_trial_2 is not None:
+                phase_tables = gain_tables_applied['p0'].copy()
+            else:
+                phase_tables = []
             if 'p1' not in steps_performed:
                 gain_tables_selfcal_p1 = self_gain_cal(g_name,
                                                        n_interaction=iteration,
@@ -1775,7 +1781,7 @@ if run_mode == 'terminal':
                                                        # interp='cubic,cubic',
                                                        action='apply',
                                                        PLOT=False,
-                                                       gain_tables = []
+                                                       gain_tables = phase_tables
                                                        # gain_tables=gain_tables_applied[
                                                        #     'p0'].copy()
                                                        )
@@ -2009,13 +2015,16 @@ if run_mode == 'terminal':
             #                                          return_solution_stats=True))
             minblperant = 4
 
-            if 'p2' not in gain_tables_applied:
-                if 'p1' not in gain_tables_applied:
-                    phase_tables = gain_tables_applied['p0']
-                else:
-                    phase_tables = gain_tables_applied['p1']
+            if params_trial_2 is not None:
+                phase_tables = gain_tables_applied['p1'].copy()
             else:
-                phase_tables = gain_tables_applied['p2']
+                if 'p2' not in gain_tables_applied:
+                    if 'p1' not in gain_tables_applied:
+                        phase_tables = gain_tables_applied['p0']
+                    else:
+                        phase_tables = gain_tables_applied['p1']
+                else:
+                    phase_tables = gain_tables_applied['p2']
 
             if 'ap1' not in steps_performed:
                 gain_tables_selfcal_ap1 = self_gain_cal(g_name,
@@ -2043,9 +2052,12 @@ if run_mode == 'terminal':
         if 'split_trial_1' in steps and 'split_trial_1' not in steps_performed:
             vis_split_name_1 = g_name + '_trial_1.ms'
             if not os.path.exists(vis_split_name_1):
-                print(' ==> Splitting data after first trial...')
+                print(' ==> Splitting data after selfcal...')
                 split(vis=g_name + '.ms', outputvis=vis_split_name_1,
                       datacolumn='corrected', keepflags=True)
+                print(' ==> Running statw on split data...')
+                statwt(vis=vis_split_name_1, statalg='chauvenet', timebin='24s',
+                       datacolumn='data')
             niter = 150000
             ROBUSTS = [-0.5,0.5] #[-2.0,0.0,0.5,1.0]
             print(' ==> Imaging visibilities after first trial of selfcal...')
