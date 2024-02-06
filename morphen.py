@@ -82,7 +82,7 @@ class config():
     reset_rc_params()
     
     sigma=3
-    mask_iterations = 2
+    mask_iterations = 1
     show_plots = True
     ext = '.jpg'
     log_file_name = 'logfile.log'
@@ -150,17 +150,20 @@ class read_data():
         self.filename = filename
         self.residualname = residualname
         self.psfname = psfname
-        # self.normalise_in_log()
         self.print_names()
         self.get_data()
 
     def print_names(self):
         if self.filename != None:
-            print('Image File:', os.path.basename(self.filename))
+            print('++>> Image File:', os.path.basename(self.filename))
         if self.residualname != None:
-            print('Residual File:', os.path.basename(self.residualname))
+            print('++>> Residual File:', os.path.basename(self.residualname))
+        elif self.residualname == None:
+            print('-->> No Residual File was provided.')
         if self.psfname != None:
-            print('PSF File:', os.path.basename(self.psfname))
+            print('++>> PSF File:', os.path.basename(self.psfname))
+        elif self.psfname == None:
+            print('-->> No PSF File was provided.')
 
     def get_data(self):
         self.image_data_2D = None
@@ -551,10 +554,10 @@ class sersic_multifit_radio():
     def __init__(self, input_data, SE, aspect=None, 
                  which_residual='shuffled',
                  fix_geometry = True,
-                 comp_ids = ['1'],
+                 comp_ids = [],
                  fix_n = None, 
                  fix_value_n = None, dr_fix = None,
-                 sigma=6.0, use_mask_for_fit=False,
+                 sigma=6.0, use_mask_for_fit=False,mask_fit=None,
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
                  method2='least_squares',z = 0.01):
@@ -600,8 +603,16 @@ class sersic_multifit_radio():
         self.input_data = input_data
         self.SE = SE
         if use_mask_for_fit == True:
-            self.mask_fit = self.SE.mask
+            if mask_fit==None:
+                _logging_.logger.info(f" ++>> Using a mask for fitting was requested, "
+                                      f"but no mask was provided. Using the mask from the source "
+                                      f"extraction object (SE.mask).")
+                self.mask_fit = self.SE.mask
+            else:
+                _logging_.logger.info(f" ++>> Using a mask for fitting.")
+                self.mask_fit = mask_fit
         else:
+            _logging_.logger.info(f" ++>> Fitting without a mask.")
             self.mask_fit = None
         self.aspect = aspect
         self.comp_ids = comp_ids
@@ -636,7 +647,8 @@ class sersic_multifit_radio():
          self.errors_fit, self.models, self.results_compact_conv_morpho,
          self.results_compact_deconv_morpho, self.results_ext_conv_morpho,
          self.results_ext_deconv_morpho,
-         self.components_deconv_props, self.components_conv_props, self.class_resuts) = \
+         self.components_deconv_props, self.components_conv_props,
+         self.class_resuts,self.compact_model) = \
             mlibs.run_image_fitting(imagelist=[self.input_data.filename],
                                     residuallist=[self.input_data.residualname],
                                     aspect=self.aspect,
@@ -649,7 +661,7 @@ class sersic_multifit_radio():
                                     method1=self.method1,
                                     method2=self.method2,
                                     mask=self.SE.mask,
-                                    # mask_for_fit=self.mask_fit,
+                                    mask_for_fit=self.mask_fit,
                                     save_name_append='',
                                     fix_n=self.fix_n,
                                     tr_solver = self.tr_solver,

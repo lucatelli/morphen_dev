@@ -120,24 +120,24 @@ except:
     print('Jax/GPU Libraries not imported.')
     pass
 #setting the GPU memory fraction to be used of 25% should be fine!
-os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.50'
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.25'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'true'
 # os.environ["XLA_FLAGS"] = '--xla_force_host_platform_device_count=6'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 
-os.environ["NUM_CPUS"] = "24"  # Set the desired number of CPU threads here
-# os.environ["XLA_FLAGS"] = "--xla_cpu_threads=2"
-os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=24"  # Set the desired number of CPU
-# threads here
-
-os.environ['MKL_NUM_THREADS']='24'
-os.environ['OPENBLAS_NUM_THREADS']='24'
-os.environ["NUM_INTER_THREADS"]="24"
-os.environ["NUM_INTRA_THREADS"]="24"
+# os.environ["NUM_CPUS"] = "12"  # Set the desired number of CPU threads here
+# # os.environ["XLA_FLAGS"] = "--xla_cpu_threads=2"
+# os.environ["TF_XLA_FLAGS"] = "--xla_cpu_threads=12"  # Set the desired number of CPU
+# # threads here
 #
-os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=true "
-                           "intra_op_parallelism_threads=16")
+# os.environ['MKL_NUM_THREADS']='12'
+# os.environ['OPENBLAS_NUM_THREADS']='12'
+# os.environ["NUM_INTER_THREADS"]="12"
+# os.environ["NUM_INTRA_THREADS"]="12"
+# #
+# os.environ["XLA_FLAGS"] = ("--xla_cpu_multi_thread_eigen=false "
+#                            "intra_op_parallelism_threads=12")
 
 
 # sys.path.append('../../scripts/analysis_scripts/')
@@ -732,7 +732,30 @@ def beam_shape(image):
 
 def sort_list_by_beam_size(imagelist, residuallist=None,return_df=False):
     """
-    Sort a list of images by beam size.
+    Sort a list of images files by beam size.
+
+    If no residual list is provided, it will assume that the residual files are in the same
+    directory as the image files, and that the residual files have the same name prefix as the
+    image files.
+
+
+    Parameters
+    ----------
+    imagelist : list
+        List of image files.
+    residuallist : list, optional
+        List of associated residual files.
+    return_df : bool, optional
+        Return a pandas dataframe with the beam sizes.
+
+    Returns
+    -------
+    imagelist_sort : list
+        Sorted list of image files.
+    residuallist_sort : list
+        Sorted list of residual files.
+    df_beam_sizes_sorted : pandas dataframe
+        Dataframe with the beam sizes.
     """
     beam_sizes_list = []
     for i in tqdm(range(len(imagelist))):
@@ -1901,9 +1924,9 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
         new_hdul = fits.HDUList(
             [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
         new_hdul[0].header.update(cutout.wcs.to_header())
-        savename = os.path.dirname(imagename) + '/' + os.path.basename(imagename).replace(
+        savename_img = os.path.dirname(imagename) + '/' + os.path.basename(imagename).replace(
             '.fits', '.cutout' + special_name + '.fits')
-        new_hdul.writeto(savename, overwrite=True)
+        new_hdul.writeto(savename_img, overwrite=True)
 
     if residualname is not None:
         with fits.open(residualname) as hdul:
@@ -1927,10 +1950,10 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
             new_hdul = fits.HDUList(
                 [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
             new_hdul[0].header.update(cutout.wcs.to_header())
-            savename = os.path.dirname(residualname) + '/' + os.path.basename(
+            savename_res = os.path.dirname(residualname) + '/' + os.path.basename(
                 residualname).replace('.fits', '.cutout' + special_name + '.fits')
-            new_hdul.writeto(savename, overwrite=True)
-    return (ra_f, dec_f)
+            new_hdul.writeto(savename_res, overwrite=True)
+    return (ra_f, dec_f,savename_img)
 
         # save the cutout image to a new FITS file
 
@@ -2756,35 +2779,25 @@ def level_statistics(img, cell_size=None, mask_component=None,
         g = g * mask
         apply_mask = False  # do not calculate the mask again, in case is True.
         g = g * mask
-        g2 = g[mask]
     if apply_mask == True:
         _, mask_dilated = mask_dilation(img, cell_size=cell_size, sigma=sigma,
                                         dilation_size=dilation_size, rms=rms,
                                         iterations=iterations,
                                         PLOT=False)
         g = g * mask_dilated
-        if mask is not None:
-            g2 = g2[mask_dilated]
-        else:
-            g2 = g[mask]
 
-    # if (mask_component is None) and (apply_mask == False) and (mask is None):
-    #     g = g_
-    #     g2 = g_
 
-    # std2 = mad_std(g2)
 
-    dl = 1e-6
     if mask_component is not None:
-        levels = np.geomspace(g.max(), (1.0 * std + dl), 5)
+        levels = np.geomspace(g.max(), (1 * std), 5)
         levels_top = np.geomspace(g.max(), g.max() * 0.1, 3)
         try:
-            levels_mid = np.geomspace(g.max() * 0.1, (10 * std + dl), 5)
+            levels_mid = np.geomspace(g.max() * 0.1, (10 * std), 5)
         except:
             levels_mid = np.asarray([0])
         try:
-            levels_low = np.geomspace(10 * std, (6.0  * std + dl), 2)
-            levels_uncertain = np.geomspace(6.0 * std, (3.0 * std + dl), 3)
+            levels_low = np.geomspace(10 * std, (6.0  * std), 2)
+            levels_uncertain = np.geomspace(6.0 * std, (3.0 * std), 3)
         except:
             levels_low = np.asarray([0])
             levels_uncertain = np.asarray([0])
@@ -2792,29 +2805,29 @@ def level_statistics(img, cell_size=None, mask_component=None,
     else:
         if apply_mask is not False:
             # print('asdasd', g.max(), std)
-            levels = np.geomspace(g.max(), (1 * std + dl), 5)
+            levels = np.geomspace(g.max(), (1 * std), 5)
             levels_top = np.geomspace(g.max(), g.max() * 0.1, 3)
             try:
-                levels_mid = np.geomspace(g.max() * 0.1, (10 * std + dl), 5)
+                levels_mid = np.geomspace(g.max() * 0.1, (10 * std), 5)
             except:
                 levels_mid = np.asarray([0])
             try:
-                levels_low = np.geomspace(10 * std, (6.0 * std + dl), 2)
-                levels_uncertain = np.geomspace(6 * std, (6.0 * std + dl), 3)
+                levels_low = np.geomspace(10 * std, (6.0  * std), 2)
+                levels_uncertain = np.geomspace(6 * std, (3.0 * std), 3)
             except:
                 levels_low = np.asarray([0])
                 levels_uncertain = np.asarray([0])
         else:
-            levels = np.geomspace(g.max(), (3 * std + dl), 5)
+            levels = np.geomspace(g.max(), (3 * std), 5)
             levels_top = np.geomspace(g.max(), g.max() * 0.1, 3)
             # levels_mid = np.geomspace(g.max() * 0.1, (10 * std + dl), 5)
             try:
-                levels_mid = np.geomspace(g.max() * 0.1, (10 * std + dl), 5)
+                levels_mid = np.geomspace(g.max() * 0.1, (10 * std), 5)
             except:
                 levels_mid = np.asarray([0])
             try:
-                levels_low = np.geomspace(10 * std, (5.0 * std + dl), 2)
-                levels_uncertain = np.geomspace(3 * std, (1.0 * std + dl), 3)
+                levels_low = np.geomspace(10 * std, (6.0  * std), 2)
+                levels_uncertain = np.geomspace(3 * std, (1.0 * std), 3)
             except:
                 levels_low = np.asarray([0])
                 levels_uncertain = np.asarray([0])
@@ -3226,6 +3239,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                              show_figure=show_figure,
                                              add_save_name=add_save_name,
                                              npixels=npixels,logger=logger)
+            error_petro = False
         except:
             if logger is not None:
                 logger.warning(f"  CALC >> ERROR when computing Petrosian properties. "
@@ -3348,7 +3362,7 @@ def deprecated(old_name, new_name):
     return decorator
 
 def compute_image_properties(img, residual, cell_size=None, mask_component=None,
-                             aspect=1, last_level=1.0, mask=None, data_2D=None,
+                             aspect=1, last_level=1.5, mask=None, data_2D=None,
                              dilation_size=None, iterations=2,
                              dilation_type='disk',
                              sigma_mask=6, rms=None, results=None, bkg_to_sub=None,
@@ -3359,9 +3373,71 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     """
     Params
     ------
-
-    mask_component: 2D np array
-        for a multi component source, this is the mask for a specific component.
+    img : str
+        The path to the image to be analyzed.
+    residual : str
+        The path to the residual image associated with the image.
+    cell_size : float, optional
+        The default is None. The size of the pixel in arcseconds.
+        If None, `get_cell_size` will be used to get from the header.
+    mask_component : 2D np array, optional
+        The default is None. If not None, this is the mask for a specific component
+        when performing a multi-component source analysis.
+    aspect : float, optional (experimental)
+        The default is 1. The aspect ratio of the image for plotting.
+    last_level : float, optional
+        New threshold level (as multiple of sigma_mad) to be used inside the existing mask.
+    mask : 2D np array, optional
+        The default is None. If not None, the function `mask_dilation` will determine it with
+        default parameters.
+    data_2D : 2D np array, optional
+        The default is None. This can be used to pass a 2D array directly to the function.
+        For example, when calculating properties from an array without reading from a file,
+        e.g. a model image, you can use this. But, to obtain meaningful physical units,
+        you must provide the corresponding image file where this array was derived from.
+    dilation_size : int, optional
+        The default is None. The size of the dilation to be used in the mask dilation.
+        If None, the default value will be the size of the restoring beam.
+    iterations : int, optional
+        The default is 2. The number of iterations to be used in the mask dilation.
+        If signs of over-dilation are present, you can set to 1.
+    dilation_type : str, optional
+        The default is 'disk'. The type of dilation to be used in the mask dilation.
+    sigma_mask : float, optional
+        The default is 6. The sigma level to be used in the mask dilation.
+    rms : float, optional
+        The default is None. The rms value to be used in the mask dilation.
+        If None, the function `mad_std` will be used to calculate it from the residual image,
+        if provided. If the residual image is not provided, the function will use the image itself.
+        But, in that case, the result may not be accurate (overestimated) if the image size is
+        comparable in size to the size of the source structure.
+    results : dict, optional
+        The default is None. A dictionary to store the results.
+        You can pass an existing external dictionary, so the results will be appended to it.
+    bkg_to_sub : 2D np array, optional (EXPERIMENTAL)
+        The default is None. The background to be subtracted from the image.
+    apply_mask : bool, optional
+        The default is True. If True, the mask dilation will be calcualted from the image.
+    vmin_factor : float, optional
+        The default is 3. The factor (as a multiple of sigma_mad) to be used in the vmin
+        calculation for the image plot.
+    vmax_factor : float, optional
+        The default is 0.5. The factor (as a multiple of peak brightness) to be used in the vmax
+        calculation for the image plot.
+    crop : bool, optional
+        The default is False. If True, the image will be cropped to a box_size.
+    box_size : int, optional
+        The default is 256. The size of the box to be used in the image cropping.
+    SAVE : bool, optional
+        The default is True. If True, the image plot will be saved to a file.
+    add_save_name : str, optional
+        The default is ''. A string to be added to the image plot file name.
+    show_figure : bool, optional
+        The default is True. If True, the image plot will be shown.
+    ext : str, optional
+        The default is '.jpg'. The file extension to be used in the image plot file name.
+    logger : logging.Logger, optional
+        The default is None. A logger object to be used to log messages.
 
     """
     if results == None:
@@ -3437,7 +3513,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     # if (apply_mask is None) and  (mask is None):
     #     mask = mask_component
         # g = g_
-    if (mask_component is None) and (apply_mask ==False) and (mask is None):
+    if (mask_component is None) and (apply_mask == False) and (mask is None):
         # g = g_
         total_flux = np.sum(g * (g > 3 * std)) / beam_area_
         total_flux_nomask = np.sum(g) / beam_area_
@@ -3701,6 +3777,15 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
                                           omin)
     A95, C95radii, npix95 = estimate_area((g > sigma_95) * mask, cell_size, omaj,
                                           omin)
+
+    if flag20 == True:
+        if flag50 == False:
+            A20, C20radii, npix20 = A50 / 2, C50radii / 2, npix50 / 2
+        else:
+            try:
+                A20, C20radii, npix20 = A80 / 3, C80radii / 3, npix80 / 3
+            except:
+                A20, C20radii, npix20 = A95 / 4, C95radii / 4, npix95 / 4
 
     try:
         results['conv_P20'], results['conv_A20'] = convex_shape(g20)
@@ -4040,7 +4125,8 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
 
 def structural_morphology(imagelist, residuallist,
                           indices, masks_deblended,
-                          zd, big_mask, data_2D=None,sigma_mask=6.0,
+                          zd, big_mask=None, data_2D=None,sigma_mask=6.0,
+                          iterations = 1,
                           sigma_loop_init=6.0, do_measurements='all'):
     """
     From the emission  of a given source and its deblended components,
@@ -4100,21 +4186,20 @@ def structural_morphology(imagelist, residuallist,
                                                           npixels=500, fwhm=121,
                                                           kernel_size=121,
                                                           sigma_mask=sigma_mask,
-                                                          last_level=3.0,
-                                                          iterations=2,
+                                                          last_level=1.5,
+                                                          iterations=iterations,
                                                           dilation_size=None,
                                                           do_measurements=do_measurements,
                                                           do_PLOT=True,
                                                           show_figure=True,
                                                           add_save_name='')
-
+            mask = mask*big_mask
             results_conc.append(processing_results_source)
             # bkg_ = sep_background(crop_image, apply_mask=True, mask=None, bw=11,
             #                       bh=11, fw=12, fh=12)
 
             omaj, omin, _, _, _ = beam_shape(crop_image)
-            dilation_size = int(
-                np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+            dilation_size = int(0.5*np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
             # print('dilation_size=', dilation_size)
 
             if len(indices) > 1:
@@ -4126,16 +4211,17 @@ def structural_morphology(imagelist, residuallist,
                         '#imagename'] = os.path.basename(crop_image)
 
                     mask_component = masks_deblended[j]
-                    data_component = data_2D
+                    data_component = mask_component*data_2D.copy()
                     add_save_name = 'comp_' + str(j + 1)
                     processing_results_components['comp_ID'] = str(j + 1)
 
                     try:
+                        # mask_new = mask_component.copy()
                         _, mask_new = \
-                            mask_dilation_from_mask(ctn(crop_image),
+                            mask_dilation_from_mask(data_2D,
                                                     mask_component,
                                                     sigma=sigma_loop,
-                                                    PLOT=True,iterations=2,
+                                                    PLOT=True,iterations=iterations,
                                                     dilation_size=dilation_size,
                                                     show_figure=True)
 
@@ -4150,9 +4236,9 @@ def structural_morphology(imagelist, residuallist,
                                      deblend=False, apply_mask=False,
                                      plot_catalog=False, bkg_sub=False,
                                      mask_component=mask_new, rms=std,
-                                     iterations=2, npixels=1000, fwhm=121,
+                                     iterations=iterations, npixels=1000, fwhm=121,
                                      kernel_size=121, sigma_mask=sigma_loop,
-                                     last_level=3.0,
+                                     last_level=1.5,
                                      # bkg_to_sub = bkg_.back(),
                                      dilation_size=dilation_size,
                                      add_save_name=add_save_name,
@@ -4167,20 +4253,21 @@ def structural_morphology(imagelist, residuallist,
                             error_mask = True
                             while error_mask and sigma_loop > 1.0:
                                 try:
+                                    # mask_new = mask_component.copy()
                                     _, mask_new = \
                                         mask_dilation_from_mask(ctn(crop_image),
                                                                 mask_component,
                                                                 rms=std,
                                                                 sigma=sigma_loop,
-                                                                iterations=2,
+                                                                iterations=3,
                                                                 PLOT=True,
                                                                 dilation_size=dilation_size,
                                                                 show_figure=True)
 
                                     if sigma_loop >= 3.0:
-                                        last_level = 3.0
+                                        last_level = 1.5
                                     if sigma_loop < 3.0:
-                                        last_level = sigma_loop - 1.0
+                                        last_level = sigma_loop - 0.5
 
                                     (processing_results_components, mask,
                                      _) = measures(crop_image, crop_residual,
@@ -4189,7 +4276,7 @@ def structural_morphology(imagelist, residuallist,
                                                    plot_catalog=False,
                                                    bkg_sub=False,
                                                    mask_component=mask_new,
-                                                   rms=std, iterations=2,
+                                                   rms=std, iterations=3,
                                                    npixels=1000, fwhm=121,
                                                    kernel_size=121,
                                                    sigma_mask=sigma_loop,
@@ -5623,7 +5710,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
                               plot=plot)
 
     if (source_props['rlast'] < 2 * source_props['Rp']) or \
-            (p.r_total_flux is np.nan):
+            (np.isnan(p.r_total_flux)):
         print('WARNING: Number of pixels for petro region is to small. Finding '
               'a good condition...')
         print('Rlast     >> ', source_props['rlast'])
@@ -5769,7 +5856,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
     If not, R50 will be np.nan as well Snu.
     """
     if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
-            or (p.r_total_flux is np.nan):
+            or (np.isnan(p.r_total_flux)):
         print('WARNING: Number of pixels for petro region is to small. '
               'Looping over until good condition is satisfied.')
         # Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
@@ -5785,7 +5872,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
                                     bkg_sub=bkg_sub, plot=plot)
 
         if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
-                or (p.r_total_flux is np.nan):
+                or (np.isnan(p.r_total_flux)):
             print('WARNING: Number of pixels for petro region is to small. '
                   'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['Rp'] + 3
@@ -5958,7 +6045,7 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
 
         #         print(Rp_props['rlast'],2*Rp_props['Rp'])
         if ((source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp'])) \
-                or (p.r_total_flux is np.nan):
+                or (np.isnan(p.r_total_flux)):
             print('WARNING: Number of pixels for petro region is to small. '
                   'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
@@ -5975,7 +6062,7 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
                                         bkg_sub=bkg_sub, plot=PLOT)
 
         if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
-                or (p.r_total_flux is np.nan):
+                or (np.isnan(p.r_total_flux)):
             print('WARNING: Number of pixels for petro region is to small. '
                   'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['Rp'] + 3
@@ -6248,7 +6335,7 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
             xc = objects['x'][sorted_indices_desc[i]]
             yc = objects['y'][sorted_indices_desc[i]]
             label = str('ID' + str(i + 1))
-            text = Text(xc + 10 * ell_size_factor, yc + 3 * ell_size_factor, label,
+            text = Text(xc + 2 * ell_size_factor, yc + 3 * ell_size_factor, label,
                         ha='center', va='center', color='red')
             ax.add_artist(text)
 
@@ -6553,9 +6640,9 @@ def setup_model_components(n_components=2):
     """
         Set up a single sersic component or a composition of sersic components.
 
-        Uses the LMFIT objects to easilly create model components.
+        Uses the LMFIT objects to easily create model components.
 
-        fi_ is just a prefix to distinguish parameter names.
+        fi_ is just a prefix to distinguish the set of parameters for each component.
 
     """
     if n_components == 1:
@@ -6576,6 +6663,9 @@ def construct_model_parameters(n_components=None, params_values_init=None,
     """
     This function creates a single or multi-component Sersic model to be fitted
     onto an astronomical image.
+
+    It uses the function setup_model_components to create the model components and specify/constrain
+    the parameters space in which each parameter will vary during the fit.
 
     Note:
 
@@ -6815,6 +6905,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                                 max=eval(param) + dr * 5)
 
         smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+        # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
     else:
         if init_constraints is not None:
             if constrained == True:
@@ -6901,7 +6992,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             convolved model. The PSF convolution atenuates a lot
                             the signal, specially for radio images.
                             """
-                            I50_max = I50 * 100
+                            I50_max = I50 * 500
                             I50_min = I50 * 0.01
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -7024,6 +7115,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 max=y0_max)
 
             smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+            # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
         else:
             '''
             Run a complete free-optimization.
@@ -7039,6 +7131,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
                 smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+                # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -7636,6 +7729,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         data_2D = data_2D_
 
     if mask_region is not None:
+        logger.debug(f" ==> Using provided mask region to constrain fit. ")
         data_2D = data_2D * mask_region
 
     if convolution_mode == 'GPU':
@@ -7778,6 +7872,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
 
     def residual_2D_GPU(params):
         dict_model = {}
+        # print(' <DEBUG> Fitting Iterator running...')
         model = 0
         for i in range(1, nfunctions + 1):
             model = model + sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
@@ -7792,8 +7887,11 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         # MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
         # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
         # model = model + FlatSky(background, params['s_a'].value)
-        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
-                        FlatSky(background,params['s_a'].value)
+        # MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
+        #                 FlatSky(background,params['s_a'].value)
+        MODEL_2D_conv = _fftconvolve_jax(model+
+                                         FlatSky(background,params['s_a'].value),
+                                         PSF_BEAM)
         residual = data_2D_gpu - MODEL_2D_conv
         return np.asarray(residual).copy()
         # return np.asarray(residual).copy()
@@ -7985,8 +8083,10 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         if PSF_CONV == True:
             if convolution_mode == 'GPU':
                 # model_dict['model_c' + str(i) + '_conv'] = np.asarray(jax_convolve(model_temp, PSF_BEAM)).copy()
+                # model_dict['model_c' + str(i) + '_conv'] = (
+                #     np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
                 model_dict['model_c' + str(i) + '_conv'] = (
-                    np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
+                    np.asarray(_fftconvolve_jax(model_temp+bkg_comp_i,PSF_BEAM).copy()))
             if convolution_mode == 'CPU':
                 model_dict['model_c' + str(i) + '_conv'] = (
                     scipy.signal.fftconvolve(
@@ -8290,7 +8390,8 @@ def evaluate_compactness(deconv_props, conv_props):
         if Spk_ratio[i] >= 0.5:
             class_criteria[f"comp_ID_{i + 1}"]['Spk_class'] = 'D'
 
-        if I50_ratio[i] < 0.5:
+        if (I50_ratio[i] < 0.5) or (np.isnan(I50_ratio[i])): #nan because the component is too
+            # small.
             class_criteria[f"comp_ID_{i + 1}"]['I50_class'] = 'C'
         if I50_ratio[i] >= 0.5:
             class_criteria[f"comp_ID_{i + 1}"]['I50_class'] = 'D'
@@ -8299,13 +8400,13 @@ def evaluate_compactness(deconv_props, conv_props):
         AC2_conv_check = conv_props['AC2'].iloc[i]
         AC1_deconv_check = deconv_props['AC1'].iloc[i]
         AC2_deconv_check = deconv_props['AC2'].iloc[i]
-        print(AC1_conv_check)
+        # print(AC1_conv_check)
 
         # if (AC1_conv_check >= 1.0) or (AC1_conv_check == np.inf):
         #     class_criteria[f"comp_ID_{i+1}"]['AC1_conv_class'] = 'C'
         # if (AC2_conv_check >= 1.0) or AC2_conv_check == np.inf:
         #     class_criteria[f"comp_ID_{i+1}"]['AC2_conv_class'] = 'C'
-        if AC1_deconv_check >= 1.0:
+        if (AC1_deconv_check >= 1.0) or (np.isnan(AC1_deconv_check)):
             class_criteria[f"comp_ID_{i + 1}"]['AC1_deconv_class'] = 'C'
         if AC1_deconv_check < 1.0:
             class_criteria[f"comp_ID_{i + 1}"]['AC1_deconv_class'] = 'D'
@@ -8323,7 +8424,8 @@ def evaluate_compactness(deconv_props, conv_props):
         if dessision_compact < 2:
             class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'D'
         if dessision_compact == 2:
-            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'U'  # uncertain
+            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = \
+                class_criteria[(f"comp_ID_{i + 1}")]['Spk_class']
     return (class_criteria)
 
 def format_nested_data(nested_data):
@@ -8497,12 +8599,18 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
 
 
         # comp_ids = []
+        print('*************************************')
+        print(class_results)
         if comp_ids == []:
+            ID = 1
             for key in class_results.keys():
-                ID = 1
                 if class_results[key]['final_class'] == 'C':
                     comp_ids.append(str(ID))
+                ID = ID + 1
+        if comp_ids == []:
+            comp_ids = ['1']
 
+        print(comp_ids)
         all_comps_ids = np.arange(1, n_components + 1).astype('str')
         mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
         ext_ids = list(all_comps_ids[~mask_compact_ids])
@@ -8686,7 +8794,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             pd.DataFrame(list_results_ext_conv_morpho),
             pd.DataFrame(list_results_ext_deconv_morpho),
             list_individual_deconv_props,
-            list_individual_conv_props,class_results)
+            list_individual_conv_props,
+            class_results,
+            compact_model)
 
 
 
@@ -10865,6 +10975,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             ax = fig.add_subplot(projection=ww.celestial)
             ax.set_xlabel('RA', fontsize=14)
             ax.set_ylabel('DEC', fontsize=14)
+            ax.grid()
 
         if isinstance(imagename, str) == False:
             projection = 'px'
@@ -11098,19 +11209,19 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                         scale_bar_position[1]),
                     # xy=(0.1, 0.1), ##
                     xytext=scale_bar_position, arrowprops=dict(arrowstyle='-',
-                                                               color='red',
+                                                               color='black',
                                                                lw=3))
 
         ax.text(scale_bar_position[0] + scale_bar_length_pixels / 2,
                 scale_bar_position[1] + scale_bar_length_pixels / 20,
                 f'{scalebar_length}', fontsize=16,
-                color='red', ha='center',weight='bold',
+                color='black', ha='center',weight='bold',
                 va='bottom')
         # except:
         #     print('Error adding scalebar.')
 
-        # if save_name != None:
-        #         if not os.path.exists(save_name+special_name+'.jpg'):
+    if save_name != None:
+    #         if not os.path.exists(save_name+special_name+'.jpg'):
         plt.savefig(save_name + special_name + '.jpg', dpi=300,
                     bbox_inches='tight')
         plt.savefig(save_name + special_name + '.pdf', dpi=600,
