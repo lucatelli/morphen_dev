@@ -7760,7 +7760,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         PSF_CONV = False
         PSF_BEAM = None
         
-    if residualname is not None:
+    if residualname is not None and which_residual != 'user':
         """
         This is important for radio image fitting.
 
@@ -7807,21 +7807,32 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
             background = residual_2D_to_use
 
     else:
-        FlatSky_level = mad_std(data_2D)
-        if self_bkg == True:
-            if rms_map is not None:
-                if logger is not None:
-                    logger.debug(f" ==> Using provided RMS map. ")
-                background = rms_map
+        if which_residual == 'user':
+            if rms_map is None:
+                print('--==>> A rms map/background mode was selected (user)')
+                print('       but no rms/background map was provided.')
+                print('       Please, provide a rms/background map.')
+                print('||==>> Stopping code now.')
+                raise ValueError("rms_map should not be None")
             else:
-                if logger is not None:
-                    logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
-                background_map = sep_background(imagename)
-                background = shuffle_2D(background_map.back())
+                background_map=rms_map
+                background = background_map.copy()
         else:
-            background = 0
-            if logger is not None:
-                logger.warning(f" ==> Using only flat sky for rms bkg.")
+            FlatSky_level = mad_std(data_2D)
+            if self_bkg == True:
+                if rms_map is not None:
+                    if logger is not None:
+                        logger.debug(f" ==> Using provided RMS map. ")
+                    background = rms_map
+                else:
+                    if logger is not None:
+                        logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
+                    background_map = sep_background(imagename)
+                    background = shuffle_2D(background_map.back())
+            else:
+                background = 0
+                if logger is not None:
+                    logger.warning(f" ==> Using only flat sky for rms bkg.")
 
     size = data_2D.shape
     if convolution_mode == 'GPU':
@@ -7839,6 +7850,8 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
 
         Issue:
         It causes the flat sky level to be much higher than the real value.
+        
+        Need further investigation and proper implementation.
         """
         x0c, y0c = int(size[0] / 2), int(size[1] / 2)
 
@@ -8461,7 +8474,8 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       init_params=0.25, final_params=4.0,sigma=6,
                       fix_n=[True, True, True, True, True, True, False],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
-                      dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None):
+                      dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None,
+                      self_bkg=False, bkg_rms_map=None):
     """
     Support function to run the image fitting to a image or to a list of images.
 
@@ -8553,6 +8567,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             fix_value_n=fix_value_n,
                             fix_x0_y0=[True, True, True, True, True, True, True, True],
                             dr_fix=dr_fix,
+                            self_bkg=self_bkg, rms_map=bkg_rms_map,
                             convolution_mode=convolution_mode,
                             fix_geometry=fix_geometry,
                             workers=workers,

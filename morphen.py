@@ -560,6 +560,7 @@ class sersic_multifit_radio():
                  sigma=6.0, use_mask_for_fit=False,mask_fit=None,
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
+                 self_bkg = False, bkg_rms_map = None,
                  method2='least_squares',z = 0.01):
         """
         Parameters
@@ -624,6 +625,9 @@ class sersic_multifit_radio():
         self.z = z
         self.which_residual = which_residual
         self.sigma = sigma
+        self.self_bkg = self_bkg
+        self.bkg_rms_map = bkg_rms_map
+
         
         if fix_n==None:
             self.fix_n = [True] * self.SE.n_components
@@ -662,6 +666,8 @@ class sersic_multifit_radio():
                                     method2=self.method2,
                                     mask=self.SE.mask,
                                     mask_for_fit=self.mask_fit,
+                                    bkg_rms_map=self.bkg_rms_map,
+                                    self_bkg=self.self_bkg,
                                     save_name_append='',
                                     fix_n=self.fix_n,
                                     tr_solver = self.tr_solver,
@@ -763,7 +769,7 @@ class sersic_multifit_general():
                  comp_ids = ['1'],
                  fix_n = None,
                  fix_value_n = None, dr_fix = None,
-                 constrained=True, self_bkg=True,
+                 constrained=True, self_bkg=False,
                  sigma=6.0, use_mask_for_fit=False,
                  bkg_rms_map = None,
                  loss='cauchy', tr_solver='exact',
@@ -784,7 +790,6 @@ class sersic_multifit_general():
         self.fix_geometry = fix_geometry
         self.convolution_mode = convolution_mode
         self.constrained = constrained
-        self.self_bkg = self_bkg
         self.method1 = method1
         self.method2 = method2
         self.init_params = init_params
@@ -798,6 +803,7 @@ class sersic_multifit_general():
         self.loss = loss
         self.z = z
         self.sigma = sigma
+        self.self_bkg = self_bkg
         self.bkg_rms_map = bkg_rms_map
 
         if fix_n == None:
