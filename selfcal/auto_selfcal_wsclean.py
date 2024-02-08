@@ -136,8 +136,16 @@ def get_spwmap(vis):
 
     # Convert the set of tuples back to a sorted list of lists
     unique_spwids_lists = sorted([list(t) for t in unique_spwids])
-    spwmap = [[item for lst in unique_spwids_lists for item in [lst[0]] * len(lst)]]
-    return(spwmap)
+
+    # Dictionary to keep track of counts
+    counts = {}
+    for lst in unique_spwids_lists:
+        if lst[0] not in counts:
+            counts[lst[0]] = len(lst)
+
+    # Construct the spwmap
+    spwmap = [[item for item, count in counts.items() for _ in range(count)]]
+    return spwmap
 
 def print_table(data):
     """
@@ -1115,6 +1123,7 @@ def run_rflag(g_vis, display='report', action='calculate',
              datacolumn=datacolumn, ntime='scan', combinescans=False,
              extendflags=False,
              winsize=winsize,
+             channelavg=True,chanbin=4, timeavg=True, timebin='24s',
              timedevscale=timedevscale, freqdevscale=freqdevscale,
              flagnearfreq=False, flagneartime=False, growaround=True,
              action=action, flagbackup=False, savepars=True
@@ -1525,6 +1534,11 @@ if run_mode == 'terminal':
             if modified_robust is not None:
                 p0_params['robust'] = modified_robust
 
+            minblperant = 3
+            # combine='spw'
+            if p0_params['combine'] == 'spw':
+                p0_params['spwmap'] = get_spwmap(g_vis)
+
             print('Params that are currently being used:')
             print_table(p0_params)
 
@@ -1609,11 +1623,6 @@ if run_mode == 'terminal':
             #                     gain_tables_selfcal=[],
             #                     return_solution_stats=True)
 
-
-            minblperant = 3
-            # combine='spw'
-            if p0_params['combine'] == 'spw':
-                p0_params['spwmap'] = get_spwmap(g_vis)
             if 'p0' not in steps_performed:
                 gain_tables_selfcal_temp = self_gain_cal(g_name,
                                                          n_interaction=iteration,
@@ -2228,7 +2237,7 @@ if run_mode == 'terminal':
 
 
             niter = 150000
-            robust = 1.0
+            robust = 0.5
             run_wsclean(g_name, robust=robust,
                         imsize=global_parameters['imsize'],
                         imsizey=global_parameters['imsizey'],
@@ -2247,7 +2256,7 @@ if run_mode == 'terminal':
                 print(' ==> Splitting data after rflag first trial...')
                 split(vis=g_name + '.ms', outputvis=vis_split_name_2,
                       datacolumn='corrected', keepflags=True)
-            statwt(vis=vis_split_name_2, statalg='chauvenet', timebin='60s',
+            statwt(vis=vis_split_name_2, statalg='chauvenet', timebin='24s',
                    datacolumn='data')
             steps_performed.append('run_rflag_final')
 
