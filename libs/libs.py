@@ -68,6 +68,10 @@ from astropy import visualization
 from astropy.visualization import simple_norm
 from astropy.convolution import Gaussian2DKernel
 from skimage.measure import perimeter_crofton
+from scipy import ndimage
+from scipy.ndimage import morphology
+from skimage.morphology import disk, square
+from skimage.morphology import dilation
 
 from scipy.optimize import leastsq, fmin, curve_fit
 import scipy.ndimage as nd
@@ -1243,19 +1247,12 @@ def get_cell_size(imagename):
 
 def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                   dilation_size=None,iterations=2, dilation_type='disk',
-                  PLOT=False,show_figure=True,logger=None):
-
-
-    from scipy import ndimage
-    from scipy.ndimage import morphology
-    from skimage.morphology import disk, square
-    from skimage.morphology import dilation
+                  PLOT=False,show_figure=True,logger=None,
+                  special_name=''):
 
     if isinstance(image, str) == True:
         data = ctn(image)
     else:
-        print('Not able to determine cell size. Please, provide a cell size with the '
-              'parameter `cell_size`.')
         data = image
     if rms is None:
         std = mad_std(data)
@@ -1267,16 +1264,16 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
             omaj, omin, _, _, _ = beam_shape(image)
             dilation_size = int(
                 np.sqrt(omaj * omin) / (2 * get_cell_size(image)))
+            if logger is not None:
+                logger.debug(f" ==>  Dilation size is "
+                             f"{dilation_size} [px]")
+            else:
+                print(f" ==>  Dilation size is "
+                      f"{dilation_size} [px]")
         except:
             if dilation_size == None:
                 dilation_size = 7
                 # dilation_size = 5
-    if logger is not None:
-        logger.debug(f" ==>  Dilation size is "
-                     f"{dilation_size} [px]")
-    else:
-        print(f" ==>  Dilation size is "
-                     f"{dilation_size} [px]")
 
     mask = (data >= sigma * std)
     mask3 = (data >= 3 * std)
@@ -1307,7 +1304,7 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
         ax1.axis('off')
         ax2 = fig.add_subplot(1, 4, 3)
         ax2.imshow(data_mask_d, origin='lower',cmap='magma')
-        ax2.set_title(r'Dilated mask')
+        ax2.set_title(r'Dilated mask'+f'{special_name}')
         ax2.axis('off')
         ax3 = fig.add_subplot(1, 4, 4)
         ax3 = eimshow(data * data_mask_d, ax=ax3, vmin_factor=0.01,CM='magma')
@@ -1970,13 +1967,6 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
 |____/ \__\__,_|\__|___/
 
 """
-
-def rms_estimate(imagedata):
-    mean_value = np.mean(imagedata)
-    square_difference = (imagedata - mean_value) ** 2
-    mean_squared_diff = np.mean(square_difference)
-    RMS = np.sqrt(mean_squared_diff)
-    return(RMS)
 
 def quadrature_error(imagedata,residualdata):
     sum_squares = np.nansum(residualdata**2.0)
@@ -2665,43 +2655,43 @@ def get_image_statistics(imagename,cell_size=None,
 
 
 
-    if residual_name is not None:
-        data_res = ctn(residual_name)
-        flux_res_error = 3 * np.sum(data_res * mask) \
-                         / beam_area2(imagename, cell_size)
-        # rms_res =imstat(residual_name)['flux'][0]
-        flux_res = np.sum(ctn(residual_name)) / beam_area2(imagename, cell_size)
-
-        res_error_rms =np.sqrt(
-            np.sum((abs(data_res * mask -
-                        np.mean(data_res * mask))) ** 2 * np.sum(mask))) / \
-                       beam_area2(imagename,cell_size)
-
-        try:
-            total_flux_tmp = dic_data['total_flux_mask']
-        except:
-            total_flux_tmp = flux_im
-            total_flux_tmp = total_flux(image_data,imagename,mask=mask)
-
-        # print('Estimate #1 of flux error (based on sum of residual map): ')
-        # print('Flux = ', total_flux_tmp * 1000, '+/-',
-        #       abs(flux_res_error) * 1000, 'mJy')
-        # print('Fractional error flux = ', flux_res_error / total_flux_tmp)
-        print('-----------------------------------------------------------------')
-        print('Estimate of flux error (based on rms of '
-              'residual x area): ')
-        print('Flux = ', total_flux_tmp * 1000, '+/-',
-              abs(res_error_rms) * 1000, 'mJy')
-        print('Fractional error flux = ', res_error_rms / total_flux_tmp)
-        print('-----------------------------------------------------------------')
-
-        dic_data['max_residual'] = np.max(data_res * mask)
-        dic_data['min_residual'] = np.min(data_res * mask)
-        dic_data['flux_residual'] = flux_res
-        dic_data['flux_error_res'] = abs(flux_res_error)
-        dic_data['flux_error_res_2'] = abs(res_error_rms)
-        dic_data['mad_std_residual'] = mad_std(data_res)
-        dic_data['rms_residual'] = rms_estimate(data_res)
+    # if residual_name is not None:
+    #     data_res = ctn(residual_name)
+    #     flux_res_error = 3 * np.sum(data_res * mask) \
+    #                      / beam_area2(imagename, cell_size)
+    #     # rms_res =imstat(residual_name)['flux'][0]
+    #     flux_res = np.sum(ctn(residual_name)) / beam_area2(imagename, cell_size)
+    #
+    #     res_error_rms =np.sqrt(
+    #         np.sum((abs(data_res * mask -
+    #                     np.mean(data_res * mask))) ** 2 * np.sum(mask))) / \
+    #                    beam_area2(imagename,cell_size)
+    #
+    #     try:
+    #         total_flux_tmp = dic_data['total_flux_mask']
+    #     except:
+    #         total_flux_tmp = flux_im
+    #         total_flux_tmp = total_flux(image_data,imagename,mask=mask)
+    #
+    #     # print('Estimate #1 of flux error (based on sum of residual map): ')
+    #     # print('Flux = ', total_flux_tmp * 1000, '+/-',
+    #     #       abs(flux_res_error) * 1000, 'mJy')
+    #     # print('Fractional error flux = ', flux_res_error / total_flux_tmp)
+    #     print('-----------------------------------------------------------------')
+    #     print('Estimate of flux error (based on rms of '
+    #           'residual x area): ')
+    #     print('Flux = ', total_flux_tmp * 1000, '+/-',
+    #           abs(res_error_rms) * 1000, 'mJy')
+    #     print('Fractional error flux = ', res_error_rms / total_flux_tmp)
+    #     print('-----------------------------------------------------------------')
+    #
+    #     dic_data['max_residual'] = np.max(data_res * mask)
+    #     dic_data['min_residual'] = np.min(data_res * mask)
+    #     dic_data['flux_residual'] = flux_res
+    #     dic_data['flux_error_res'] = abs(flux_res_error)
+    #     dic_data['flux_error_res_2'] = abs(res_error_rms)
+    #     dic_data['mad_std_residual'] = mad_std(data_res)
+    #     dic_data['rms_residual'] = rms_estimate(data_res)
 
     #     print(' Flux=%.5f Jy/Beam' % flux_im)
     #     print(' Flux peak (image)=%.5f Jy' % flux_peak_im, 'Flux peak (residual)=%.5f Jy' % flux_peak_re)
@@ -3111,7 +3101,7 @@ def shape_measures(imagename, residualname, z, mask_component=None, sigma_mask=6
 
 
 def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
-             last_level=1.0, vmin_factor=1.0, plot_catalog=False,data_2D=None,
+             last_level=2.0, vmin_factor=1.0, plot_catalog=False,data_2D=None,
              npixels=128, fwhm=81, kernel_size=21, dilation_size=None,
              main_feature_index=0, results_final={}, iterations=2,
              fracX=0.10, fracY=0.10, deblend=False, bkg_sub=False,
@@ -3537,6 +3527,42 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     # results['flux_mc'] = flux_mc
     # results['flux_error_mc'] = flux_error_m
 
+    if residual is not None:
+        data_res = ctn(residual)
+        flux_res_error = 3 * np.sum(data_res * mask) \
+                         / beam_area2(img, cell_size)
+        # rms_res =imstat(residual_name)['flux'][0]
+        flux_res = np.sum(ctn(residual)) / beam_area2(img, cell_size)
+
+        res_error_rms =np.sqrt(
+            np.sum((abs(data_res * mask -
+                        np.mean(data_res * mask))) ** 2 * np.sum(mask))) / \
+                       beam_area2(img,cell_size)
+
+        # try:
+        #     total_flux_tmp = results['total_flux_mask']
+        # except:
+        #     total_flux_tmp = flux_im
+        #     total_flux_tmp = total_flux(image_data,img,mask=mask)
+        # print('Estimate #1 of flux error (based on sum of residual map): ')
+        # print('Flux = ', total_flux_tmp * 1000, '+/-',
+        #       abs(flux_res_error) * 1000, 'mJy')
+        # print('Fractional error flux = ', flux_res_error / total_flux_tmp)
+        print('-----------------------------------------------------------------')
+        print('Estimate of flux error (based on rms of '
+              'residual x area): ')
+        print('Flux Density = ', results['total_flux_mask'] * 1000, '+/-',
+              abs(res_error_rms) * 1000, 'mJy')
+        print('Fractional error flux = ', res_error_rms / results['total_flux_mask'])
+        print('-----------------------------------------------------------------')
+
+        results['max_residual'] = np.max(data_res * mask)
+        results['min_residual'] = np.min(data_res * mask)
+        results['flux_residual'] = flux_res
+        results['flux_error_res'] = abs(flux_res_error)
+        results['flux_error_res_2'] = abs(res_error_rms)
+        results['mad_std_residual'] = mad_std(data_res)
+        results['rms_residual'] = rms_estimate(data_res)
 
     try:
         # this should not be linspace, should be spaced in a logarithmic sense!!
@@ -6105,14 +6131,27 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
 """
 
 
-def sep_background(imagename,mask=None,apply_mask=False,
-                   bw=64, bh=64, fw=5, fh=5):
+def sep_background(imagename,mask=None,apply_mask=False,show_map=False,
+                   bw=64, bh=64, fw=5, fh=5, use_beam_fraction=False):
     import sep
     import fitsio
     '''
     If using astropy.io.fits, you get an error (see bug on sep`s page).
     '''
-    data_2D = fitsio.read(imagename)
+    _data_2D = fitsio.read(imagename)
+    if len(_data_2D.shape) == 4:
+        data_2D = _data_2D[0][0]
+    else:
+        data_2D = _data_2D
+
+    if use_beam_fraction:
+        bspx = get_beam_size_px(imagename)
+        bspx_x, bspx_y = int(bspx[1]), int(bspx[2])
+        bspx_avg = int(bspx[0])
+        print(f"Beam Size in px=({bspx_x},{bspx_y})")
+        print(f"Average beam Size in px=({bspx_avg})")
+        bw, bh = int(bspx_x*2), int(bspx_y*2)
+        fw, fh = int(bspx_avg*2), int(bspx_avg*2)
 
     if (mask is None) and (apply_mask==True):
         _, mask = mask_dilation(imagename, PLOT=False,
@@ -6120,15 +6159,16 @@ def sep_background(imagename,mask=None,apply_mask=False,
         bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
 
     else:
-        bkg = sep.Background(data_2D, mask=mask,
-                             bw=bw, bh=bh, fw=fw, fh=fh)
+        bkg = sep.Background(data_2D,bw=bw, bh=bh, fw=fw, fh=fh)
     bkg_rms = bkg.rms()
     bkg_image = bkg.back()
-    plt.imshow(bkg_image)
-    plt.title(str(data_2D.max()))
-    plt.colorbar()
+    if show_map == True:
+        plt.imshow(bkg_image,origin='lower')
+        plt.title(f"max(bkg)/max(data)={(bkg_image.max()/data_2D.max()):.6f}")
+        plt.colorbar()
+        # plt.clf()
+        # plt.close()
     return(bkg)
-
 
 def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
                    deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
@@ -6655,7 +6695,7 @@ def setup_model_components(n_components=2):
     return (smodel2D)
 
 
-def construct_model_parameters(n_components=None, params_values_init=None,
+def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                init_constraints=None,
                                constrained=True, fix_n=False, fix_value_n=False,
                                fix_x0_y0=False,dr_fix = None,fix_geometry=True,
@@ -6667,14 +6707,33 @@ def construct_model_parameters(n_components=None, params_values_init=None,
     It uses the function setup_model_components to create the model components and specify/constrain
     the parameters space in which each parameter will vary during the fit.
 
+    DEV NOTES:
+    
+        Note that this function handles parameter/model generation in four different ways:
+            -- free parameters (params_values_init_IMFIT=None, init_constraints=None,
+            constrained=False)
+            -- constrained parameters from IMFIT (params_values_init_IMFIT=np.array of IMFIT
+            parameters, init_constraints=None, constrained=True)
+            -- initial parameter from a source extraction object and no constraints
+            (params_values_init_IMFIT=None, init_constraints=SE.object,
+            constrained=False)
+            -- initial and constrained parameters from a source extraction object
+            (params_values_init_IMFIT=None, init_constraints=SE.object, constrained=True)
+
+        These are the four possible combinations of parameters and constraints that can be used.
+        However, only the last one was tested extensively and is currently being used as default.
+        It showed to be the most robust and reliable way to fit the model to the data.
+        The other methods need some more testing and improvements.
+
+
     Note:
 
     Parameters
     ----------
     n_components : int, optional
         Number of components to be fitted. The default is None.
-    params_values_init : list, optional
-        List of initial parameters to be used as initial guess for the fit.
+    params_values_init_IMFIT : list, optional
+        List of initial parameters from a IMFIT config file to be used as initial guess for the fit.
         The default is None.
     init_constraints : dict, optional
         Dictionary containing initial constraints to be used as initial guess
@@ -6704,7 +6763,7 @@ def construct_model_parameters(n_components=None, params_values_init=None,
     """
 
     if n_components is None:
-        n_components = len(params_values_init) - 1
+        n_components = len(params_values_init_IMFIT) - 1
 
     smodel2D = setup_model_components(n_components=n_components)
     # print(smodel2D)
@@ -6712,10 +6771,10 @@ def construct_model_parameters(n_components=None, params_values_init=None,
     dr = 10
 
 
-    # params_values_init = [] #grid of parameter values, each row is the
+    # params_values_init_IMFIT = [] #grid of parameter values, each row is the
     # parameter values of a individual component
 
-    if params_values_init is not None:
+    if params_values_init_IMFIT is not None:
         """This takes the values from an IMFIT config file as init
         params and set number of components. This is useful to use results 
         from IMFIT, for example. 
@@ -6725,8 +6784,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
         and for future improvements and experiments. 
         """
         for i in range(0, n_components):
-            # x0, y0, PA, ell, n, In, Rn = params_values_init[i]
-            x0, y0, PA, ell, n, In, Rn = params_values_init[i]
+            # x0, y0, PA, ell, n, In, Rn = params_values_init_IMFIT[i]
+            x0, y0, PA, ell, n, In, Rn = params_values_init_IMFIT[i]
             if fix_x0_y0 is not False:
                 fix_x0_y0_i = fix_x0_y0[i]
                 dr_fix_i = dr_fix[i]
@@ -6904,10 +6963,13 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                                 min=eval(param) - dr * 5,
                                                 max=eval(param) + dr * 5)
 
-        smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-        # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
+        # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+        smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
     else:
         if init_constraints is not None:
+            """
+            This is the default option to use, and the more robust.
+            """
             if constrained == True:
                 for j in range(init_constraints['ncomps']):
                     if fix_n is not False:
@@ -7114,8 +7176,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                                 min=y0_min,
                                 max=y0_max)
 
-            smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-            # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
+            # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+            smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
         else:
             '''
             Run a complete free-optimization.
@@ -7130,8 +7192,8 @@ def construct_model_parameters(n_components=None, params_values_init=None,
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
-                smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-                # smodel2D.set_param_hint('s_a', value=1, min=-10.0, max=10.0)
+                # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+                smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -7149,6 +7211,9 @@ def constrain_nelder_mead_params(params,
     Constrain Nelder-Mead optimised parameters.
     Since Nelder-Mead is robust, we can feed these values
     into Least-Squares.
+
+    This is a workaround since nelder-mead does not provide statistical errors.
+    SO, this is an attempt to produce a set of parameter distributions around the best fit ones.
     """
     params_copy = params.copy()
     for name, param in params_copy.items():
@@ -7193,17 +7258,18 @@ def generate_random_params_normal(params, param_errors):
     #     random_noise = np.random.uniform(low=-1, high=1, size=len(weights_f))
     # #     random_noise = np.random.random(len(weights_f)) * weights_f
 
-    random_nums = np.random.normal(0.0, 5.0, size=len(params))
-    scaled_random_nums = random_nums * param_errors  # + random_noise
+    random_nums = np.random.normal(1.0, 0.25, size=len(params))
+    # scaled_random_nums = random_nums * param_errors  # + random_noise
     #     random_nums = np.random.normal(0.0, 0.1, size=len(params))
-    #     scaled_random_nums = random_nums * params
-    random_params = params + scaled_random_nums
+    scaled_random_nums = random_nums * params
+    random_params = scaled_random_nums
+    # random_params = params + scaled_random_nums
     return random_params
 
 
 def generate_random_params_tukeylambda(params, param_errors):
     from scipy.stats import tukeylambda
-    # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
+    # Generate a set of random numbers from a tukeylambda distribution.
     param_errors_corr = param_errors.copy()
     random_nums = tukeylambda.rvs(0.5, size=len(params)) * 10
     scaled_random_nums = random_nums * param_errors
@@ -7585,7 +7651,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     print("# of model components (COMPS) to be fitted =", n_components)
     return (sources_photometries, n_components, psf_name, mask, bkg)
 
-def do_fit2D(imagename, params_values_init=None, ncomponents=None,
+def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
              residualname=None,which_residual='shuffled',
              init_params=0.25, final_params=4.0, constrained=True,
@@ -7616,7 +7682,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
     ----------
     imagename: str
         Name of the image to be fitted.
-    params_values_init: list
+    params_values_init_IMFIT: list
         Initial parameters values for the model.
     ncomponents: int
         Number of components to be fitted.
@@ -7815,6 +7881,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
                 print('||==>> Stopping code now.')
                 raise ValueError("rms_map should not be None")
             else:
+                logger.debug(f" ==> Using provided RMS map. ")
                 background_map=rms_map
                 background = background_map.copy()
         else:
@@ -7900,13 +7967,13 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         # MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
         # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
         # model = model + FlatSky(background, params['s_a'].value)
-        # MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
-        #                 FlatSky(background,params['s_a'].value)
-        MODEL_2D_conv = _fftconvolve_jax(model+
-                                         FlatSky(background,params['s_a'].value),
-                                         PSF_BEAM)
+        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
+                        FlatSky(background,params['s_a'].value)
+        # MODEL_2D_conv = _fftconvolve_jax(model+
+        #                                  FlatSky(background,params['s_a'].value),
+        #                                  PSF_BEAM)
         residual = data_2D_gpu - MODEL_2D_conv
-        return np.asarray(residual).copy()
+        return np.asarray(residual).copy().flatten()
         # return np.asarray(residual).copy()
 
     if convolution_mode == 'GPU':
@@ -7940,7 +8007,7 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
 
 
     smodel2D, params = construct_model_parameters(
-        params_values_init=params_values_init, n_components=nfunctions,
+        params_values_init_IMFIT=params_values_init_IMFIT, n_components=nfunctions,
         init_constraints=init_constraints,
         fix_n=fix_n, fix_value_n=fix_value_n,
         fix_x0_y0=fix_x0_y0, dr_fix=dr_fix, fix_geometry=fix_geometry,
@@ -8096,10 +8163,10 @@ def do_fit2D(imagename, params_values_init=None, ncomponents=None,
         if PSF_CONV == True:
             if convolution_mode == 'GPU':
                 # model_dict['model_c' + str(i) + '_conv'] = np.asarray(jax_convolve(model_temp, PSF_BEAM)).copy()
-                # model_dict['model_c' + str(i) + '_conv'] = (
-                #     np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
                 model_dict['model_c' + str(i) + '_conv'] = (
-                    np.asarray(_fftconvolve_jax(model_temp+bkg_comp_i,PSF_BEAM).copy()))
+                    np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
+                # model_dict['model_c' + str(i) + '_conv'] = (
+                #     np.asarray(_fftconvolve_jax(model_temp+bkg_comp_i,PSF_BEAM).copy()))
             if convolution_mode == 'CPU':
                 model_dict['model_c' + str(i) + '_conv'] = (
                     scipy.signal.fftconvolve(
@@ -8364,12 +8431,18 @@ def compute_model_properties(model_list,  # the model list of each component
     """
     model_properties = {}
     kk = 1
+    if which_model == 'conv':
+        dilation_size = None
+    if which_model == 'deconv':
+        dilation_size = 2
     for model_component in model_list:
         properties, _, _ = measures(imagename=model_component,
                                           residualname=residualname,
                                           z=z,
                                           sigma_mask=6.0,
+                                          last_level = 3.0,
                                           vmin_factor=3.0,
+                                          dilation_size=dilation_size,
                                           # data_2D=mlibs.ctn(model_component),
                                           rms=rms)
 
@@ -8462,6 +8535,7 @@ def format_nested_data(nested_data):
             processed_data.append(props)
     df = pd.DataFrame(processed_data)
     return(df)
+
 
 
 def run_image_fitting(imagelist, residuallist, sources_photometries,
@@ -8559,7 +8633,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             which_residual=which_residual,
                             init_constraints=sources_photometries,
                             psf_name=psf_name,
-                            params_values_init=None,# imfit_conf_values[0:-1],
+                            params_values_init_IMFIT=None,# imfit_conf_values[0:-1],
                             #fix_n = False,fix_x0_y0=[False,False,False],
                             ncomponents=n_components, constrained=True,
                             fix_n=fix_n,
@@ -8682,7 +8756,11 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
-
+        _, mask_region_conv_comp = mask_dilation(compact_model,
+                                        rms=rms_std_res,
+                                        sigma=sigma, dilation_size=None,
+                                        iterations=2, PLOT=True,
+                                                   special_name='compact conv')
         results_compact_conv_morpho, _ = \
             shape_measures(imagename=crop_image,
                             residualname=crop_residual, z=z,
@@ -8703,14 +8781,18 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             add_save_name='_compact_conv')
 
         list_results_compact_conv_morpho.append(results_compact_conv_morpho)
-
+        _, mask_region_deconv_comp = mask_dilation(compact_model_deconv,
+                                        rms=rms_std_res,
+                                        sigma=sigma, dilation_size=2,
+                                        iterations=2, PLOT=True,
+                                                   special_name='compact deconv')
         results_compact_deconv_morpho, _ = \
             shape_measures(imagename=crop_image,
                             residualname=crop_residual, z=z,
                             mask_component=None, sigma_mask=1,
-                            last_level=3.0, vmin_factor=1.0,
+                            last_level=6.0, vmin_factor=1.0,
                             plot_catalog=False,
-                            data_2D=compact_model_deconv * mask * mask_region,
+                            data_2D=compact_model_deconv * mask * mask_region_deconv_comp,
                             npixels=128, fwhm=81, kernel_size=21,
                             dilation_size=None,
                             main_feature_index=0, results_final={},
@@ -8802,7 +8884,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             # print('Error on fitting', os.path.basename(crop_image))
             # errors_fit.append(crop_image)
 
-    return (pd.DataFrame(results_fit),
+    return (pd.DataFrame(results_fit),result_mini,
             lmfit_results, lmfit_results_1st_pass, errors_fit, models,
             pd.DataFrame(list_results_compact_conv_morpho),
             pd.DataFrame(list_results_compact_deconv_morpho),
@@ -8816,9 +8898,11 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
 
 
 
-def image_decomposition(image1, image2, image3=None, iterations=2,
-                        dilation_size=None, std_factor=10.0,
-                        ref_mask=None,sigma=6):
+def interferometric_decomposition(image1, image2, image3=None,
+                                  residual1=None, residual2=None, residual3=None,
+                                  iterations=2,
+                                  dilation_size=None, std_factor=1.0,sub_bkg=False,
+                                  ref_mask=None,sigma=6):
     """
     Peform an interferometric image decomposition using the e-MERLIN and JVLA.
 
@@ -8840,13 +8924,18 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
         Reference JVLA mask to be used in the masking process.
 
     """
-    def fit_sigma(g, g_next):
+    def fit_sigma(image1_data, image2_data):
         '''
         Functiont to optmize sigma masking.
         This minimizes the negative values when subtracting e-MERLIN and VLA images.
         '''
 
-        def opt_sigma(params):
+        def opt_sigma_old(params):
+            """
+            This the old implementation of the minimisation function.
+
+            Note: This function works very well, and it is exact. However, it is very slow.
+            """
             sigma_level = params['sigma_level']
             # print('Current sigma is:', sigma_level)
             gomask, gmask = mask_dilation(g, cell_size=None,
@@ -8871,113 +8960,141 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
             residual_mask = R12_ - std_factor * np.std(R12_)
             return (residual_mask)
 
-        def opt_sigmav2(params):
+        def opt_sigma(params):
             '''
             Improved version, do not use casa, so do not need to write and read files.
-            Using convolve_fft seems to give almost the same results as CASA's
+            Using convolve_fft seems to give **almost** the same results as CASA's
             function smooth.
+
+            ** There is a small difference in the relative amplitude when convolving image2 with
+            the beam of image1. The factor is exactly the same as the ratio of the beam areas:
+            beam_area2(image2) / beam_area2(image1)
             '''
             sigma_level = params['sigma_level']
-            # print('Current sigma is:', sigma_level.value)
-            gomask, gmask = mask_dilation(g, cell_size=None, iterations=2,
+            # std_factor = params['std_factor']
+            # print(f"Current opt values = sigma={sigma_level.value}, std_factor={std_factor.value}")
+            _, dilated_mask = mask_dilation(image1_data, cell_size=None,
+                                                 iterations=2,
                                           sigma=sigma_level,
-                                          dilation_size=dilation_size,
+                                          dilation_size=dilation_size_i,
                                           PLOT=False)
-            # gmask = (g>sigma_level*std_level)
-            gg = gmask * g * ref_mask
-            M12 = _fftconvolve_jax(gg, PSF_BEAM)
+            masked_image = dilated_mask * image1_data * ref_mask
+            M12 = _fftconvolve_jax(masked_image, PSF_BEAM_j)
+            # M12 = scipy.signal.fftconvolve(masked_image, PSF_BEAM, mode='same')
             mask_M12 = (M12 > 1e-6)
-            R12_ = g_next - M12
-            residual_mask = (R12_ - std_factor * std_level) * ref_mask  # *mask_M12#avoid including emission outside JVLA mask.
-            #             residual_mask = R12_ - std_factor*mad_std(R12_)
-            #             residual_mask = np.sum(R12_ ** 2 / (M12 -std_factor*std_level))
-            return (np.array(residual_mask).copy())
+            R12 = (image2_data - M12 + offset_2 ) * ref_mask
+            # R12 = (image2_data - (M12 + 0*std_factor * bkg_2))*ref_mask
+            # residual_mask = 1000*(R12_ - std_factor * std_level) * ref_mask  # *mask_M12#avoid
+            return (np.array(R12).copy())
 
-        bounds_i = 5
-        bounds_f = 300
-        pars0 = 5
-        sigma_i = bounds_i
-        sigma_f = bounds_f
-        sigma_0 = pars0
+        bounds_i, bounds_f = 6, 300
+        sigma_i, sigma_f = bounds_i, bounds_f
+        std_fac_bounds_i, std_fac_bounds_f = 0.99, 1.01
+        std_fac_i, std_fac_f = std_fac_bounds_i, std_fac_bounds_f
+        pars0 = 6.0, 1.0
+        sigma_0, std_fac_0 = pars0
         fit_params = lmfit.Parameters()
         fit_params.add("sigma_level", value=sigma_0, min=sigma_i, max=sigma_f)
+        # fit_params.add("std_factor", value=std_fac_0, min=std_fac_i, max=std_fac_f)
         #         fit_params.add("offset", value=1.0, min=0.5, max=2)
         solver_method = 'nelder'
         #         mini = lmfit.Minimizer(opt_sigma,fit_params,max_nfev=5000,nan_policy='omit',reduce_fcn='neglogcauchy')
-        mini = lmfit.Minimizer(opt_sigmav2, fit_params, max_nfev=5000,
+        mini = lmfit.Minimizer(opt_sigma, fit_params, max_nfev=50000,
                                nan_policy='omit', reduce_fcn='neglogcauchy')
         result_1 = mini.minimize(method=solver_method,tol=1e-12,
                                  options={'xatol': 1e-12,
-                                          'fatol': 1e-12,
+                                          'fatol': 1e-8,
                                           'adaptive': True})
 
-        # result_1 = mini.minimize(method='least_squares',
-        #                          tr_solver="exact",
-        #                          tr_options={'regularize': True},
-        #                          x_scale='jac', loss="cauchy",
-        #                          ftol=1e-15, xtol=1e-15, gtol=1e-15,
-        #                          # f_scale=0.5,
-        #                          max_nfev=5000, verbose=2)
-
-        result = mini.minimize(method='nelder', params=result_1.params,
-                               tol=1e-12,
+        result = mini.minimize(method=solver_method, params=result_1.params,
+                               tol=1e-8,
                                options={'xatol': 1e-12,
                                         'fatol': 1e-12,
                                         'adaptive': True})
+        # result_1 = mini.minimize(method='least_squares',
+        #                          tr_solver="exact",
+        #                          tr_options={'regularize': True},
+        #                          # x_scale='jac', loss="cauchy",
+        #                          ftol=1e-14, xtol=1e-14, gtol=1e-14,
+        #                          f_scale=1,
+        #                          max_nfev=200000,
+        #                          verbose=2)
+        #
+        #
         # result = mini.minimize(method='least_squares',
         #                        params=result_1.params,
         #                        tr_solver="exact",
         #                        tr_options={'regularize': True},
-        #                        x_scale='jac', loss="cauchy",
-        #                        ftol=1e-15, xtol=1e-15, gtol=1e-15,
-        #                        # f_scale=0.5,
-        #                        max_nfev=5000, verbose=2)
+        #                        # x_scale='jac', loss="cauchy",
+        #                        ftol=1e-14, xtol=1e-14, gtol=1e-14,
+        #                        f_scale=1,
+        #                        max_nfev=200000,
+        #                        verbose=2)
+
+        # result_1 = mini.minimize(method='differential_evolution',
+        #                          # tr_solver="exact",
+        #                          # tr_options={'regularize': False},
+        #                          # # x_scale='jac', loss="cauchy",
+        #                          # ftol=1e-14, xtol=1e-14, gtol=1e-14,
+        #                          # f_scale=1,
+        #                          # max_nfev=200000,
+        #                          verbose=2)
+        #
+        #
+        # result = mini.minimize(method='differential_evolution',
+        #                        params=result_1.params,
+        #                        # tr_solver="exact",
+        #                        # tr_options={'regularize': False},
+        #                        # # x_scale='jac', loss="cauchy",
+        #                        # ftol=1e-14, xtol=1e-14, gtol=1e-14,
+        #                        # f_scale=1,
+        #                        # max_nfev=200000,
+        #                        verbose=2)
         #         result = mini.minimize(method=solver_method,params=result_1.params,
         #                                  max_nfev=30000, #x_scale='jac',  # f_scale=0.5,
         #                                  tr_solver="exact",
         #                                  tr_options={'regularize': True},
         #                                  ftol=1e-14, xtol=1e-14, gtol=1e-14, verbose=2)
 
-        parFit = result.params[
-            'sigma_level'].value  # ,result.params['offset'].value
-        Err_parFit = result.params[
-            'sigma_level'].stderr  # ,result.params['offset'].stderr
-        resFit = result.residual
-        chisqr = result.chisqr
-        redchi = result.redchi
-        pars = parFit
-        sigma_opt_fit = pars
+        parFit = result.params['sigma_level'].value      #, result.params['std_factor'].value
+        Err_parFit = result.params['sigma_level'].stderr #, result.params['std_factor'].stderr
+        # resFit = result.residual
+        # chisqr = result.chisqr
+        # redchi = result.redchi
+        # pars = parFit
+        # sigma_opt_fit, std_factor_opt_fit = pars
         return (parFit, Err_parFit, result)
 
-    # set image names, they must have the same cell_size and image size
+    # set image names, they must have the same cell_size,image size AND MUST BE ALIGNED!!!
     image_cut_i = image1  # highest resolution image
     image_cut_j = image2  # intermediate resolution image
 
     # read data files
-    g = ctn(image_cut_i)
-    g_next = ctn(image_cut_j)
+    image1_data = ctn(image_cut_i)
+    image2_data = ctn(image_cut_j)
 
-    MAIN_MASK = 1.0
-    #     if image3 is not None:
-    #         image_cut_k = image3#lowest resolution image
-    #         _, MAIN_MASK = mask_dilation(image3, sigma=4, iterations=1,
-    #                             dilation_size=None, PLOT=False)
+    if sub_bkg:
+        bkg_1 = sep_background(image_cut_i, apply_mask=False,
+                               show_map=False,use_beam_fraction=True).back()
+        bkg_2 = sep_background(image_cut_j, apply_mask=False,
+                               show_map=False,use_beam_fraction=True).back()
+        offset_2 = 0.5 * bkg_2
 
-    std_level = np.std(g_next)
-    #     std_level = mad_std(g_next)
-    # now, run sigma optimization for the image with highest resolution
+    else:
+        bkg_1 = mad_std(image1_data)
+        bkg_2 = mad_std(image2_data)
+        offset_2 = 0.5*np.std(image2_data)
 
-    psf_name_j = tcreate_beam_psf(image_cut_j, size=g.shape, aspect=None)
-    correction_factor = beam_area2(image_cut_j) / beam_area2(image_cut_i)
-    PSF_BEAM = ctn(
-        psf_name_j) * correction_factor  # this will result on the same result as imsmooth.
-    iterations = iterations
-    dilation_size = dilation_size
-    std_factor = std_factor
+
+    psf_name_j = tcreate_beam_psf(image_cut_j,
+                                  size=image1_data.shape,
+                                  aspect=None)
+
+    correction_factor_ij = beam_area2(image_cut_j) / beam_area2(image_cut_i)
+    PSF_BEAM_j = ctn(psf_name_j)*correction_factor_ij  # this will result similar results as
 
     omaj_i, omin_i, _, _, _ = beam_shape(image_cut_i)
-    dilation_size_i = int(
-        np.sqrt(omaj_i * omin_i) / (2 * get_cell_size(image_cut_i)))
+    dilation_size_i = int(np.sqrt(omaj_i * omin_i) / (2 * get_cell_size(image_cut_i)))
     print('Usig mask dilution size of (for image i)=', dilation_size_i)
 
     results = {}
@@ -8986,59 +9103,145 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
     results['imagename_i'] = os.path.basename(image_cut_i)
     results['imagename_j'] = os.path.basename(image_cut_j)
 
-    parFit, Err_parFit, result_mini = fit_sigma(g, g_next)
+    parFit, Err_parFit, result_mini = fit_sigma(image1_data, image2_data)
     print('Optmized Sigma=', parFit, '+/-', Err_parFit)
+    # sigma_level, std_factor = parFit
     sigma_level = parFit
 
-    I01mask, I1mask = mask_dilation(g, cell_size=get_cell_size(image_cut_i),
+    #Dilate the mask referent to image1 (high-res image).
+    I01mask, I1mask = mask_dilation(image1_data, cell_size=get_cell_size(image_cut_i),
                                     iterations=iterations,
                                     sigma=sigma_level,
                                     dilation_size=dilation_size_i, PLOT=True)
 
-    I1mask_data = I1mask * g * ref_mask  # - convolve_fft(gmask,kernel)
+    I1mask_data = I1mask * image1_data * ref_mask # - convolve_fft(gmask,kernel)
     # gg = gmask - gaussian_filter(gmask,150)
     I1mask_name = image_cut_i.replace('.fits', '_I1mask.fits')
     pf.writeto(I1mask_name, I1mask_data, overwrite=True)
     copy_header(image_cut_i, I1mask_name, I1mask_name)
-    # convolve the mask image1 with the beam from image2 >> theta2*image1_mask
-    #     M12 = convolve_2D_smooth(I1mask_name,
-    #                              mode='transfer',
-    #                              imagename2=image_cut_j,add_prefix='_M12')
 
     pf.writeto(image_cut_i.replace('.fits', '_mask_bool.fits'), I1mask * 1.0,
                overwrite=True)
     copy_header(image_cut_i, image_cut_i.replace('.fits', '_mask_bool.fits'),
                 image_cut_i.replace('.fits', '_mask_bool.fits'))
 
-    I1mask_2 = convolve_2D_smooth(
-        image_cut_i.replace('.fits', '_mask_bool.fits'),
-        mode='transfer', imagename2=image_cut_j, add_prefix='_M12_mask')
 
-    M12_data = scipy.signal.fftconvolve(I1mask_data, PSF_BEAM, mode='same')
+    M12_data = scipy.signal.fftconvolve(I1mask_data, PSF_BEAM_j, mode='same')
     M12 = image_cut_j.replace('.fits', '_M12opt.fits')
     pf.writeto(M12, M12_data, overwrite=True)
     copy_header(image_cut_j, M12, M12)
 
     # subtract image2 from theta2*image1_mask and save images
-    R12_ = ctn(image_cut_j) - ctn(
-        M12)  # + 1* std_factor*std_level# std_factor*std_level# + np.mean(g[g>3*mad_std(g)])
+    R12_ = ctn(image_cut_j) - M12_data # + 1*
+    # std_factor*std_level# std_factor*std_level# + np.mean(g[g>3*mad_std(g)])
     R12 = image_cut_j.replace('.fits', '_R12opt.fits')
     pf.writeto(R12, R12_, overwrite=True)
     copy_header(image_cut_j, R12, R12)
+    ###################################
+    ###################################
+    ###################################
+    std_1 = mad_std(ctn(residual1))
+    std_2 = mad_std(ctn(residual2))
+    _, I1mask = mask_dilation(image1, PLOT=False, dilation_type='disk', rms=std_1,
+                                     sigma=result_mini.params['sigma_level'].value,
+                                     iterations=2, dilation_size=None)
+    _, mask_I1 = mask_dilation(image1, PLOT=False, dilation_type='disk', rms=std_1,
+                                     sigma=6.0,
+                                     iterations=2, dilation_size=None)
+    _, mask_I2 = mask_dilation(image2, PLOT=False, dilation_type='disk', rms=std_2,
+                                     sigma=6.0,
+                                     iterations=2, dilation_size=None)
+    _, mask_M12 = mask_dilation(M12, PLOT=False, dilation_type='disk', rms=std_2,
+                                      sigma=6, iterations=2, dilation_size=None)
+    _, mask_R12 = mask_dilation(R12, PLOT=False, dilation_type='disk', rms=std_2,
+                                      sigma=6, iterations=2, dilation_size=None)
 
+    results['I1_name'] = image1
+    results['I2_name'] = image2
     results['R12_name'] = R12
     results['M12_name'] = M12
 
-    results['S_comp_model_M12'] = imstat(M12)['flux'][0]
-    results['S_comp_res_R12'] = imstat(R12)['flux'][0]
-    results['S_total_model_12'] = imstat(R12)['flux'][0] + imstat(M12)['flux'][0]
-    results['S_total_1'] = imstat(image_cut_i)['flux'][0]
-    results['S_total_2'] = imstat(image_cut_j)['flux'][0]
+    I1_props = compute_image_properties(img=image1,
+                                        residual=residual1,
+                                        rms=std_1,
+                                        apply_mask=False,
+                                        show_figure=False,
+                                        mask=mask_I1,
+                                        last_level=2.0)[-1]
 
-    omask_i, mask_i = mask_dilation(image_cut_i,
-                                    cell_size=get_cell_size(image_cut_i),
-                                    sigma=sigma, iterations=2,
-                                    dilation_size=dilation_size_i, PLOT=True)
+    I1mask_props = compute_image_properties(img=I1mask_name,
+                                            residual=residual1,
+                                            rms=std_1,
+                                            apply_mask=False,
+                                            show_figure=False,
+                                            mask=I1mask,
+                                            last_level=2.0)[-1]
+
+    I2_props = compute_image_properties(img=image2,
+                                        residual=residual2,
+                                        rms=std_2,
+                                        apply_mask=False,
+                                        show_figure=False,
+                                        mask=mask_I2,
+                                        last_level=2.0)[-1]
+
+    R12_props = compute_image_properties(img=R12,
+                                         residual=residual2,
+                                         rms=std_2,
+                                         apply_mask=False,
+                                         show_figure=False,
+                                         mask=mask_R12,
+                                         last_level=2.0)[-1]
+
+    M12_props = compute_image_properties(img=M12,
+                                         residual=residual2,
+                                         rms=std_2,
+                                         show_figure=False,
+                                         apply_mask=False,
+                                         mask=mask_M12,
+                                         last_level=2.0)[-1]
+
+    """
+    Store measured properties:
+        - total flux density on: I1, I1mask, R12, M12 and I2
+        - peak brightness on: I1, I1mask, R12, M12 and I2
+        - sizes on: I1, I1mask, R12, M12 and I2
+    """
+
+    results['S_I1'] = I1_props['total_flux_mask']
+    results['S_I1mask'] = I1mask_props['total_flux_mask']
+    results['S_R12'] = R12_props['total_flux_mask']
+    results['S_M12'] = M12_props['total_flux_mask']
+    results['S_I2'] = I2_props['total_flux_mask']
+
+    results['Speak_I1'] = I1_props['peak_of_flux']
+    results['Speak_I1mask'] = I1mask_props['peak_of_flux']
+    results['Speak_R12'] = R12_props['peak_of_flux']
+    results['Speak_M12'] = M12_props['peak_of_flux']
+    results['Speak_I2'] = I2_props['peak_of_flux']
+
+    results['C50radii_I1'] = I1_props['C50radii']
+    results['C50radii_I1mask'] = I1mask_props['C50radii']
+    results['C50radii_R12'] = R12_props['C50radii']
+    results['C50radii_M12'] = M12_props['C50radii']
+    results['C50radii_I2'] = I2_props['C50radii']
+
+    results['C95radii_I1'] = I1_props['C95radii']
+    results['C95radii_I1mask'] = I1mask_props['C95radii']
+    results['C95radii_R12'] = R12_props['C95radii']
+    results['C95radii_M12'] = M12_props['C95radii']
+    results['C95radii_I2'] = I2_props['C95radii']
+
+
+    results['diff_SI2_SI1'] = results['S_I2'] - results['S_I1']
+    results['ratio_SI1_SI2'] = results['S_I1'] / results['S_I2']
+    results['diff_SpeakI2_SpeakI1'] = results['Speak_I2'] - results['Speak_I1']
+    results['ratio_SpeakI1_SpeakI2'] = results['Speak_I1'] / results['Speak_I2']
+
+    # omask_i, mask_i = mask_dilation(image_cut_i,
+    #                                 cell_size=get_cell_size(image_cut_i),
+    #                                 sigma=sigma, iterations=2,
+    #                                 dilation_size=dilation_size_i, PLOT=True)
 
     omaj_j, omin_j, _, _, _ = beam_shape(image_cut_j)
     dilation_size_j = int(
@@ -9050,163 +9253,141 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
                                     iterations=2, sigma=sigma,
                                     dilation_size=dilation_size_j, PLOT=False)
 
-    #     I1mask_data
-    baj = beam_area2(image_cut_j, cellsize=get_cell_size(image_cut_j))
-    bai = beam_area2(image_cut_i, cellsize=get_cell_size(image_cut_i))
-    results['S_M12_py'] = np.sum(ctn(M12)) / baj
-    results['S_R12_py'] = np.sum(mask_j * ctn(R12)) / baj
-    results['S_total_M12_R12_py'] = results['S_M12_py'] + results['S_R12_py']
-
-    results['S_I1_full_py'] = np.sum(g) / bai
-    results['S_I1_1_5sig_py'] = np.sum(g * (g > 5 * mad_std(g))) / bai
-    results['S_I1_1_3sig_py'] = np.sum(g * (g > 3 * mad_std(g))) / bai
-    results['S_I1_mask_py'] = np.sum(g * mask_i) / bai
-    results['S_I1_mask_opt_py'] = np.sum(g * I1mask) / bai
-    results['S_I1_1_0_5sig_py'] = np.sum(g * (g <= 5 * mad_std(g))) / bai
-
-    results['S_I2_full_py'] = np.sum(g_next) / baj
-    results['S_I2_mask_py'] = np.sum(g_next * mask_j) / baj
-    #     results['S_total_2_optsig_py'] = np.sum(I1mask_data)/bai
-    results['S_I2_2_5sig_py'] = np.sum(
-        g_next * (g_next > 5 * mad_std(g_next))) / baj
-    results['S_I2_2_3sig_py'] = np.sum(
-        g_next * (g_next > 3 * mad_std(g_next))) / baj
-    results['S_I2_2_0_5sig_py'] = np.sum(
-        g_next * (g_next <= 5 * mad_std(g_next))) / baj
-
-    results['S_difference_1_2_mask_py'] = abs(
-        results['S_I2_mask_py'] - results['S_I1_mask_py'])
-    results['S_difference_1_2_opt_py'] = abs(
-        results['S_I2_mask_py'] - results['S_I1_mask_opt_py'])
-
-    results['S_R12_frac_opt_py'] = results['S_R12_py'] / results[
-        'S_difference_1_2_opt_py']
-    results['S_R12_frac_mask_py'] = results['S_R12_py'] / results[
-        'S_difference_1_2_mask_py']
-
-    print('Flux on compact conv M12 ', results['S_M12_py'])
-    print('Flux on Residual R12     ', results['S_R12_py'])
-    print('Flux Total Model         ', results['S_total_M12_R12_py'])
-    print('Flux on I1 (full)        ', results['S_I1_full_py'])
-    print('Flux on I1 (opt)         ', results['S_I1_mask_opt_py'])
-    print('Flux on I1 (mask)        ', results['S_I1_mask_py'])
-    print('Flux on I2 (full)        ', results['S_I2_full_py'])
-    print('Flux on I2 (mask)        ', results['S_I2_mask_py'])
-
-    print('Difference in Flux e-merlin <> JVLA  in opt           ==',
-          results['S_difference_1_2_opt_py'])
-    print('Difference in Flux e-merlin <> JVLA  in mask          ==',
-          results['S_difference_1_2_mask_py'])
-    print('Estimated ext flux                                    ==',
-          results['S_R12_py'])
-    print('Fraction total flux e-merlin/extended flux vla  (opt) ==',
-          results['S_R12_frac_opt_py'])
-    print('Fraction total flux e-merlin/extended flux vla  (mask)==',
-          results['S_R12_frac_mask_py'])
-
     plot_interferometric_decomposition(I1mask_name, image_cut_j,
                                        M12, R12,
-                                       vmax_factor=1.0, vmin_factor=0.0,
+                                       vmax_factor=2.0, vmin_factor=0.5,
                                        run_phase='1st',
                                        crop=True, NAME=image_cut_i,
                                        SPECIAL_NAME='_I1_2_M12_R12')
 
-    def image_sum(image_cut_k, M13, M23):
-        def opt_res(params):
-            #             print(' << OPT LINEAR IMAGE COMBINATION >>>')
-            I3ext = image_data - (params['a'] * M23_data) - params[
-                'b'] * M13_data + params['c'] * zero_off
-            #     I3ext = image_data - (params['a']*M23_data-params['c']*zero_off)- (params['b']*M13_data-params['d']*zero_off)
-            return (I3ext)
-
-        def opt_sub_3(image_data, M23_data, M13_data, zero_off):
-            bounds_i = -10.0, -10.0, -3.0  # ,-3.0
-            bounds_f = 1000.0, 1000.0, +3.0  # ,+3.0
-            pars0 = 1.0, 1.0, 0.5  # ,0.0
-            ai, bi, ci = bounds_i
-            af, bf, cf = bounds_f
-            a0, b0, c0 = pars0
-            fit_params = lmfit.Parameters()
-            fit_params.add("a", value=a0, min=ai, max=af)
-            fit_params.add("b", value=b0, min=bi, max=bf)
-            fit_params.add("c", value=c0, min=ci, max=cf)
-            #     fit_params.add("d", value=d0, min=di, max=df)
-            solver_method = 'least_squares'
-            mini = lmfit.Minimizer(opt_res, fit_params, max_nfev=5000,
-                                   nan_policy='omit', reduce_fcn='neglogcauchy')
-            #             result_1 = mini.minimize(method=solver_method)
-            result_1 = mini.minimize(method=solver_method,
-                                     tr_solver="exact",
-                                     tr_options={'regularize': True},
-                                     x_scale='jac', loss="cauchy",
-                                     ftol=1e-15, xtol=1e-15, gtol=1e-15,
-                                     # f_scale=0.5,
-                                     max_nfev=5000, verbose=2)
-            #             result = mini.minimize(method='nelder',  params=result_1.params)
-            #             result = mini.minimize(method='nelder',  params=result_1.params)
-            result = mini.minimize(method='least_squares',
-                                   params=result_1.params,
-                                   tr_solver="exact",
-                                   tr_options={'regularize': True},
-                                   x_scale='jac', loss="cauchy",
-                                   ftol=1e-15, xtol=1e-15, gtol=1e-15,
-                                   # f_scale=0.5,
-                                   max_nfev=5000, verbose=2)
-
-            parFit = result.params['a'].value, result.params['b'].value, \
-            result.params['c'].value  # ,result.params['d'].value
-            Err_parFit = result.params['a'].stderr, result.params['b'].stderr, \
-            result.params['c'].stderr  # ,result.params['d'].stderr
-            resFit = result.residual
-            chisqr = result.chisqr
-            redchi = result.redchi
-            pars = parFit
-            res_opt = pars
-            return (parFit, Err_parFit)
-
-        image_data = mask_k * ctn(image_cut_k)
-        M13_data = ctn(M13)
-        M23_data = ctn(M23)
-        # zero_off = np.std(image_data) * 3.0
-        zero_off = mad_std(image_data) * 0.0
-        parFit, Err_parFit = opt_sub_3(image_data, M23_data, M13_data, zero_off)
-        a, b, c = parFit
-        print('Optmized image combination (a,b,c)=', parFit, '+/-', Err_parFit)
-
-        model_total = a * ctn(M23) + b * ctn(M13) - 1 * c * zero_off
-        M123 = image_cut_j.replace('.fits', '_model_conv_total.fits')
-        pf.writeto(M123, model_total, overwrite=True)
-        copy_header(image_cut_k, M123, M123)
-
-        model_comp = 0 * a * ctn(M23) + b * ctn(M13) - 1 * c * zero_off / 2
-        Mcomp = image_cut_j.replace('.fits', '_M13.fits')
-        pf.writeto(Mcomp, model_comp, overwrite=True)
-        copy_header(image_cut_k, Mcomp, Mcomp)
-
-        model_extended = a * ctn(M23) - 1 * c * zero_off / 2
-        Mext = image_cut_j.replace('.fits', '_M23.fits')
-        pf.writeto(Mext, model_extended, overwrite=True)
-        copy_header(image_cut_k, Mext, Mext)
-
-        I3re = ctn(image_cut_k) - a * ctn(M23) - b * ctn(M13) + 1 * c * zero_off
-        I3re_name = image_cut_j.replace('.fits', '_RT.fits')
-        I3ext = ctn(image_cut_k) - 0 * a * ctn(M23) - b * ctn(
-            M13) + 1 * c * zero_off / 2
-        I3ext_name = image_cut_j.replace('.fits', '_residual_extended.fits')
-        I3comp = ctn(image_cut_k) - a * ctn(M23) - 0 * b * ctn(
-            M13) + 1 * c * zero_off / 2
-        I3comp_name = image_cut_j.replace('.fits', '_residual_comp.fits')
-
-        pf.writeto(I3re_name, I3re, overwrite=True)
-        pf.writeto(I3ext_name, I3ext, overwrite=True)
-        pf.writeto(I3comp_name, I3comp, overwrite=True)
-        copy_header(image_cut_k, I3re_name, I3re_name)
-        copy_header(image_cut_k, I3ext_name, I3ext_name)
-        copy_header(image_cut_k, I3comp_name, I3comp_name)
-
-        return (M123, Mcomp, Mext, I3re_name, I3ext_name, I3comp_name, a, b, c)
+    print('####################################################')
+    print('----------------- **** REPORT **** -----------------')
+    print('####################################################')
+    print(f"Flux Density I1 (high-res)              = {results['S_I1'] * 1000:.2f} mJy")
+    print(f"Flux Density I1mask (high-res compact)  = {results['S_I1mask'] * 1000:.2f} mJy")
+    print(f"Flux Density M12 (mid-res compact conv) = {results['S_M12'] * 1000:.2f} mJy")
+    print(f"Flux Density I2 (mid-res)               = {results['S_I2'] * 1000:.2f} mJy")
+    print(f"Flux Density R12 (mid-res extended)     = {results['S_R12'] * 1000:.2f} mJy")
+    print('------------------ ************** ------------------')
+    print(f"Diff Flux Density I2-I1                 = {results['diff_SI2_SI1'] * 1000:.2f} mJy")
+    print(f"Ratio Flux Density I1/I2                = {results['ratio_SI1_SI2']:.2f}")
+    print(f"Diff Peak SpeakI2 - SpeakI1             = "
+          f"{results['diff_SpeakI2_SpeakI1']*1000:.2f} mJy/beam")
+    print(f"Ratio Peak SpeakI1 / SpeakI2            = "
+          f"{results['ratio_SpeakI1_SpeakI2']:.2f}")
+    print('####################################################')
 
     if image3 is not None:
+
+        def image_sum(image_cut_k, M13, M23,offset_3):
+            def opt_res(params):
+                print(f"Params: a={params['a'].value},"
+                      f"b={params['b'].value},"
+                      f"c={params['c'].value}")
+                optimisation = (params['a'] * M23_data + params['b'] * M13_data + params['c'] *
+                                offset_3)
+                I3ext = (image3_data - optimisation)
+                #     I3ext = image_data - (params['a']*M23_data-params['c']*zero_off)- (params['b']*M13_data-params['d']*zero_off)
+                return (I3ext)
+
+            def opt_sub_3(image_data, M23_data, M13_data, bkg_3):
+                bounds_i = 0.1, 0.1, -1.0  # ,-3.0
+                bounds_f = 10.01, 10.01, 1.0  # ,+3.0
+                pars0 = 1.0, 1.0, 0.5  # ,0.0
+                ai, bi, ci = bounds_i
+                af, bf, cf = bounds_f
+                a0, b0, c0 = pars0
+                fit_params = lmfit.Parameters()
+                fit_params.add("a", value=a0, min=ai, max=af)
+                fit_params.add("b", value=b0, min=bi, max=bf)
+                fit_params.add("c", value=c0, min=ci, max=cf)
+                #     fit_params.add("d", value=d0, min=di, max=df)
+                solver_method = 'least_squares'
+                mini = lmfit.Minimizer(opt_res, fit_params, max_nfev=50000,
+                                       nan_policy='omit', reduce_fcn='neglogcauchy')
+
+                # result_1 = mini.minimize(method='nelder', tol=1e-08,
+                #                          options={'xatol': 1e-08,
+                #                                   'fatol': 1e-08,
+                #                                   'adaptive': True})
+                #
+                # result = mini.minimize(method='nelder', params=result_1.params,
+                #                        tol=1e-08,
+                #                        options={'xatol': 1e-08,
+                #                                 'fatol': 1e-08,
+                #                                 'adaptive': True})
+
+                #             result_1 = mini.minimize(method=solver_method)
+                result_1 = mini.minimize(method=solver_method,
+                                         tr_solver="exact",
+                                         tr_options={'regularize': True},
+                                         x_scale='jac', loss="cauchy",
+                                         ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                                         f_scale=1.0,
+                                         max_nfev=5000, verbose=2)
+                result = mini.minimize(method=solver_method,
+                                       params=result_1.params,
+                                       tr_solver="exact",
+                                       tr_options={'regularize': True},
+                                       x_scale='jac', loss="cauchy",
+                                       ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                                       f_scale=1.0,
+                                       max_nfev=5000, verbose=2)
+
+                parFit = result.params['a'].value, result.params['b'].value, \
+                    result.params['c'].value  # ,result.params['d'].value
+                Err_parFit = result.params['a'].stderr, result.params['b'].stderr, \
+                    result.params['c'].stderr  # ,result.params['d'].stderr
+                # resFit = result.residual
+                # chisqr = result.chisqr
+                # redchi = result.redchi
+                # pars = parFit
+                # res_opt = pars
+                return (result, parFit, Err_parFit)
+
+            image3_data = mask_k * ctn(image_cut_k)
+            M13_data = ctn(M13)
+            M23_data = ctn(M23)
+
+            result_mini_I3, parFit, Err_parFit = \
+                opt_sub_3(image3_data, M23_data, M13_data, offset_3)
+            a, b, c = parFit
+            a_err, b_err, c_err = Err_parFit
+            print(f"Linear Image Combination Optmisation: "
+                  f"        (a,b,c)={parFit}+/-{Err_parFit}")
+
+            model_total = a * ctn(M23) + b * ctn(M13) + 1 * c * offset_3
+            M123 = image_cut_j.replace('.fits', '_M123_opt.fits')
+            pf.writeto(M123, model_total, overwrite=True)
+            copy_header(image_cut_k, M123, M123)
+
+            model_comp = 0 * a * ctn(M23) + b * ctn(M13) + 1 * c * offset_3 / 2
+            Mcomp = image_cut_j.replace('.fits', '_M13_opt.fits')
+            pf.writeto(Mcomp, model_comp, overwrite=True)
+            copy_header(image_cut_k, Mcomp, Mcomp)
+
+            model_extended = a * ctn(M23)# + c * bkg_3 / 2
+            Mext = image_cut_j.replace('.fits', '_M23_opt.fits')
+            pf.writeto(Mext, model_extended, overwrite=True)
+            copy_header(image_cut_k, Mext, Mext)
+
+            I3re = ctn(image_cut_k) - (a * ctn(M23) + b * ctn(M13) + 1 * c * offset_3)
+            I3_RT = image_cut_j.replace('.fits', '_RT.fits')
+            I3ext = ctn(image_cut_k) - (0 * a * ctn(M23) + b * ctn(M13) +  1 * c * offset_3 / 2)
+            I3ext_name = image_cut_j.replace('.fits', '_residual_extended.fits')
+            I3comp = ctn(image_cut_k) - (a * ctn(M23) + 0 * b * ctn(M13) + 1 * c * offset_3 / 2)
+            I3comp_name = image_cut_j.replace('.fits', '_residual_comp.fits')
+
+            pf.writeto(I3_RT, I3re, overwrite=True)
+            pf.writeto(I3ext_name, I3ext, overwrite=True)
+            pf.writeto(I3comp_name, I3comp, overwrite=True)
+            copy_header(image_cut_k, I3_RT, I3_RT)
+            copy_header(image_cut_k, I3ext_name, I3ext_name)
+            copy_header(image_cut_k, I3comp_name, I3comp_name)
+
+            return (M123, Mcomp, Mext, I3_RT, I3ext_name, I3comp_name, result_mini_I3, parFit, Err_parFit)
+
+
         print('Running decomposition for Image3...')
         image_cut_k = image3  # lowest resolution image
         results['imagename_k'] = os.path.basename(image_cut_k)
@@ -9222,136 +9403,218 @@ def image_decomposition(image1, image2, image3=None, iterations=2,
                                         dilation_size=dilation_size_k,
                                         PLOT=False)
 
-        g_last = ctn(image_cut_k)
+        image3_data = ctn(image_cut_k)
         bak = beam_area2(image_cut_k, cellsize=get_cell_size(image_cut_k))
         #         image_cut_k = imagelist[k]#cut_image2(imagelist[k],size=(1024,1024))
-        R12_data = ctn(R12)
+
+        psf_name_k = tcreate_beam_psf(image_cut_j,
+                                      size=image1_data.shape,
+                                      aspect=None)
+
+        correction_factor_jk = beam_area2(image_cut_k) / beam_area2(image_cut_j)
+        correction_factor_ik = beam_area2(image_cut_k) / beam_area2(image_cut_i)
+        PSF_BEAM_k = ctn(psf_name_k)  # this will result similar results as
+
+        if sub_bkg:
+            bkg_3 = sep_background(image_cut_k, apply_mask=False,
+                                   show_map=False, use_beam_fraction=True).back()
+            offset_3 = 0.5 * bkg_3
+
+        else:
+            bkg_3 = mad_std(image3_data)
+            offset_3 = 0.5 * bkg_3
+
+
+        #read the result of R12, but without the offest component!
+        R12_data = ctn(R12)# - offset_2
         R12_mask = mask_j  # (R12_data>1*mad_std(R12_data))
         # gg = gmask - convolve_fft(gmask,kernel)
         R12_data_mask = R12_mask * R12_data  # - gaussian_filter(gmask,10)
 
-        R12conv = image_cut_j.replace('.fits', '_R12_mask.fits')
-        pf.writeto(R12conv, R12_data_mask, overwrite=True)
-        copy_header(image_cut_j, R12conv, R12conv)
+        #Generate new file for a masked region of R12.
+        R12mask = image_cut_j.replace('.fits', '_R12_mask.fits')
+        pf.writeto(R12mask, R12_data_mask, overwrite=True)
+        copy_header(image_cut_j, R12mask, R12mask)
 
-        M23 = convolve_2D_smooth(R12conv, mode='transfer',
-                                 imagename2=image_cut_k,
-                                 add_prefix='_M23_nonopt')
-        M13 = convolve_2D_smooth(I1mask_name, mode='transfer',
-                                 imagename2=image_cut_k,
-                                 add_prefix='_M13_nonopt')
+        # Convolve R12mask with the beam of image3.
+        M23_data = scipy.signal.fftconvolve(R12_data_mask,
+                                            PSF_BEAM_k*correction_factor_jk,
+                                            mode='same')
+        M23 = image_cut_j.replace('.fits', '_M23.fits')
+        pf.writeto(M23, M23_data, overwrite=True)
+        copy_header(image_cut_k, M23, M23)
 
-        I2data_mask = ctn(image_cut_j) * mask_j
-        I2data_mask_name = image_cut_j.replace('.fits', '_I2mask.fits')
+        # # Convolving I1mask with the beam of image3.
+        # M13_data = scipy.signal.fftconvolve(I1mask_data,
+        #                                     PSF_BEAM_k*correction_factor_ik,
+        #                                     mode='same')
+        # M13 = image_cut_k.replace('.fits', '_M13.fits')
+        # pf.writeto(M13, M13_data, overwrite=True)
+        # copy_header(image_cut_k, M13, M13)
 
-        pf.writeto(I2data_mask_name, I2data_mask, overwrite=True)
-        copy_header(image_cut_j, I2data_mask_name, I2data_mask_name)
+        # Convolving I1mask with the beam of image3.
+        M13_data = scipy.signal.fftconvolve(M12_data,
+                                            PSF_BEAM_k*correction_factor_jk,
+                                            mode='same')
+        M13 = image_cut_k.replace('.fits', '_M13.fits')
+        pf.writeto(M13, M13_data, overwrite=True)
+        copy_header(image_cut_k, M13, M13)
 
-        I2conv = convolve_2D_smooth(I2data_mask_name, mode='transfer',
-                                    imagename2=image_cut_k,
-                                    add_prefix='_I2_conv3')
+        M123_opt, M13_opt, M23_opt, I3_RT, \
+            I3ext_name, I3comp_name, result_mini_I3, parFit, Err_parFit = \
+            image_sum(image_cut_k, M13, M23,offset_3)
 
-        I3_residual_23 = ctn(image_cut_k) - ctn(I2conv)
-        # R12 = imagelist[1].replace('.fits','_residual_conv.fits')
-        I3_residual_23_name = image_cut_j.replace('.fits',
-                                                  '_I3_residual_23.fits')
-        pf.writeto(I3_residual_23_name, I3_residual_23, overwrite=True)
-        copy_header(image_cut_k, I3_residual_23_name, I3_residual_23_name)
+        a, b, c = parFit
+        a_err, b_err, c_err = Err_parFit
 
-        model_total = ctn(M23) + ctn(M13)
-        M123 = image_cut_k.replace('.fits', '_model_conv_total.fits')
-        pf.writeto(M123, model_total, overwrite=True)
-        copy_header(image_cut_k, M123, M123)
-
-        M123_opt, Mcomp_opt, Mext_opt, I3re_name, \
-            I3ext_name, I3comp_name, a, b, c = \
-            image_sum(image_cut_k, M13, M23)
-
-        I3re_data = ctn(I3re_name)
-        I3re_data_sig3 = I3re_data[I3re_data > 3 * mad_std(abs(I3re_data))]
-        results['I3re_name'] = I3re_name
+        results['I3_name'] = image3
+        results['M23_name'] = M23_opt
+        results['M13_name'] = M13_opt
+        results['M123_name'] = M123_opt
         results['I3ext_name'] = I3ext_name
-        results['I3comp_name'] = I3comp_name
-        results['Mcomp_opt'] = Mcomp_opt
-        results['Mext_opt'] = Mext_opt
-        results['M123_opt'] = M123_opt
+        results['I3_RT_name'] = I3_RT
 
-        #         results['S_total_3'] = imstat(image_cut_k)['flux']
-        results['S_I3_full_py'] = np.sum(g_last) / bak
-        results['S_I3_mask_py'] = np.sum(g_last * mask_k) / bak
-        results['S_I3_5sig_py'] = np.sum(
-            g_last * (g_last > 5 * mad_std(g_last))) / bak
-        results['S_I3_3sig_py'] = np.sum(
-            g_last * (g_last > 3 * mad_std(g_last))) / bak
-        results['S_I3_0_5sig_py'] = np.sum(
-            g_last * (g_last < 5 * mad_std(g_last))) / bak
-
-        results['S_total_M123_py'] = np.sum(ctn(M123_opt)) / bak
-        results['S_model_M13_py'] = np.sum(ctn(Mcomp_opt)) / bak
-        results['S_model_ext_M23_py'] = np.sum(ctn(Mext_opt)) / bak
-
-        # estimate the total flux remaining in the extended structure
-        results['S_I3_ext_mask_py'] = np.sum(mask_k * ctn(I3ext_name)) / bak
-        results['S_I3_ext_full_py'] = np.sum(ctn(I3ext_name)) / bak
-
-        # estimate the total flux remaining in the final residual map.
-        results['S_I3_res_full_py'] = np.sum(ctn(I3re_name)) / bak
-        results['S_I3_res_mask_py'] = np.sum(mask_k * ctn(I3re_name)) / bak
-
-        results['S_I3_ext_full_frac_py'] = results['S_I3_ext_full_py'] / results[
-            'S_I3_mask_py']
-        results['S_I3_ext_mask_frac_py'] = results['S_I3_ext_mask_py'] / results[
-            'S_I3_mask_py']
-
-        results['S_I3_res_full_frac'] = results['S_I3_res_full_py'] / results[
-            'S_I3_mask_py']
-        results['S_I3_res_mask_frac'] = results['S_I3_res_mask_py'] / results[
-            'S_I3_mask_py']
-
-        results['S_I3_23_res_full_py'] = np.sum(I3_residual_23) / bak
-        results['S_I3_23_res_mask_py'] = np.sum(mask_k * I3_residual_23) / bak
         results['a'] = a
         results['b'] = b
         results['c'] = c
+        results['a_err'] = a_err
+        results['b_err'] = b_err
+        results['c_err'] = c_err
 
+        std_3 = mad_std(ctn(residual3))
+
+        _, mask_M13 = mask_dilation(M13_opt, PLOT=False, dilation_type='disk', rms=std_3,
+                                    sigma=6.0, iterations=2, dilation_size=None)
+        _, mask_I3 = mask_dilation(image3, PLOT=False, dilation_type='disk', rms=std_3,
+                                   sigma=6.0,
+                                   iterations=2, dilation_size=None)
+        _, mask_I3ext = mask_dilation(I3ext_name, PLOT=False, dilation_type='disk', rms=std_3,
+                                   sigma=6.0,
+                                   iterations=2, dilation_size=None)
+
+        I3_props = compute_image_properties(img=image3,
+                                            residual=residual3,
+                                            rms=std_3,
+                                            apply_mask=False,
+                                            show_figure=False,
+                                            mask=mask_I3,
+                                            last_level=2.0)[-1]
+
+        I3ext_props = compute_image_properties(img=I3ext_name,
+                                               residual=residual3,
+                                               rms=std_3,
+                                               apply_mask=False,
+                                               show_figure=False,
+                                               mask=mask_I3,
+                                               last_level=2.0)[-1]
+
+        M23_props = compute_image_properties(img=M23_opt,
+                                               residual=residual3,
+                                               rms=std_3,
+                                               apply_mask=False,
+                                               show_figure=False,
+                                               mask=mask_I3,
+                                               last_level=2.0)[-1]
+        M13_props = compute_image_properties(img=M13_opt,
+                                             residual=residual3,
+                                             rms=std_3,
+                                             apply_mask=False,
+                                             show_figure=False,
+                                             mask=mask_M13,
+                                             last_level=2.0)[-1]
+        I3_RT_props = compute_image_properties(img=I3_RT,
+                                             residual=residual3,
+                                             rms=std_3,
+                                             apply_mask=False,
+                                             show_figure=True,
+                                             mask=mask_I3,
+                                             last_level=2.0)[-1]
+
+        results['S_I3'] = I3_props['total_flux_mask']
+        results['S_I3ext'] = I3ext_props['total_flux_mask']
+        results['S_M23'] = M23_props['total_flux_mask']
+        results['S_M13'] = M13_props['total_flux_mask']
+        results['S_I3RT'] = I3_RT_props['total_flux_mask']
+
+        results['Speak_I3'] = I3_props['peak_of_flux']
+        results['Speak_I3ext'] = I3ext_props['peak_of_flux']
+        results['Speak_M23'] = M23_props['peak_of_flux']
+        results['Speak_M13'] = M13_props['peak_of_flux']
+        results['Speak_I3RT'] = I3_RT_props['peak_of_flux']
+
+        results['C50radii_I3'] = I3_props['C50radii']
+        results['C50radii_I3ext'] = I3ext_props['C50radii']
+        results['C50radii_M23'] = M23_props['C50radii']
+        results['C50radii_M13'] = M13_props['C50radii']
+        results['C50radii_I3RT'] = I3_RT_props['C50radii']
+
+        results['C95radii_I3'] = I3_props['C95radii']
+        results['C95radii_I3ext'] = I3ext_props['C95radii']
+        results['C95radii_M23'] = M23_props['C95radii']
+        results['C95radii_M13'] = M13_props['C95radii']
+        results['C95radii_I3RT'] = I3_RT_props['C95radii']
+
+        results['diff_SI3_SI1'] = results['S_I3'] - results['S_I1']
+        results['ratio_SI1_SI3'] = results['S_I1'] / results['S_I3']
+        results['diff_SpeakI3_SpeakI1'] = results['Speak_I3'] - results['Speak_I1']
+        results['ratio_SpeakI1_SpeakI3'] = results['Speak_I1'] / results['Speak_I3']
+
+        print('####################################################')
+        print('----------------- **** REPORT **** -----------------')
+        print('####################################################')
+        print(f"Flux Density I3 (low-res)             = {results['S_I3'] * 1000:.2f} mJy")
+        print(f"Flux Density Comp M13 (low-res)       = {results['S_M13'] * 1000:.2f} mJy")
+        print(f"Flux Density Ext M23 (low-res)        = {results['S_M23'] * 1000:.2f} mJy")
+        print(f"Flux Density Extended (I3 low-res)    = {results['S_I3ext'] * 1000:.2f} mJy")
+        print(f"Flux Density Residual (RT low-res)    = {results['S_I3RT'] * 1000:.2f} mJy")
+        print('------------------ ************** ------------------')
+        print(f"Diff Flux Density I3-I1                 = {results['diff_SI3_SI1'] * 1000:.2f} mJy")
+        print(f"Ratio Flux Density I1/I3                = {results['ratio_SI1_SI3']:.2f}")
+        print(f"Diff Peak SpeakI3 - SpeakI1             = "
+              f"{results['diff_SpeakI3_SpeakI1'] * 1000:.2f} mJy/beam")
+        print(f"Ratio Peak SpeakI1 / SpeakI3            = "
+              f"{results['ratio_SpeakI1_SpeakI3']:.2f}")
+        print('####################################################')
+
+        #
+        # results['S_I3_23_res_full_py'] = np.sum(I3_residual_23) / bak
+        # results['S_I3_23_res_mask_py'] = np.sum(mask_k * I3_residual_23) / bak
+        # results['a'] = a
+        # results['b'] = b
+        # results['c'] = c
+        #
         df = pd.DataFrame.from_dict(results, orient='index').T
-        df.to_csv(image2.replace('.fits', '_interf_decomposition.csv'),
+        df.to_csv(image3.replace('.fits', '_interf_decomposition.csv'),
                   header=True,
                   index=False)
 
-        plot_interferometric_decomposition(R12conv, image_cut_k,
+        plot_interferometric_decomposition(R12mask, image_cut_k,
                                            M123_opt,  # M23,
-                                           I3re_name,
+                                           I3_RT,
                                            vmin0=mad_std(ctn(image_cut_j)),
-                                           vmax_factor=0.1, vmin_factor=0.0,
+                                           vmax_factor=0.5, vmin_factor=2.0,
                                            run_phase='2nd',
                                            crop=False, box_size=512,
                                            NAME=image_cut_j,
                                            SPECIAL_NAME='_R12_I2_M123_I3re')
 
-        plot_interferometric_decomposition(R12conv, image_cut_k, Mcomp_opt,
+        plot_interferometric_decomposition(R12mask, image_cut_k, M13_opt,
                                            # M23,
                                            I3ext_name,
-                                           vmax_factor=0.1, vmin_factor=0.0,
+                                           vmax_factor=0.5, vmin_factor=2.0,
                                            crop=False, box_size=512,
                                            run_phase='compact',
                                            NAME=image_cut_j,
                                            SPECIAL_NAME='_R12_I3_Mcomp_I3ext')
 
+    if image3 is None:
+        return (result_mini, results, results_short, I1mask_data, I1mask_name, R12, M12)
+    else:
+        return (result_mini, result_mini_I3, results, I1mask, I1mask_name, R12, M12, M123_opt,
+                M13_opt, M23_opt, I3_RT, I3ext_name)
 
-
-
-
-
-    #         fast_plot(R12,image_cut_k,
-    #                   Mext_opt,
-    #         #           M23,
-    #                   I3comp_name,crop=False,box_size=512)
-    return (
-    result_mini, results, results_short, I1mask, I1mask_name, I1mask_2, R12,
-    R12conv, M12, M123_opt, Mcomp_opt, Mext_opt, I3re_name, I3ext_name,
-    I3comp_name, I3_residual_23_name)
-
+image_decomposition = deprecated("image_decomposition",
+                              "interferometric_decomposition")(interferometric_decomposition)
 
 def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
                                           imagelist_vla, residuallist_vla,
