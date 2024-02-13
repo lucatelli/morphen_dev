@@ -1934,7 +1934,7 @@ if run_mode == 'terminal':
                       datacolumn='corrected', keepflags=True)
 
 
-            if 'p1' in parameter_selection['p0_pos'].keys():
+            if ('p1' in parameter_selection['p0_pos'].keys()) and ('p1' in steps):
                 ref_step_spwmap = 'p1'
             else:
                 ref_step_spwmap = 'p0'
