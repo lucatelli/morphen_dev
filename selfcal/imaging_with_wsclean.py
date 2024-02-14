@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 import os
 import glob
-
+import time
 def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
             continue_clean='False',nc=4):
     g_vis = g_name + '.ms'
@@ -59,6 +59,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
         if running_container == 'singularity':
             command_exec = (
             'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
+            # ' ' + 'wsclean -name ' + root_dir +
             ' ' + 'mpirun -np ' + str(nc) + ' wsclean-mp -name ' + root_dir +
             image_deepclean_name +
             ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
@@ -236,12 +237,11 @@ if __name__ == "__main__":
     if args.deconvolution_mode == 'good':
         if with_multiscale == True or with_multiscale == 'True':
             deconvolver = '-multiscale'
-            deconvolver_options = ' -multiscale-scale-bias 0.75 -multiscale-gain 0.05 '
+            deconvolver_options = ' -multiscale-scale-bias 0.7 -multiscale-gain 0.05 '
             if (args.scales is None) or (args.scales == 'None'):
-                deconvolver_options = deconvolver_options
+                deconvolver_options = deconvolver_options + ' -multiscale-max-scales 6 '
             else:
-                deconvolver_options = (deconvolver_options + ' -multiscale-scales ' + args.scales
-                                       + ' -multiscale-max-scales 6 ')
+                deconvolver_options = (deconvolver_options + ' -multiscale-scales ' + args.scales + ' ')
 
             print('++++====>>>> Deconvolver Options:')
             print(deconvolver_options)
@@ -265,11 +265,11 @@ if __name__ == "__main__":
                             '-channels-out '+str(nc)+' -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
-                            '-deconvolution-threads 16 -j 16 -parallel-reordering 12 '
+                            '-deconvolution-threads 24 -j 24 -parallel-reordering 8 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            '-gridder wgridder -wstack-nwlayers-factor 1 '
-                            # '-circular-beam ' #-circular-beam -beam-size 0.1arcsec
-                            '-no-mf-weighting -parallel-deconvolution 2048 ' 
+                            '-gridder wgridder -wstack-nwlayers-factor 3 '
+                            ' -circular-beam ' #-circular-beam -beam-size 0.1arcsec
+                            '-no-mf-weighting -parallel-deconvolution 1024 ' 
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
                             '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(nc)+' '
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     if args.minuv_l is not None:
         uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.3 -gain 0.05 -nmiter 500 -super-weight 3.0 '
+    gain_args = ' -mgain 0.6 -gain 0.1 -nmiter 500 -super-weight 9.0 '
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
@@ -343,6 +343,8 @@ if __name__ == "__main__":
                 taper_mode = ''
             else:
                 taper_mode = '-taper-gaussian '
+
+            startTime = time.time()
             image_statistics = imaging(g_name=g_name,
                                        # base_name='2_selfcal_update_model',
                                        # base_name='image',
@@ -351,6 +353,9 @@ if __name__ == "__main__":
                                        uvtaper=uvtaper,
                                        continue_clean=args.continue_clean,
                                        nc=int(1*nc))
+
+            exec_time = time.time() - startTime
+            print('Exec time cleaning=', exec_time, 's')
 
             if image_statistics is not None:
                 image_statistics['robust'] = robust
@@ -361,5 +366,6 @@ if __name__ == "__main__":
                                                                                '_data.csv'),
                           header=True,
                           index=False)
+
             else:
                 pass

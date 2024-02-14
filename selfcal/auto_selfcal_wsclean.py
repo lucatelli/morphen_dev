@@ -70,12 +70,14 @@ msmd = casatools.msmetadata()
 ms = casatools.ms()
 tb = casatools.table()
 
+# import config_combined as cf
 import config as cf
 from importlib import reload
 reload(cf)
 
 FIELD = cf.FIELD
 ANTENNAS = cf.ANTENNAS
+refantmode = cf.refantmode
 SPWS = cf.SPWS
 minblperant = cf.minblperant
 cell_sizes_JVLA = cf.cell_sizes_JVLA
@@ -480,23 +482,6 @@ def table_phase_time(vis,gain_table,spw,intent='*TARGET*',ant = None):
 
 def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                       with_CORRECTED=False):
-    plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
-           antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
-           ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
-           correlation='LL,RR',plotrange=[0,0,0,0],
-           width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-           plotfile=os.path.dirname(
-               g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected-model.jpg')
-
-    plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
-           antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
-           ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
-           correlation='LL,RR',
-           width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
-           plotrange=[0, 0, 0, 5],
-           plotfile=os.path.dirname(
-               g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected_div_model.jpg')
-
 
     if with_MODEL == True:
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp', avgantenna=True,
@@ -535,6 +520,23 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                    g_vis) + '/selfcal/plots/' + name + '_freq_amp_data.jpg')
 
     if with_CORRECTED == True:
+        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
+               antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
+               ydatacolumn='corrected-model', avgchannel='64', avgtime='360',
+               correlation='LL,RR', plotrange=[0, 0, 0, 0],
+               width=1000, height=440, showgui=False, overwrite=True, dpi=1200, highres=True,
+               plotfile=os.path.dirname(
+                   g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected-model.jpg')
+
+        plotms(vis=g_vis, xaxis='UVwave', yaxis='amp',
+               antenna=ANTENNAS, spw=SPWS, coloraxis='baseline', avgantenna=True,
+               ydatacolumn='corrected/model', avgchannel='64', avgtime='360',
+               correlation='LL,RR',
+               width=1000, height=440, showgui=False, overwrite=True, dpi=1200, highres=True,
+               plotrange=[0, 0, 0, 5],
+               plotfile=os.path.dirname(
+                   g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected_div_model.jpg')
+
         plotms(vis=g_vis, xaxis='UVwave', yaxis='amp', avgantenna=True,
                antenna=ANTENNAS, spw=SPWS,
                # plotrange=[-1,-1,0,0.3],
@@ -980,7 +982,7 @@ def run_wsclean(g_name, n_interaction, imsize='2048', imsizey=None,cell='0.05ase
                 nsigma_automask='8.0', nsigma_autothreshold='1.0',
                 datacolumn='CORRECTED',mask=None,
                 niter=1000,quiet=True,
-                with_multiscale=False, scales='0,5,20,40',
+                with_multiscale=False, scales="'0,5,20,40'",
                 uvtaper=[], PLOT=False):
 
 
@@ -1024,7 +1026,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
                   PLOT=False, with_CORRECTED=True, with_MODEL=True, with_DATA=False,
                   special_name=''):
     g_vis = g_name + '.ms'
-
+    # refantmode = 'flex' if refantmode == 'flex' else 'strict'
     cal_basename = '_selfcal_'
     base_name =  str(n_interaction)+'_update_model_image_'+cal_basename
 
@@ -1468,7 +1470,7 @@ if run_mode == 'terminal':
                         n_interaction='0', savemodel=False, quiet=quiet,
                         datacolumn='DATA', shift=FIELD_SHIFT,
                         with_multiscale=False, scales='0,5,20,40',
-                        # uvtaper=['0.08arcsec'],
+                        uvtaper=init_parameters['test_image']['uvtaper'],
                         niter=niter_test,
                         PLOT=False)
 
@@ -1565,6 +1567,7 @@ if run_mode == 'terminal':
                             n_interaction=iteration, savemodel=False, quiet=quiet,
                             datacolumn='DATA', shift=FIELD_SHIFT,
                             uvtaper=p0_params['uvtaper'],
+                            scales = p0_params['scales'],
                             niter=niter,
                             PLOT=False)
 
@@ -1610,6 +1613,9 @@ if run_mode == 'terminal':
                                      tablename=tablename_refant)
                 print(' ==> Preferential reference antenna order = ', refant)
                 steps_performed.append('select_refant')
+            else:
+                refant = ''
+
 
             # SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf = \
             #     check_solutions(g_name,
@@ -1632,6 +1638,7 @@ if run_mode == 'terminal':
                                                          gaintype=p0_params['gaintype'],
                                                          combine=p0_params['combine'],
                                                          refant=refant,
+                                                         refantmode = refantmode,
                                                          calmode=p0_params['calmode'],
                                                          spwmap = p0_params['spwmap'],
                                                         #  interp = 'cubicPD,'
@@ -1644,7 +1651,7 @@ if run_mode == 'terminal':
                                                          gain_tables=[]
                                                          )
 
-                run_wsclean(g_name, robust=0.5,
+                run_wsclean(g_name, robust=p0_params['robust'],
                             imsize=imsize, imsizey=imsizey, cell=cell,
                             base_name='selfcal_test_0',
                             nsigma_automask=p0_params['nsigma_automask'],
@@ -1653,6 +1660,7 @@ if run_mode == 'terminal':
                             with_multiscale=p0_params['with_multiscale'],
                             datacolumn='CORRECTED_DATA',
                             uvtaper=p0_params['uvtaper'],
+                            scales=p0_params['scales'],
                             niter=niter, shift=FIELD_SHIFT,
                             PLOT=False)
                 image_statistics, image_list = compute_image_stats(path=path,
@@ -1661,29 +1669,32 @@ if run_mode == 'terminal':
                                                                    prefix='selfcal_test_0',
                                                                    selfcal_step='p0')
 
-                if image_statistics['selfcal_test_0']['total_flux_mask'] * 1000 < 10.0:
-                    """
-                    Check if using a taper will increase the flux density above 10 mJy.
-                    If yes, the source will not considered as `very faint`, and we may attempt a
-                    second phase-selfcal run with the template `faint` (i.e. `p1` will be executed).
-                    If not, we will continue with the `very faint` template and will proceed to
-                    `ap1`.
-                    """
-                    # modified_robust = robust + 0.5
-                    print('Deconvolving image with a taper.')
-                    run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
-                                robust=0.5, base_name='selfcal_test_0',
-                                nsigma_automask='5.0', nsigma_autothreshold='3.0',
-                                n_interaction='0', savemodel=False, quiet=quiet,
-                                datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
-                                with_multiscale=False, scales='0,5,20,40',
-                                uvtaper=taper_size,
-                                niter=niter,
-                                PLOT=False)
-                    image_statistics, image_list = compute_image_stats(path=path,
-                                                                       image_list=image_list,
-                                                                       image_statistics=image_statistics,
-                                                                       prefix='selfcal_test_0')
+                if params_trial_2 is None:
+                    if image_statistics['selfcal_test_0']['total_flux_mask'] * 1000 < 10.0:
+                        """
+                        Check if using a taper will increase the flux density above 10 mJy.
+                        If yes, the source will not considered as `very faint`, and we may attempt a
+                        second phase-selfcal run with the template `faint` (i.e. `p1` will be executed).
+                        If not, we will continue with the `very faint` template and will proceed to
+                        `ap1`.
+                        """
+                        # modified_robust = robust + 0.5
+                        print('Deconvolving image with a taper.')
+                        run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
+                                    robust=0.5, base_name='selfcal_test_0',
+                                    nsigma_automask=p0_params['nsigma_automask'],
+                                    nsigma_autothreshold=p0_params['nsigma_autothreshold'],
+                                    n_interaction='0', savemodel=False, quiet=quiet,
+                                    datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
+                                    with_multiscale=p0_params['with_multiscale'],
+                                    scales=p0_params['scales'],
+                                    uvtaper=p0_params['uvtaper'],
+                                    niter=niter,
+                                    PLOT=False)
+                        image_statistics, image_list = compute_image_stats(path=path,
+                                                                           image_list=image_list,
+                                                                           image_statistics=image_statistics,
+                                                                           prefix='selfcal_test_0')
 
 
 
@@ -1722,19 +1733,29 @@ if run_mode == 'terminal':
             print('Params that are currently being used:')
             print_table(p1_params)
             if 'update_model_1' not in steps_performed:
-                # run_wsclean(g_name, robust=robust,
-                #             imsize=imsize, imsizey=imsizey, cell=cell, base_name='selfcal_test_0',
-                #             nsigma_automask='6.0', nsigma_autothreshold='2.0',
-                #             n_interaction='', savemodel=False, quiet=quiet,
-                #             with_multiscale=False,
-                #             datacolumn='CORRECTED_DATA',
-                #             # uvtaper=['0.1arcsec'],
-                #             niter=niter, shift=FIELD_SHIFT,
-                #             PLOT=False)
-                mask_name = create_mask(image_list['selfcal_test_0'],
-                                        rms_mask=rms_mask,
-                                        sigma_mask=p1_params['sigma_mask'],
-                                        mask_grow_iterations=mask_grow_iterations)
+                if params_trial_2 is not None:
+                    run_wsclean(g_name, robust=p1_params['robust'],
+                                imsize=imsize, imsizey=imsizey, cell=cell,
+                                base_name='selfcal_test_0',
+                                nsigma_automask=p1_params['nsigma_automask'],
+                                nsigma_autothreshold=p1_params['nsigma_autothreshold'],
+                                n_interaction='', savemodel=False, quiet=quiet,
+                                with_multiscale=p1_params['with_multiscale'],
+                                scales = p1_params['scales'],
+                                datacolumn='CORRECTED_DATA',
+                                # uvtaper=['0.1arcsec'],
+                                niter=niter, shift=FIELD_SHIFT,
+                                PLOT=False)
+
+                    image_statistics, image_list = compute_image_stats(path=path,
+                                                                       image_list=image_list,
+                                                                       image_statistics=image_statistics,
+                                                                       prefix='selfcal_test_0')
+
+                    mask_name = create_mask(image_list['selfcal_test_0'],
+                                            rms_mask=rms_mask,
+                                            sigma_mask=p1_params['sigma_mask'],
+                                            mask_grow_iterations=mask_grow_iterations)
 
                 run_wsclean(g_name, robust=p1_params['robust'],
                             imsize=imsize, imsizey=imsizey, cell=cell,
@@ -1742,6 +1763,7 @@ if run_mode == 'terminal':
                             nsigma_autothreshold=p1_params['nsigma_autothreshold'],
                             n_interaction=iteration, savemodel=True, quiet=quiet,
                             with_multiscale=p1_params['with_multiscale'],
+                            scales=p1_params['scales'],
                             datacolumn='CORRECTED_DATA', mask=mask_name,
                             shift=FIELD_SHIFT,
                             uvtaper=p1_params['uvtaper'],
@@ -1795,13 +1817,14 @@ if run_mode == 'terminal':
                                                        #     'p0'].copy()
                                                        )
 
-                run_wsclean(g_name, robust=0.5,
+                run_wsclean(g_name, robust=p1_params['robust'],
                             imsize=imsize, imsizey=imsizey, cell=cell,
                             base_name='selfcal_test_1',
                             nsigma_automask=p1_params['nsigma_automask'],
                             nsigma_autothreshold=p1_params['nsigma_autothreshold'],
                             n_interaction='', savemodel=False, quiet=quiet,
                             with_multiscale=p1_params['with_multiscale'],
+                            scales=p1_params['scales'],
                             datacolumn='CORRECTED_DATA',
                             uvtaper=p1_params['uvtaper'],
                             niter=niter, shift=FIELD_SHIFT,
@@ -1810,7 +1833,6 @@ if run_mode == 'terminal':
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
                                                                    prefix='selfcal_test_1')
-
 
                 trial_gain_tables.append(gain_tables_selfcal_p1)
                 gain_tables_applied['p1'] = gain_tables_selfcal_p1
@@ -1845,6 +1867,7 @@ if run_mode == 'terminal':
                             nsigma_autothreshold=p2_params['nsigma_autothreshold'],
                             n_interaction='', savemodel=False, quiet=quiet,
                             with_multiscale=p2_params['with_multiscale'],
+                            scales=p2_params['scales'],
                             datacolumn='CORRECTED_DATA',
                             uvtaper=p2_params['uvtaper'],
                             niter=niter, shift=FIELD_SHIFT,
@@ -1865,6 +1888,7 @@ if run_mode == 'terminal':
                             nsigma_autothreshold=p2_params['nsigma_autothreshold'],
                             n_interaction=iteration, savemodel=True, quiet=quiet,
                             with_multiscale=p2_params['with_multiscale'],
+                            scales=p2_params['scales'],
                             datacolumn='CORRECTED_DATA', mask=mask_name,
                             shift=FIELD_SHIFT,
                             uvtaper=p2_params['uvtaper'],
@@ -1973,6 +1997,7 @@ if run_mode == 'terminal':
                             nsigma_autothreshold=ap1_params['nsigma_autothreshold'],
                             n_interaction='', savemodel=False, quiet=quiet,
                             with_multiscale=ap1_params['with_multiscale'],
+                            scales=ap1_params['scales'],
                             datacolumn='CORRECTED_DATA',
                             uvtaper=ap1_params['uvtaper'],
                             niter=niter, shift=FIELD_SHIFT,
@@ -1999,6 +2024,7 @@ if run_mode == 'terminal':
                             nsigma_autothreshold=ap1_params['nsigma_autothreshold'],
                             n_interaction=iteration, savemodel=True, quiet=quiet,
                             with_multiscale=ap1_params['with_multiscale'],
+                            scales=ap1_params['scales'],
                             datacolumn='CORRECTED_DATA', mask=mask_name,
                             shift=FIELD_SHIFT,
                             uvtaper=ap1_params['uvtaper'],
@@ -2011,6 +2037,7 @@ if run_mode == 'terminal':
                                                                    prefix='3_update_model_image')
 
                 steps_performed.append('update_model_3')
+
             print(' ==>> Preaparing for amp-gains....')
             # SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf  =  (
             #     check_solutions(g_name, field, cut_off=cut_off,
@@ -2053,6 +2080,27 @@ if run_mode == 'terminal':
                                                        PLOT=True,
                                                        gain_tables=phase_tables.copy()
                                                        )
+
+                do_ap_inf = False
+                if do_ap_inf == True:
+                    ap1spwmap_new = ap1_params['spwmap']
+                    ap1spwmap_new.append(ap1_params['spwmap'][-1])
+                    gain_tables_selfcal_ap1 = self_gain_cal(g_name,
+                                                        n_interaction=iteration,
+                                                        minsnr=ap1_params['minsnr'],
+                                                        solint='inf',
+                                                        flagbackup=True,
+                                                        gaintype=ap1_params['gaintype'],
+                                                        combine=ap1_params['combine'],
+                                                        refant=refant,
+                                                        solnorm=False,
+                                                        spwmap=ap1spwmap_new,
+                                                        calmode=ap1_params['calmode'],
+                                                        action='calculate',
+                                                        PLOT=False,
+                                                        gain_tables=gain_tables_selfcal_ap1.copy()
+                                                        )
+
                 trial_gain_tables.append(gain_tables_selfcal_ap1)
                 gain_tables_applied['ap1'] = gain_tables_selfcal_ap1
                 steps_performed.append('ap1')
@@ -2077,9 +2125,10 @@ if run_mode == 'terminal':
                             nsigma_automask = global_parameters['nsigma_automask'],
                             nsigma_autothreshold = global_parameters['nsigma_autothreshold'],
                             n_interaction='', savemodel=False, quiet=quiet,
-                            with_multiscale=True,
+                            with_multiscale=global_parameters['with_multiscale'],
+                            scales=global_parameters['scales'],
                             datacolumn='DATA', shift=FIELD_SHIFT,
-                            # uvtaper=['0.08asec'],
+                            uvtaper=global_parameters['uvtaper'],
                             niter=niter,
                             PLOT=False)
 
