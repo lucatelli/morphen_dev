@@ -1045,7 +1045,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
                 '_combine' + combine + '_gtype_' + gaintype + special_name + '.tb')
     if not os.path.exists(caltable):
         if calmode == 'ap' or calmode == 'a':
-            print(' ==> Using normalised solutions for amplitude self-calibration.')
+            print(' ++==> Using normalised solutions for amplitude self-calibration.')
             solnorm = True
         else:
             solnorm = False
@@ -1096,7 +1096,7 @@ def self_gain_cal(g_name, n_interaction, gain_tables=[],
 
         applycal(vis=g_vis, gaintable=gain_tables, spwmap=spwmap,
                  interp = interp,
-                 flagbackup=False, calwt=False)
+                 flagbackup=False, calwt=True)
 
         print('     => Reporting data flagged after selfcal '
               'apply interaction', n_interaction, '...')
@@ -1142,15 +1142,15 @@ def run_rflag(g_vis, display='report', action='calculate',
         flagmanager(vis=g_name + '.ms', mode='save', versionname='seflcal_after_rflag',
                     comment='After rflag at selfcal step.')
         try:
-            print(' ==> Running statwt on split data pos rflag...')
+            print(' ++==> Running statwt on split data pos rflag...')
             statwt(vis=g_vis, statalg='chauvenet', timebin='24s',
                    datacolumn='corrected',minsamp = 3)
         except:
-            print(' ==> Running statwt on split data pos rflag...')
+            print(' ++==> Running statwt on split data pos rflag...')
             statwt(vis=g_vis, statalg='chauvenet', timebin='24s',
                    datacolumn='data', minsamp = 3)
 
-        print(' ==> Flag statistics after rflag:')
+        print(' ++==> Flag statistics after rflag:')
         summary_after = flagdata(vis=g_vis, field='', mode='summary')
         report_flag(summary_after, 'field')
 
@@ -1326,7 +1326,8 @@ if run_mode == 'terminal':
             """
             Create basic directory structure for saving tables and plots.
             """
-            print('==> Creating basic directory structure.')
+            print(f"++==> Preparing to selfcalibrate {g_vis}.")
+            print('++==> Creating basic directory structure.')
             if not os.path.exists(path + 'selfcal/'):
                 os.makedirs(path + 'selfcal/')
             if not os.path.exists(path + 'selfcal/plots'):
@@ -1341,7 +1342,7 @@ if run_mode == 'terminal':
             final_gain_tables = []
             steps_performed = []
             # if delmodel == True:
-            print('==> Clearing model and cal visibilities.')
+            print('--==> Clearing model and cal visibilities.')
             delmod(g_vis,otf=True,scr=False)
             clearcal(g_vis)
 
@@ -1365,13 +1366,13 @@ if run_mode == 'terminal':
                 if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
                     statwt(vis=g_vis, statalg='chauvenet', timebin='24s', datacolumn='data')
             else:
-                print("     ==> Skipping flagging backup init (exists).")
-                print("     ==> Restoring flags to original...")
+                print("     --==> Skipping flagging backup init (exists).")
+                print("     --==> Restoring flags to original...")
                 flagmanager(vis=g_name + '.ms', mode='restore', versionname='Original')
                 if not os.path.exists(g_name + '.ms.flagversions/flags.statwt_1/'):
-                    print("     ==> Running statwt.")
+                    print("     ++==> Running statwt.")
                     statwt(vis=g_vis, statalg='chauvenet', timebin='24s', datacolumn='data')
-            print(" ==> Amount of data flagged at the start of selfcal.")
+            print(" ++==> Amount of data flagged at the start of selfcal.")
             summary = flagdata(vis=g_name + '.ms', field='', mode='summary')
             report_flag(summary, 'field')
             steps_performed.append('save_init_flags')
@@ -1490,7 +1491,11 @@ if run_mode == 'terminal':
                 of the source. In such cases, we attempt an image with a higher value, 
                 and check if that is actually true.
                 """
-                modified_robust = robust + 0.5
+                if init_parameters['test_image']['uvtaper'] != ['']:
+                    uvtaper = init_parameters['test_image']['uvtaper']
+                else:
+                    modified_robust = robust + 0.5
+
 
                 run_wsclean(g_name, imsize=imsize, imsizey = imsizey, cell=cell,
                             robust=modified_robust, base_name=prefix,
@@ -1498,7 +1503,7 @@ if run_mode == 'terminal':
                             n_interaction='0', savemodel=False, quiet=quiet,
                             datacolumn='DATA', shift=FIELD_SHIFT,
                             with_multiscale=False, scales='0,5,20,40',
-                            # uvtaper=['0.08arcsec'],
+                            uvtaper=uvtaper,
                             niter=niter,
                             PLOT=False)
                 image_statistics,image_list = compute_image_stats(path=path,
@@ -1607,11 +1612,11 @@ if run_mode == 'terminal':
                     steps_performed.append('start_image')
 
             if 'select_refant' in steps and 'select_refant' not in steps_performed:
-                print(' ==> Estimating order of best referent antennas...')
+                print(' ++==> Estimating order of best referent antennas...')
                 tablename_refant = os.path.dirname(g_name) + '/selfcal/find_refant.phase'
                 refant = find_refant(msfile=g_vis, field='',
                                      tablename=tablename_refant)
-                print(' ==> Preferential reference antenna order = ', refant)
+                print(' ++==> Preferential reference antenna order = ', refant)
                 steps_performed.append('select_refant')
             else:
                 refant = ''
@@ -1743,7 +1748,7 @@ if run_mode == 'terminal':
                                 with_multiscale=p1_params['with_multiscale'],
                                 scales = p1_params['scales'],
                                 datacolumn='CORRECTED_DATA',
-                                # uvtaper=['0.1arcsec'],
+                                uvtaper=p1_params['uvtaper'],
                                 niter=niter, shift=FIELD_SHIFT,
                                 PLOT=False)
 
@@ -1953,7 +1958,7 @@ if run_mode == 'terminal':
             
             vis_split_name_p = g_name + '_p_trial_1.ms'
             if not os.path.exists(vis_split_name_p):
-                print(' ==> Splitting data after phase-selfcal first trial...')
+                print(' ++==> Splitting data after phase-selfcal first trial...')
                 split(vis=g_name + '.ms', outputvis=vis_split_name_p,
                       datacolumn='corrected', keepflags=True)
 
@@ -2038,7 +2043,7 @@ if run_mode == 'terminal':
 
                 steps_performed.append('update_model_3')
 
-            print(' ==>> Preaparing for amp-gains....')
+            print(' ++==>> Preaparing for amp-gains....')
             # SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf  =  (
             #     check_solutions(g_name, field, cut_off=cut_off,
             #                                          n_interaction=iteration,
@@ -2109,15 +2114,15 @@ if run_mode == 'terminal':
         if 'split_trial_1' in steps and 'split_trial_1' not in steps_performed:
             vis_split_name_1 = g_name + '_trial_1.ms'
             if not os.path.exists(vis_split_name_1):
-                print(' ==> Splitting data after selfcal...')
+                print(' ++==> Splitting data after selfcal...')
                 split(vis=g_name + '.ms', outputvis=vis_split_name_1,
                       datacolumn='corrected', keepflags=True)
-                print(' ==> Running statw on split data...')
+                print(' ++==> Running statw on split data...')
                 statwt(vis=vis_split_name_1, statalg='chauvenet', timebin='24s',
                        datacolumn='data')
             niter = 150000
             ROBUSTS = [-0.5,0.5] #[-2.0,0.0,0.5,1.0]
-            print(' ==> Imaging visibilities after first trial of selfcal...')
+            print(' ++==> Imaging visibilities after first trial of selfcal...')
             for robust in ROBUSTS:
                 run_wsclean(g_name + '_trial_1', robust=robust,
                             imsize=imsize, imsizey=imsizey, cell=cell,
@@ -2284,29 +2289,39 @@ if run_mode == 'terminal':
                       timedevscale=2.5, freqdevscale=2.5, winsize=5,
                       datacolumn='corrected')
 
-
-            niter = 150000
-            robust = 0.5
-            run_wsclean(g_name, robust=robust,
-                        imsize=global_parameters['imsize'],
-                        imsizey=global_parameters['imsizey'],
-                        cell=global_parameters['cell'],
-                        base_name='selfcal_image_pos_rflag',
-                        nsigma_automask='3.0', nsigma_autothreshold='1.5',
-                        n_interaction='', savemodel=False, quiet=True,
-                        with_multiscale=True,
-                        datacolumn='CORRECTED_DATA', shift=FIELD_SHIFT,
-                        # uvtaper=['0.1arcsec'],
-                        niter=niter,
-                        PLOT=True)
-
             vis_split_name_2 = g_name + '_trial_1_pos_rflag.ms'
             if not os.path.exists(vis_split_name_2):
-                print(' ==> Splitting data after rflag first trial...')
+                print(' ++==> Splitting data after rflag first trial...')
                 split(vis=g_name + '.ms', outputvis=vis_split_name_2,
                       datacolumn='corrected', keepflags=True)
             statwt(vis=vis_split_name_2, statalg='chauvenet', timebin='24s',
                    datacolumn='data')
+
+            niter = 150000
+            robust = 0.5
+            run_wsclean(vis_split_name_2, robust=robust,
+                        imsize=global_parameters['imsize'],
+                        imsizey=global_parameters['imsizey'],
+                        cell=global_parameters['cell'],
+                        base_name='selfcal_image_pos_rflag',
+                        nsigma_automask='4.0',
+                        nsigma_autothreshold='2.0',
+                        n_interaction='', savemodel=False, quiet=True,
+                        with_multiscale=True,
+                        scales='None',
+                        datacolumn='DATA', shift=FIELD_SHIFT,
+                        # uvtaper=['0.1arcsec'],
+                        niter=niter,
+                        PLOT=False)
+
+            image_statistics, image_list = compute_image_stats(path=path,
+                                                               image_list=image_list,
+                                                               image_statistics=image_statistics,
+                                                               prefix='selfcal_image_pos_rflag')
+
+            plot_visibilities(g_vis=vis_split_name_2, name='selfcal_image_pos_rflag',
+                              with_MODEL=False, with_CORRECTED=True)
+
             steps_performed.append('run_rflag_final')
 
 

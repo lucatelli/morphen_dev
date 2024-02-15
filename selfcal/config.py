@@ -6,7 +6,7 @@ This is intended to be used as a first trial of self-calibration.
 FIELD = ''
 SPWS = ''
 ANTENNAS = ''
-refantmode = 'flex'
+refantmode = 'strict'
 # refant = ''
 minblperant=3
 solnorm = True # True will always be used for amp-selfcal!.
@@ -23,7 +23,7 @@ vis_list = ['']
 
 
 #VLA
-receiver = 'C'
+receiver = 'Ka'
 instrument = 'EVLA' # 'EVLA' or 'eM'
 
 
@@ -66,7 +66,7 @@ taper_sizes_JVLA = {'L':'1.0arcsec',
                     'X':'0.2arcsec',
                     'Ku':'0.1arcsec',
                     'K':'0.03arcsec',
-                    'Ka':'0.04arcsec'}
+                    'Ka':'0.05arcsec'}
 
 if instrument == 'eM':
     cell_size = cell_sizes_eMERLIN[receiver]
@@ -86,7 +86,7 @@ init_parameters = {'fov_image': {'imsize': 1024*6,
                                  'FIELD_SHIFT':None,
                                  'cell': cell_size,
                                  'prefix': 'test_image',
-                                 'uvtaper': [''],
+                                 'uvtaper': ['0.05asec'],
                                  'niter': 10000,
                                  'robust': 0.0}
                   }
@@ -122,10 +122,11 @@ params_very_faint = {'name': 'very_faint',
                             'spwmap': [],#leavy empty here. It will be filled later
                             'nsigma_automask' : '3.0',
                             'nsigma_autothreshold' : '1.5',
-                            'uvtaper' : [''],
+                            'uvtaper' : ['0.05asec'],
                             'with_multiscale' : False,
+                            'scales': 'None',
                             'compare_solints' : False},
-                     'ap1': {'robust': 1.0,
+                     'ap1': {'robust': 0.5,
                              'solint' : '240s' if instrument == 'eM' else '96s',
                              'sigma_mask': 6,
                              'combine': 'spw',
@@ -135,8 +136,9 @@ params_very_faint = {'name': 'very_faint',
                              'spwmap': [],#leavy empty here. It will be filled later
                              'nsigma_automask' : '3.0',
                              'nsigma_autothreshold' : '1.5',
-                             'uvtaper' : [''],
+                             'uvtaper' : ['0.05asec'],
                              'with_multiscale' : False,
+                             'scales': 'None',
                              'compare_solints' : False},
                      }
 
@@ -215,14 +217,13 @@ with a total integrated flux density between 20 and 50 mJy.
 """
 params_standard_1 = {'name': 'standard_1',
                    'p0': {
-                          # 'robust': 0.0 if receiver == 'K' or receiver=='Ka' else -0.5,
-                          'robust': 0.0 if receiver in ('K', 'Ka') else -0.5,
-                          'solint' : '240s' if instrument == 'eM' else '120s',
+                          'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
+                          'solint' : '120s' if instrument == 'eM' else '96s',
                           'sigma_mask': 15.0 if instrument == 'eM' else 25.0,
-                          'combine': '',
+                          'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T',
                           'calmode': 'p',
-                          'minsnr': 1.5,# if K band or Ka band, try 1.0 if high flagging
+                          'minsnr': 1.5 if receiver in ('K', 'Ka') or instrument == 'eM' else 3.0,
                           'spwmap': [],
                           'nsigma_automask' : '5.0',
                           'nsigma_autothreshold' : '2.5',
@@ -232,9 +233,9 @@ params_standard_1 = {'name': 'standard_1',
                           'scales': 'None',
                           'compare_solints' : False},
                    'p1': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
-                          'solint' : '96s',
+                          'solint' : '60s',
                           'sigma_mask': 15,
-                          'combine': '',
+                          'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T' if receiver in ('K', 'Ka') else 'G',
                           'calmode': 'p',
                           'minsnr': 1.0 if receiver in ('K', 'Ka') else 1.5,
@@ -264,8 +265,8 @@ params_standard_1 = {'name': 'standard_1',
                    'ap1': {'robust': 0.5,
                            'solint': '60s' if instrument == 'eM' else '60s',
                            'sigma_mask': 6,
-                           'combine': '',
-                           'gaintype': 'T',
+                           'combine': 'spw' if instrument == 'eM' else '',
+                           'gaintype': 'G',
                            'calmode': 'ap',
                            'minsnr': 1.5,
                            'spwmap': [],
@@ -290,12 +291,12 @@ Note that some values may change if using e-MERLIN or VLA.
 """
 params_standard_2 = {'name': 'standard_2',
                    'p0': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
-                          'solint' : '192s' if instrument == 'eM' else '96s',
+                          'solint' : '96s' if instrument == 'eM' else '96s',
                           'sigma_mask': 25.0 if instrument == 'eM' else 50.0,
                           'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T',
                           'calmode': 'p',
-                          'minsnr': 1.5 if instrument == 'eM' else 3.0,
+                          'minsnr': 1.5 if receiver in ('K', 'Ka') or instrument == 'eM' else 3.0,
                           'spwmap': [],
                           'nsigma_automask' : '6.0',
                           'nsigma_autothreshold' : '3.0',
@@ -307,10 +308,10 @@ params_standard_2 = {'name': 'standard_2',
                    'p1': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
                           'solint' : '96s' if instrument == 'eM' else '60s',
                           'sigma_mask': 18 if instrument == 'eM' else 35,
-                          'combine': '',
+                          'combine': '' if instrument == 'eM' else '',
                           'gaintype': 'G',
                           'calmode': 'p',
-                          'minsnr': 2.0,
+                          'minsnr': 1.5 if instrument == 'eM' else 2.0,
                           'spwmap': [],
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
@@ -335,9 +336,9 @@ params_standard_2 = {'name': 'standard_2',
                           'scales': 'None',
                           'compare_solints' : False},
                    'ap1': {'robust': 0.5,
-                           'solint': '96s' if instrument == 'eM' else '36s',
+                           'solint': '60s' if instrument == 'eM' else '36s',
                            'sigma_mask': 8,
-                           'combine': 'spw' if instrument == 'eM' else '',
+                           'combine': '' if instrument == 'eM' else '',
                            'gaintype': 'G',
                            'calmode': 'ap',
                            'minsnr': 1.5 if instrument == 'eM' else 3.0,
@@ -395,8 +396,8 @@ params_bright = {'name': 'bright',
                         'minsnr': 3.0,
                         'spwmap': [],
                         'uvtaper' : [''],
-                        'nsigma_automask': '3.0',
-                        'nsigma_autothreshold': '1.5',
+                        'nsigma_automask': '4.0',
+                        'nsigma_autothreshold': '2.0',
                         'with_multiscale': True,
                         # 'scales': '0,5,10,20,40',
                         'scales': 'None',
@@ -410,8 +411,8 @@ params_bright = {'name': 'bright',
                          'minsnr': 3.0,
                          'spwmap': [],
                          'uvtaper' : [''],
-                         'nsigma_automask': '3.0',
-                         'nsigma_autothreshold': '1.5',
+                         'nsigma_automask': '4.0',
+                         'nsigma_autothreshold': '2.0',
                          'with_multiscale': True,
                          # 'scales': '0,5,10,20,40',
                          'scales': 'None',
