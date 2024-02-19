@@ -113,9 +113,10 @@ import matplotlib.ticker as mticker
 import coloredlogs
 import logging
 import warnings
+from functools import partial
 try:
     import jax
-    from jax import jit
+    from jax import jit, vmap
     from jax.numpy.fft import fft2, ifft2, fftshift
     import jax.numpy as jnp
     import jax.scipy as jscipy
@@ -406,7 +407,8 @@ def bn(n):
 
 
 @jit
-def sersic2D_GPU(xy, x0, y0, PA, ell, n, In, Rn, cg=0.0):
+def sersic2D_GPU(xy, x0=None, y0=None, PA=None, ell=None, 
+                 n=None, In=None, Rn=None, cg=0.0):
     """
     Using Jax >> 10x to 100x faster.
 
@@ -449,6 +451,49 @@ def sersic2D_GPU(xy, x0, y0, PA, ell, n, In, Rn, cg=0.0):
     model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
     return (model)
 
+def sersic2D_GPU_new(xy, params):
+    """
+    Using Jax >> 10x to 100x faster.
+
+    Parameters
+    ----------
+    xy : tuple float
+        meshgrid arrays
+    x0,y0 : float float
+        center position in pixels
+    PA : float
+        position angle in degrees of the meshgrid
+        [-180, +180]
+    ell : float
+        ellipticity, e = 1 - q
+        ell in [0,1]
+    n : float
+        sersic index
+        n in [0, inf]
+    Rn : float
+        half-light radius
+        Rn in [0, inf]
+    In : float
+        intensity at Rn
+        In in [0, inf]
+    cg : float
+        geometric parameter that controls how boxy the ellipse is
+        c in [-2, 2]
+    Returns
+    -------
+    model : 2D Jax array
+        2D sersic function image
+    """
+    x0, y0, PA, ell, n, In, Rn, cg = params
+    q = 1 - ell
+    x, y = xy
+
+    xx, yy = rotation_GPU(PA, x0, y0, x, y)
+    # r     = (abs(xx)**(c+2.0)+((abs(yy))/(q))**(c+2.0))**(1.0/(c+2.0))
+    r = jnp.sqrt((abs(xx) ** (cg + 2.0) + ((abs(yy)) / (q)) ** (cg + 2.0)))
+    model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
+    return (model)
+
 @jit
 def rotation_GPU(PA, x0, y0, x, y):
     """
@@ -471,8 +516,18 @@ def rotation_GPU(PA, x0, y0, x, y):
             -(x - x0) * jnp.sin(t) + (y - y0) * jnp.cos(t))
 
 @jit
-def FlatSky(data_level, a):
-    return (a * data_level)
+def FlatSky(background_data, a):
+    """
+    A simple model for the background.
+
+    Parameters
+    ----------
+    background_data : 2D array
+        Input background array.
+    a : float
+        flat sky level factor, to multiply the background_data.
+    """
+    return (a * background_data)
 
 @jit
 def _fftconvolve_jax(image, psf):
@@ -764,20 +819,22 @@ def sort_list_by_beam_size(imagelist, residuallist=None,return_df=False):
     beam_sizes_list = []
     for i in tqdm(range(len(imagelist))):
         beam_sizes = {}
-        beam_size_px, _, _ = get_beam_size_px(imagelist[i])
+        aO, bO, _, _, _ = beam_shape(imagelist[i])
+        beam_size_arcsec = np.sqrt(aO*bO)
+        # beam_size_px, _, _ = get_beam_size_px(imagelist[i])
         beam_sizes['imagename'] = imagelist[i]
         if residuallist is not None:
             beam_sizes['residualname'] = residuallist[i]
         else:
             beam_sizes['residualname'] = \
                 imagelist[i].replace('/MFS_images/','/MFS_residuals/')\
-                            .replace('-MFS-image.','-MFS-residual.')
+                            .replace('-image','-residual')
         beam_sizes['id'] = i
-        beam_sizes['B_size_px'] = beam_size_px
+        beam_sizes['B_size_arcsec'] = beam_size_arcsec
         beam_sizes_list.append(beam_sizes)
 
     df_beam_sizes = pd.DataFrame(beam_sizes_list)
-    df_beam_sizes_sorted = df_beam_sizes.sort_values('B_size_px')
+    df_beam_sizes_sorted = df_beam_sizes.sort_values('B_size_arcsec')
     imagelist_sort = np.asarray(df_beam_sizes_sorted['imagename'])
     residuallist_sort = np.asarray(df_beam_sizes_sorted['residualname'])
     i = 0
@@ -1282,14 +1339,12 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
     if dilation_type == 'disk':
         data_mask_d = ndimage.binary_dilation(mask,
                                             structure=disk(dilation_size),
-                                            iterations=iterations).\
-                                                astype(mask.dtype)
+                                            iterations=iterations).astype(mask.dtype)
 
     if dilation_type == 'square':
         data_mask_d = ndimage.binary_dilation(mask,
                                             structure=square(dilation_size),
-                                            iterations=iterations).\
-                                                astype(mask.dtype)
+                                            iterations=iterations).astype(mask.dtype)
 
     if PLOT == True:
         fig = plt.figure(figsize=(15, 4))
@@ -1897,7 +1952,7 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
         coords = imst['maxposf'].split(',')
         ra = coords[0]
         dec = format_coords(coords[1])
-        print(ra, dec)
+        # print(ra, dec)
         ra_f, dec_f = conver_str_coords(ra, dec)
 
     with fits.open(imagename) as hdul:
@@ -1915,7 +1970,7 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
         # center = SkyCoord(ra=center_ra, dec=center_dec, unit='deg',from)
         center = SkyCoord(ra=center_ra * u.degree, dec=center_dec * u.degree,
                           frame='icrs')
-
+        # print(center)
         # create a Cutout2D object
         cutout = Cutout2D(image_data[0][0], center, cutout_size, wcs=wcs)
         new_hdul = fits.HDUList(
@@ -3171,6 +3226,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     sigma=sigma_mask, do_PLOT=do_PLOT,
                                     results=results_final, bkg_to_sub=bkg_to_sub,
                                     show_figure=False,
+                                    rms=rms,
                                     add_save_name=add_save_name,
                                     SAVE=SAVE, ext='.jpg')
     if logger is not None:
@@ -3461,7 +3517,6 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
 
     if rms is not None:
-        print('Using rms provided...')
         std = rms
     else:
         std = mad_std(g_)
@@ -3492,13 +3547,17 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     if mask_component is not None:
         #
         g = g * mask_component
+        
         # res = res * mask_component
 
         total_flux_nomask = np.sum(g) / beam_area_
         total_flux = np.sum(g * (g > 3 * std)) / beam_area_
-        mask = mask_component
-        omask = mask_component
-
+        if mask is not None:
+            mask = mask * mask_component
+            omask = mask * mask_component
+        else:
+            mask = mask_component
+            omask = mask_component
 
     # if (apply_mask is None) and  (mask is None):
     #     mask = mask_component
@@ -6132,7 +6191,42 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
 
 
 def sep_background(imagename,mask=None,apply_mask=False,show_map=False,
-                   bw=64, bh=64, fw=5, fh=5, use_beam_fraction=False):
+                   bw=64, bh=64, fw=5, fh=5, use_beam_fraction=False,
+                   b_factor=2,f_factor=2):
+    """
+    Use SEP to estimate the background of an image.
+
+    Parameters
+    ----------
+    imagename : str
+        Path to the image.
+    mask : array
+        Mask to be applied to the image.
+    apply_mask : bool
+        If True, calculate the dilated mask from the image.
+    show_map : bool
+        If True, show the background map.
+    bw : int
+        Box width for the background estimation.
+    bh : int
+        Box height for the background estimation.
+    fw : int
+        Filter width for the background estimation.
+    fh : int
+        Filter height for the background estimation.
+    use_beam_fraction : bool
+        If True, use the beam fraction sizes for the sizes of the boxes and
+        filters (bw, bh, fw, fh).
+    bfactor : int (optional)
+        Factor to multiply the box sizes (bw, bh) by.
+    factor : int (optional)
+        Factor to multiply the filter sizes (fw, fh) by.
+
+    Returns
+    -------
+    bkg : sep.Background
+        Background object.
+    """
     import sep
     import fitsio
     '''
@@ -6150,8 +6244,8 @@ def sep_background(imagename,mask=None,apply_mask=False,show_map=False,
         bspx_avg = int(bspx[0])
         print(f"Beam Size in px=({bspx_x},{bspx_y})")
         print(f"Average beam Size in px=({bspx_avg})")
-        bw, bh = int(bspx_x*2), int(bspx_y*2)
-        fw, fh = int(bspx_avg*2), int(bspx_avg*2)
+        bw, bh = int(bspx_x*b_factor), int(bspx_y*b_factor)
+        fw, fh = int(bspx_avg*f_factor), int(bspx_avg*f_factor)
 
     if (mask is None) and (apply_mask==True):
         _, mask = mask_dilation(imagename, PLOT=False,
@@ -6810,7 +6904,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                     # still, some of them must be treated in particular.
                     if param == 'n':
                         if fix_n_i == True:
-                            print('Fixing sersic index of component',i,' to 0.5')
+                            print('++==>> Fixing sersic index of component',i+1,' to 0.5')
                             smodel2D.set_param_hint(
                                 'f' + str(i + 1) + '_' + param,
                                 value=0.5, min=0.49, max=0.51)
@@ -6963,14 +7057,17 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                                 min=eval(param) - dr * 5,
                                                 max=eval(param) + dr * 5)
 
-        # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-        smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
+        smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+        # smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
     else:
         if init_constraints is not None:
             """
             This is the default option to use, and the more robust.
             """
             if constrained == True:
+                """
+                This is the default option to use, and the more robust.
+                """
                 for j in range(init_constraints['ncomps']):
                     if fix_n is not False:
                         fix_n_j = fix_n[j]
@@ -6987,7 +7084,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                         #                                                 value=eval(param), min=0.000001)
                         if (param == 'n'):
                             if (fix_n_j == True):
-                                print('Fixing Sersic Index of component',j,' to 0.5.')
+                                print('++==>> Fixing sersic index of component',j+1,' to 0.5.')
                                 dn = 0.01
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
@@ -7078,7 +7175,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 x0c = init_constraints['c' + jj + '_x0c']
                                 x0_max = x0c + dr_fix_j
                                 x0_min = x0c - dr_fix_j
-                                print('Limiting ', param)
+                                print(f" ++==>> Limiting {param}={x0c}+/-{dr_fix_j}")
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=x0c,
@@ -7089,7 +7186,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 x0c = init_constraints['c' + jj + '_x0c']
                                 x0_max = x0c + ddxx
                                 x0_min = x0c - ddxx
-                                print('Limiting ', param)
+                                print(f" ++==>> Limiting {param}={x0c}+/-{ddxx}")
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=x0c,
@@ -7103,7 +7200,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 y0c = init_constraints['c' + jj + '_y0c']
                                 y0_max = y0c + dr_fix_j
                                 y0_min = y0c - dr_fix_j
-                                print('Limiting ', param)
+                                print(f" ++==>> Limiting {param}={y0c}+/-{dr_fix_j}")
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=y0c,
@@ -7114,7 +7211,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 y0c = init_constraints['c' + jj + '_y0c']
                                 y0_max = y0c + ddyy
                                 y0_min = y0c - ddyy
-                                print('Limiting ', param)
+                                print(f" ++==>> Limiting {param}={y0c}+/-{ddyy}")
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=y0c,
@@ -7176,8 +7273,8 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 min=y0_min,
                                 max=y0_max)
 
-            # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-            smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
+            smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+            # smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
         else:
             '''
             Run a complete free-optimization.
@@ -7192,8 +7289,8 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=0.5, min=0.3, max=6)
-                # smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
-                smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
+                smodel2D.set_param_hint('s_a', value=1, min=0.99, max=1.01)
+                # smodel2D.set_param_hint('s_a', value=1, min=0.0, max=10.0)
             except:
                 print('Please, if not providing initial parameters file,')
                 print('provide basic information for the source.')
@@ -7630,14 +7727,18 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
         # psf_size = dilation_size*6
         # psf_size = (2 * psf_size) // 2 +1
         psf_size = int(data_2D.shape[0])
-        print('PSF SIZE is', psf_size)
+        print('++==>> PSF IMAGE SIZE is', psf_size)
         # creates a psf from the beam shape.
         psf_name = tcreate_beam_psf(crop_image, size=(
             psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
     if obs_type == 'other':
+        """
+        Provide a psf file.
+        """
         psf_name = None
 
     n_components = len(indices)
+    n_IDs = len(indices)
     print("# of structures (IDs) to be fitted =", n_components)
     # sources_photometies_new = sources_photometies
     # n_components_new = n_components
@@ -7649,7 +7750,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     # update variable `n_components`.
     n_components = sources_photometries['ncomps']
     print("# of model components (COMPS) to be fitted =", n_components)
-    return (sources_photometries, n_components, psf_name, mask, bkg)
+    return (sources_photometries, n_components, n_IDs, psf_name, mask, bkg)
 
 def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
@@ -7795,11 +7896,14 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         data_2D = data_2D_
 
     if mask_region is not None:
+        """
+        
+        """
         logger.debug(f" ==> Using provided mask region to constrain fit. ")
+        logger.warning(f" !!==> Fitting with a mask is experimental! ")
         data_2D = data_2D * mask_region
 
     if convolution_mode == 'GPU':
-        # data_2D_gpu = cp.asarray(data_2D)
         data_2D_gpu = jnp.array(data_2D)
         
     if psf_name is not None:
@@ -7864,10 +7968,9 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
             """
             residual_2D_to_use = residual_2D
             
-        FlatSky_level = mad_std(residual_2D)
+        FlatSky_level = mad_std(residual_2D_to_use)
         #         background = residual_2D #residual_2D_to_use
         if convolution_mode == 'GPU':
-            FlatSky_level_GPU = jnp.array(FlatSky_level)
             background = jnp.array(residual_2D_to_use)
         else:
             background = residual_2D_to_use
@@ -7950,38 +8053,76 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         residual = data_2D - MODEL_2D_conv
         return np.ravel(residual)
 
+    def convert_params_to_numpy(_params):
+        return list(_params)
+    
+    @partial(jit, static_argnums=1)
+    def func(x):
+        return np.split(x, 8)
+
+    @partial(jit, static_argnums=2)
+    def build_model(xy,_params,nfunctions):
+        params = func(_params[:-1])
+        model = 0
+        for i in range(0, nfunctions):
+            params_i = params[i]
+            print(params_i[5])
+            model = model + sersic2D_GPU(xy, params_i[0],
+                                         params_i[1],
+                                         params_i[2],
+                                         params_i[3],
+                                         params_i[4],
+                                         params_i[5],
+                                         params_i[6],
+                                         params_i[7])
+        return model
+
     def residual_2D_GPU(params):
         dict_model = {}
         # print(' <DEBUG> Fitting Iterator running...')
         model = 0
         for i in range(1, nfunctions + 1):
-            model = model + sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
+            model = model + sersic2D_GPU(xy, 
+                                         params['f' + str(i) + '_x0'].value,
                                          params['f' + str(i) + '_y0'].value,
                                          params['f' + str(i) + '_PA'].value,
                                          params['f' + str(i) + '_ell'].value,
                                          params['f' + str(i) + '_n'].value,
                                          params['f' + str(i) + '_In'].value,
                                          params['f' + str(i) + '_Rn'].value,
-                                         params['f' + str(i) + '_cg'].value, )
+                                         params['f' + str(i) + '_cg'].value)
+        # print(params.values)
+        # print(params.valuesdict().values())
+        # _params = convert_params_to_numpy(np.asarray(list(params.valuesdict().values())))
+        # print(jnp.array(list(params.valuesdict().values())))
+        # model = build_model(xy,
+        #                     jnp.array(list(params.valuesdict().values())),
+        #                     nfunctions)
         # print(model.shape)
         # MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
         # MODEL_2D_conv = jax_convolve(model, PSF_BEAM)
         # model = model + FlatSky(background, params['s_a'].value)
-        MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
-                        FlatSky(background,params['s_a'].value)
-        # MODEL_2D_conv = _fftconvolve_jax(model+
-        #                                  FlatSky(background,params['s_a'].value),
-        #                                  PSF_BEAM)
+        # MODEL_2D_conv = _fftconvolve_jax(model, PSF_BEAM) + \
+        #                 FlatSky(background,params['s_a'].value)
+        MODEL_2D_conv = _fftconvolve_jax(model+
+                                         FlatSky(background,params['s_a'].value),
+                                         PSF_BEAM)
         residual = data_2D_gpu - MODEL_2D_conv
-        return np.asarray(residual).copy().flatten()
+
         # return np.asarray(residual).copy()
+        # return np.asarray(residual).copy().flatten()
+        # return np.asarray(residual+0.01*abs(jnp.nanmin(residual))).copy()
+        return np.asarray(residual).copy()
 
     if convolution_mode == 'GPU':
         @jit
         def convolve_on_gpu(image, psf):
             """
             This was before jax.scipy implementing fftconvolve.
-            It provides the same result, at the same speed. 
+            It provides the same result, at the same speed.
+
+            This function also accepts PSFs with a different shape of the image.
+
             """
             # Calculate the new padded shape
             padded_shape = (image.shape[0] + psf.shape[0] - 1,
@@ -8040,8 +8181,10 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                                           'disp': disp}
                                  )
 
+    
     if method1 == 'least_squares':
         # faster, but usually not good for first run.
+        # if results_previous_run is not None:
         print(' >> Using',tr_solver,'for tr solver, with regularize set to',regularize,
               ' Loss is',loss,'.')
         result_1 = mini.minimize(method='least_squares',
@@ -8143,6 +8286,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     model_dict = {}
     image_results_conv = []
     image_results_deconv = []
+    flat_sky_total = FlatSky_cpu(background, params['s_a'].value)
     for i in range(1, ncomponents + 1):
         model_temp = sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
                               params['f' + str(i) + '_y0'].value,
@@ -8155,18 +8299,22 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         #                                  params['f'+str(i)+'_Rn'])+FlatSky(FlatSky_level, params['s_a'])/ncomponents
         # print(model_temp[0])
         model = model + model_temp
-        # print(model)
-        bkg_comp_i = FlatSky_cpu(background, params['s_a'].value) / ncomponents
-        model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
+        
+        # We can add a fraction of 1/ncomponents of the bkg flat sky to each component.
+        bkg_comp_i = flat_sky_total / ncomponents
+        #if bkg is deconvolved
+        # model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
+        #if bkg is convolved
+        model_dict['model_c' + str(i)] = np.asarray(model_temp).copy()
 
 
         if PSF_CONV == True:
             if convolution_mode == 'GPU':
                 # model_dict['model_c' + str(i) + '_conv'] = np.asarray(jax_convolve(model_temp, PSF_BEAM)).copy()
-                model_dict['model_c' + str(i) + '_conv'] = (
-                    np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
                 # model_dict['model_c' + str(i) + '_conv'] = (
-                #     np.asarray(_fftconvolve_jax(model_temp+bkg_comp_i,PSF_BEAM).copy()))
+                #     np.asarray(_fftconvolve_jax(model_temp,PSF_BEAM).copy()+bkg_comp_i))
+                model_dict['model_c' + str(i) + '_conv'] = (
+                    np.asarray(_fftconvolve_jax(model_temp+bkg_comp_i,PSF_BEAM).copy()))
             if convolution_mode == 'CPU':
                 model_dict['model_c' + str(i) + '_conv'] = (
                     scipy.signal.fftconvolve(
@@ -8214,9 +8362,11 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         if convolution_mode == 'GPU':
             # model_dict['model_total_conv'] = np.asarray(jax_convolve(model,
             #                                                          PSF_BEAM)).copy()
-            model_conv = _fftconvolve_jax(model, PSF_BEAM).copy()
-            model_dict['model_total_conv'] = np.asarray(model_conv +
-                                                        FlatSky(background, params['s_a'].value))
+            # model_conv = _fftconvolve_jax(model, PSF_BEAM).copy() + FlatSky_cpu(background, params['s_a'].value
+            model_conv = _fftconvolve_jax(model+FlatSky_cpu(background,
+                                                            params['s_a'].value),
+                                          PSF_BEAM).copy()
+            model_dict['model_total_conv'] = np.asarray(model_conv)
         if convolution_mode == 'CPU':
             model_conv = scipy.signal.fftconvolve(model, PSF_BEAM_raw,'same')
             model_dict['model_total_conv'] = model_conv + \
@@ -8228,6 +8378,11 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     model_dict['best_residual'] = data_2D - model_dict['model_total']
     # bkg_comp_total
     model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
+    
+    
+    model_dict['deconv_bkg'] = np.asarray(flat_sky_total)
+    # bkg_comp_total
+    model_dict['conv_bkg'] = np.asarray(_fftconvolve_jax(flat_sky_total,PSF_BEAM).copy())
 
     pf.writeto(imagename.replace('.fits', '') +
                "_" + "model" + special_name + save_name_append + '.fits',
@@ -8243,7 +8398,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 "_" + "residual" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
                 "_" + "residual" + special_name + save_name_append + '.fits')
-
+    
     pf.writeto(imagename.replace('.fits', '') +
                "_" + "dec_model" + special_name + save_name_append + '.fits',
                model_dict['model_total'], overwrite=True)
@@ -8251,6 +8406,24 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 "_" + "dec_model" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
                 "_" + "dec_model" + special_name + save_name_append + '.fits')
+    
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "deconv_bkg" + special_name + save_name_append + '.fits',
+               model_dict['deconv_bkg'], overwrite=True)
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "deconv_bkg" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "deconv_bkg" + special_name + save_name_append + '.fits')
+    
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "conv_bkg" + special_name + save_name_append + '.fits',
+               model_dict['conv_bkg'], overwrite=True)
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "conv_bkg" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "conv_bkg" + special_name + save_name_append + '.fits')
+    
+    
     # # initial minimization.
     # method1 = 'differential_evolution'
     # print(' >> Using', method1, ' solver for first optimisation run... ')
@@ -8323,8 +8496,7 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
                               params['f' + str(i) + '_In'],
                               params['f' + str(i) + '_Rn'],
                               params['f' + str(i) + '_cg'],) + \
-                     background / ncomponents + FlatSky(FlatSky_level,
-                                                        arams['s_a']) / ncomponents
+                     background / ncomponents + FlatSky(FlatSky_level,params['s_a']) / ncomponents
         # print(model_temp[0])
         model = model + model_temp
         # print(model)
@@ -8422,6 +8594,7 @@ def compute_model_properties(model_list,  # the model list of each component
                              which_model,  # `convolved` or `deconvolved`?
                              residualname,
                              rms,  # the native rms from the data itself.
+                             mask_region = None,
                              z=None):
     """
     Helper function function to calculate model component properties.
@@ -8432,26 +8605,54 @@ def compute_model_properties(model_list,  # the model list of each component
     model_properties = {}
     kk = 1
     if which_model == 'conv':
-        dilation_size = None
+        dilation_size = 1
     if which_model == 'deconv':
         dilation_size = 2
     for model_component in model_list:
-        properties, _, _ = measures(imagename=model_component,
-                                          residualname=residualname,
-                                          z=z,
-                                          sigma_mask=6.0,
-                                          last_level = 3.0,
-                                          vmin_factor=3.0,
-                                          dilation_size=dilation_size,
-                                          # data_2D=mlibs.ctn(model_component),
-                                          rms=rms)
+        try:
+            print('Computing properties of model component: ', os.path.basename(model_component))
+            model_component_data = ctn(model_component)
+            _rms_model = mad_std(model_component_data)
+            if _rms_model < 1e-7: 
+                rms_model = mad_std(model_component_data[model_component_data>1e-6])
+            else:
+                rms_model = _rms_model
+                
+            print(' --==>> MAD RMS of model component: ', _rms_model)
+            print(' --==>> STD RMS of model component: ', rms_model)
+            
+            _, mask_component = mask_dilation(model_component,
+                                            rms=rms_model,
+                                            sigma=6, dilation_size=None,
+                                            iterations=2, PLOT=True)
+            
+                
+            properties, _, _ = measures(imagename=model_component,
+                                            residualname=residualname,
+                                            z=z,
+                                            sigma_mask=6.0,
+                                            last_level = 3.0,
+                                            vmin_factor=3.0,
+                                            dilation_size=dilation_size,
+                                            mask = mask_region,
+                                            mask_component=mask_component,
+                                            # data_2D=mlibs.ctn(model_component),
+                                            rms=rms_model)
 
-        model_properties[f"model_c_{which_model}_{kk}_props"] = properties.copy()
-        # model_properties[f"model_c_{which_model}_{kk}_props"]['model_file'] = model_component
-        model_properties[f"model_c_{which_model}_{kk}_props"]['comp_ID'] = kk
-        model_properties[f"model_c_{which_model}_{kk}_props"][
-            'model_file'] = os.path.basename(model_component)
-        kk = kk + 1
+            model_properties[f"model_c_{which_model}_{kk}_props"] = properties.copy()
+            # model_properties[f"model_c_{which_model}_{kk}_props"]['model_file'] = model_component
+            model_properties[f"model_c_{which_model}_{kk}_props"]['comp_ID'] = kk
+            model_properties[f"model_c_{which_model}_{kk}_props"][
+                'model_file'] = os.path.basename(model_component)
+            kk = kk + 1
+        except:
+            empty_properties = {key: np.nan for key in model_properties[f"model_c_{which_model}_{kk-1}_props"].keys()}
+            model_properties[f"model_c_{which_model}_{kk}_props"] = empty_properties.copy()
+            model_properties[f"model_c_{which_model}_{kk}_props"]['comp_ID'] = kk
+            model_properties[f"model_c_{which_model}_{kk}_props"][
+                'model_file'] = os.path.basename(model_component)
+            print('Error computing properties of model component: ', os.path.basename(model_component))
+            kk = kk + 1
 
     return (model_properties)
 
@@ -8510,8 +8711,11 @@ def evaluate_compactness(deconv_props, conv_props):
         if dessision_compact < 2:
             class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'D'
         if dessision_compact == 2:
-            class_criteria[f"comp_ID_{i + 1}"]['final_class'] = \
-                class_criteria[(f"comp_ID_{i + 1}")]['Spk_class']
+            try:
+                class_criteria[f"comp_ID_{i + 1}"]['final_class'] = \
+                    class_criteria[(f"comp_ID_{i + 1}")]['Spk_class']
+            except:
+                class_criteria[f"comp_ID_{i + 1}"]['final_class'] = 'D'
     return (class_criteria)
 
 def format_nested_data(nested_data):
@@ -8537,6 +8741,535 @@ def format_nested_data(nested_data):
     return(df)
 
 
+def compute_model_stats_GPU(params, imagename, residualname, psf_name,
+                            ncomponents, num_simulations=2000,
+                            sigma=6, iterations=2,
+                            save_results=False, special_name=''):
+    """
+    Function to run a Monte Carlo simulation from the best optimized fit parameters.
+    This can be used to compute a proper error for the total flux on the model.
+    Be aware that this function is computing expensive as it requires
+    running a 2D convolution on each iteration. This function is optimized to run
+    on a CUDA GPU.
+    """
+
+    BA = beam_area2(imagename)
+    data_2D_cpu = ctn(imagename)
+    data_2D = jnp.asarray(data_2D_cpu)
+    residual_2D_cpu = ctn(residualname)
+    residual_2D = jnp.asarray(residual_2D_cpu)
+    residual_2D_shuffled = shuffle_2D(residual_2D_cpu)
+    background = jnp.asarray(residual_2D_shuffled)
+    model_temp = Model(sersic2D)
+    PSF_BEAM_raw = ctn(psf_name)
+
+    PSF_BEAM = jnp.asarray(PSF_BEAM_raw)
+    omaj, omin, _, _, _ = beam_shape(imagename)
+    dilation_size = int(np.sqrt(omaj * omin) / (2 * get_cell_size(imagename)))
+    _, mask_cpu = mask_dilation(imagename, sigma=sigma, iterations=iterations,
+                                dilation_size=dilation_size, PLOT=True)
+    mask = jnp.asarray(mask_cpu)
+    values = params.valuesdict()
+    stderr = jnp.asarray(
+        [params[name].stderr for name in values.keys()])
+    #     dfstderr = pd.DataFrame({'value': list(values.values()), 'stderr': stderr},
+    #                       index=values.keys())
+    params_values = jnp.asarray(list(values.values()))
+    #     random_params = generate_random_params(params_values,stderr)
+
+    size = ctn(imagename).shape
+    FlatSky_level = mad_std(data_2D_cpu)
+    xy = jnp.meshgrid(jnp.arange((size[0])), jnp.arange((size[1])))
+    model_dict = {}
+    image_results_conv = []
+    image_results_deconv = []
+
+    #     num_simulations = 50
+
+    # Generate a set of random parameters for each simulation and compute the total flux
+    #     total_fluxes = []
+    #     random_params_list = []
+    print('Running MCMC on best-fit parameters (using cuda gpu).')
+
+    def mcmc_sim(random_params):
+        #         params_values, stderr = params_result
+        #     for l in tqdm(range(num_simulations)):
+        #         random_params_list.append(random_params)
+        model = 0
+        #         model_comps = []
+        sub_com_res_results = jnp.zeros(ncomponents)
+        sub_com_flux_results = jnp.zeros(ncomponents)
+        for i in range(1, ncomponents + 1):
+            # 8 means that we have 8 parameters per model-component.
+            # e.g. In, Rn, n, q, c, PA, x0 and y0,
+            mcmc_params = random_params[int(8 * (i - 1)):int(8 * (i))]
+            model_temp = sersic2D(xy,
+                                  mcmc_params[0],
+                                  # params['f' + str(i) + '_x0'],
+                                  mcmc_params[1],
+                                  # params['f' + str(i) + '_y0'],
+                                  mcmc_params[2],
+                                  # params['f' + str(i) + '_PA'],
+                                  mcmc_params[3],
+                                  # params['f' + str(i) + '_ell'],
+                                  mcmc_params[4],  # params['f' + str(i) + '_n'],
+                                  mcmc_params[5],
+                                  # params['f' + str(i) + '_In'],
+                                  mcmc_params[6],
+                                  # params['f' + str(i) + '_Rn'],
+                                  mcmc_params[7]) + background / ncomponents + \
+                         FlatSky(FlatSky_level, random_params[-1]) / ncomponents
+            # print(model_temp[0])
+            model_temp_dec = model_temp
+            model_temp_conv = jax.scipy.signal.fftconvolve(model_temp_dec,
+                                                             PSF_BEAM, 'same')
+            # cp.cuda.Stream.null.synchronize()
+            #             model_comps.append(model_temp_conv)
+            model = model + model_temp_conv
+            total_flux_comp_i = jnp.sum(model_temp_conv * mask) / BA
+            sub_com_flux_results[i - 1] = total_flux_comp_i
+
+            total_res_flux_sub_comp_i = jnp.sum((data_2D - model) * mask) / BA
+            sub_com_res_results[i - 1] = total_res_flux_sub_comp_i
+
+        model_total_conv = model
+        total_flux_random_model = jnp.sum(model_total_conv * mask) / BA
+        residual_model = jnp.sum(((data_2D - model_total_conv) * mask) ** 2.0)
+        residual_nrss_model = calc_nrss(data_2D * mask, model_total_conv * mask)
+
+        if np.isnan(total_flux_random_model) == True:
+            good_model = False
+        else:
+            good_model = True
+
+        #         total_fluxes.append(total_flux_random_model)
+        return (
+            total_flux_random_model, good_model, residual_model,
+            residual_nrss_model,
+            sub_com_flux_results, sub_com_res_results)
+
+    random_params_list = []
+    for i in range(num_simulations):
+        random_params = generate_random_params(params_values, stderr)
+        random_params_list.append(random_params)
+    random_params_list = jnp.asarray(random_params_list)
+
+    #     with Pool(max_pool) as p:
+    #         results = list(
+    #             tqdm(
+    #                 p.imap(mcmc_sim,random_params_list),
+    #                 total=num_simulations
+    #             )
+    #         )
+
+    results = []
+    for i in tqdm(range(len(random_params_list))):
+        results.append(mcmc_sim(random_params_list[i]))
+
+    total_fluxes_all_gpu = []
+    residuals_gpu = []
+    residuals_nrss_gpu = []
+    flags_gpu = []
+    sub_comp_fluxes_gpu = []
+    sub_comp_residuals_gpu = []
+    for dict_temp in results:
+        total_fluxes_all_gpu.append(dict_temp[0])
+        flags_gpu.append(dict_temp[1])
+        residuals_gpu.append(dict_temp[2])
+        residuals_nrss_gpu.append(dict_temp[3])
+        sub_comp_fluxes_gpu.append(dict_temp[4])
+        sub_comp_residuals_gpu.append(dict_temp[5])
+
+    total_fluxes_all = jnp.asarray(total_fluxes_all_gpu)
+    flags = jnp.asarray(flags_gpu).get()
+    residuals = jnp.asarray(residuals_gpu)
+    residuals_nrss = jnp.asarray(residuals_nrss_gpu)
+    sub_comp_fluxes = jnp.asarray(sub_comp_fluxes_gpu)[flags]
+    sub_comp_residuals = jnp.asarray(sub_comp_residuals_gpu)[flags]
+
+    total_fluxes = total_fluxes_all[flags]
+    random_params_list = random_params_list[flags]
+    residuals = residuals[flags]
+    residuals_nrss = residuals_nrss[flags]
+    add_flags = np.where(abs(total_fluxes) > 100 * mad_std(abs(total_fluxes)))[0]
+    total_fluxes = np.delete(total_fluxes, add_flags, axis=0)
+    random_params_list = np.delete(random_params_list, add_flags, axis=0)
+    residuals = np.delete(residuals, add_flags, axis=0)
+    residuals_nrss = np.delete(residuals_nrss, add_flags, axis=0)
+    sub_comp_fluxes = np.delete(sub_comp_fluxes, add_flags, axis=0)
+    sub_comp_residuals = np.delete(sub_comp_residuals, add_flags, axis=0)
+
+    mean_flux = jnp.mean(total_fluxes)
+    std_flux = jnp.std(total_fluxes)
+    print("Estimated total flux = %.4f +/- %.4f" % (mean_flux, std_flux))
+    labels_names = list(mini_results.params.valuesdict().keys())
+    #     labels = ["Parameter {}".format(i+1) for i in range(len(params))] + ["Total Flux"]
+    labels = ["Parameter " + i for i in labels_names] + ["Total Flux"]
+
+    data_results = np.column_stack([random_params_list, total_fluxes])
+    #     fig = corner.corner(data_results, labels=labels, quantiles=[0.16, 0.5, 0.84],
+    #                         show_titles=True, title_kwargs={"fontsize": 12}, label_kwargs={"fontsize": 12})
+    #     fig.suptitle("Monte Carlo Simulation Results", fontsize=16, y=1.0)
+
+    #     model_dict['best_residual'] = data_2D - model_dict['model_total']
+    #     model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
+    return (
+        total_fluxes, random_params_list, data_results, residuals,
+        residuals_nrss,
+        sub_comp_fluxes, sub_comp_residuals)
+
+
+def run_mcmc_mini(imagename, psf_name, mini_results, residualname=None, rms_map=None,
+                  n_components=None, nwalkers_multiplier=20, backend_name="filename.h5",
+                  burn_in_phase=1000, production_steps=6000):
+    """
+    GPU Optimized function to run a MCMC of a multi-dimensional sersic model.
+    It uses JAX.
+    This function is not feasible to be run on a CPU.
+
+    Please, only use if you have a GPU, if not, it can take days....
+
+    """
+    import emcee
+    import corner
+
+    if residualname is not None:
+        residual_2D = pf.getdata(residualname)
+        residual_2D_shuffled = shuffle_2D(residual_2D)
+        background = jnp.array(residual_2D_shuffled)
+    else:
+        background = jnp.array(rms_map)
+
+    omaj, omin, _, _, _ = beam_shape(imagename)
+    dilation_size = int(
+        np.sqrt(omaj * omin) / (2 * get_cell_size(imagename)))
+
+    rms_std_res = mad_std(rms_map)
+    _, mask_region = mask_dilation(imagename,
+                                   rms=rms_std_res,
+                                   sigma=6.0, dilation_size=dilation_size,
+                                   iterations=5, PLOT=True)
+
+    data_2D = ctn(imagename) * mask_region
+    data_2D_gpu = jnp.array(data_2D)
+    PSF_BEAM = jnp.array(ctn(psf_name))
+    size = data_2D.shape
+    xy = jnp.meshgrid(jnp.arange((size[1])), jnp.arange((size[0])))
+    FlatSky_level_GPU = jnp.array(mad_std(data_2D))
+
+    # Read input parameters and std
+    params = mini_results.copy()
+    #     opt_params = jnp.asarray(list(params.valuesdict().values()))
+    opt_params = jnp.array(list(params.valuesdict().values()))
+    stderr = jnp.array([params[name].stderr for name in params.valuesdict().keys()])
+
+    if n_components is None:
+        n_components = int((stderr.shape[0] - 1) / 8)
+
+    nfunctions = n_components
+
+    @jit
+    def convolve_on_gpu(image, psf):
+        image_fft = fft2(image)
+        psf_fft = fft2(psf)
+        conv_fft = image_fft * psf_fft
+        return fftshift(jnp.real(ifft2(conv_fft)))
+
+    @jit
+    def log_likelihood(random_params):
+        for i in range(1, nfunctions + 1):
+            mcmc_params = random_params[int(8 * (i - 1)):int(8 * (i))]
+            model = sersic2D_GPU(xy,
+                                 mcmc_params[0],
+                                 # params['f' + str(i) + '_x0'],
+                                 mcmc_params[1],
+                                 # params['f' + str(i) + '_y0'],
+                                 mcmc_params[2],
+                                 # params['f' + str(i) + '_PA'],
+                                 mcmc_params[3],
+                                 # params['f' + str(i) + '_ell'],
+                                 mcmc_params[4],  # params['f' + str(i) + '_n'],
+                                 mcmc_params[5],
+                                 # params['f' + str(i) + '_In'],
+                                 mcmc_params[6],
+                                 # params['f' + str(i) + '_Rn'],
+                                 mcmc_params[7]) + background / nfunctions + \
+                    FlatSky(FlatSky_level_GPU, random_params[-1]) / nfunctions
+
+        MODEL_2D_conv = convolve_on_gpu(model, PSF_BEAM)
+        #         print(model)
+        residual = data_2D_gpu - MODEL_2D_conv
+        chi2 = jnp.sum(residual ** 2) / jnp.sum(data_2D_gpu)
+
+        #         inv_sigma2 = 1.0/(1+MODEL_2D_conv**2*jnp.exp(2))
+        #     #     return -0.5*(chi2*inv_sigma2 - np.log(inv_sigma2)))
+        dof = len(model) - len(params)
+        log_like = -0.5 * (chi2 + dof * jnp.log(2 * jnp.pi))
+        total_flux_model = jnp.sum(MODEL_2D_conv)
+        total_flux_res = jnp.sum(residual)
+        #         log_like = chi2
+        #         log_like = -0.5*(jnp.sum(residual ** 2*inv_sigma2 - jnp.log(inv_sigma2)))
+        return log_like, (total_flux_model, total_flux_res)
+
+    def ln_prob(p, params):
+        # Calculate log-prior probability
+        log_prior_prob = log_prior(p, params)
+        if jnp.isinf(log_prior_prob):
+            return log_prior_prob
+
+        # Update parameter values based on proposed step
+        for i, (param_name, param) in enumerate(params.items()):
+            param.value = p[i]
+
+        params_model = jnp.array(list(params.valuesdict().values()))
+        log_likelihood_prob = log_likelihood(params_model)[0]
+        return log_prior_prob + log_likelihood_prob
+
+    # @jit
+    #     def log_prior(p, params):
+    #         out_of_bounds = []
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if '_cg' in param_name:
+    #                 if (p[i] < -0.2 or p[i] > 0.2):
+    #                     out_of_bounds.append(param_name)
+    #             if 's_a' in param_name:
+    #                 if (p[i] < 0.0 or p[i] > 10.0):
+    #                     out_of_bounds.append(param_name)
+    #             else:
+    #                 if (p[i] < param.min or p[i] > param.max):
+    #                     out_of_bounds.append(param_name)
+    #         if len(out_of_bounds) == 0:
+    #             return 0.0  # Return zero for in-bounds parameters
+    #         else:
+    #             return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+
+    #     def log_prior(p, params):
+    #         for i, (param_name, param) in enumerate(params.items()):
+    # #             if (p[i] < param.min or p[i] > param.max):
+    #             if (p[i] < param.min or p[i] > param.max):
+    #                 return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+    #         return 0.0  # Return zero for in-bounds parameters
+    #     def log_prior(p, params):
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if (p[i] < 0.4 or p[i] > param.max+1) and '_n' in param_name:
+    #                 return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+    #             if (p[i] < param.min or p[i] > param.max*10.0) and '_In' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min or p[i] > param.max) and '_Rn' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 0.8) and '_ell' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min or p[i] > param.max) and '_PA' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_x0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_y0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 10.0) and 's_a' in param_name:
+    #                 return -jnp.inf
+    #         return 0.0  # Return zero for in-bounds parameters
+
+    def log_prior(p, params):
+        out_of_bounds = []
+        for i, (param_name, param) in enumerate(params.items()):
+            pvalue = param.value
+            if (p[i] < pvalue * 0.8 or p[i] > pvalue * 1.25) and '_n' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue * 0.8 or p[i] > pvalue * 1.25) and '_In' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue * 0.8 or p[i] > pvalue * 1.25) and '_Rn' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < 0.0 or p[i] > pvalue + 0.2) and '_ell' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue - 20 or p[i] > pvalue + 20) and '_PA' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue - 10 or p[i] > pvalue + 10) and '_x0' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue - 10 or p[i] > pvalue + 10) and '_y0' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < pvalue - 0.1 or p[i] > pvalue + 0.1) and '_cg' in param_name:
+                out_of_bounds.append(param_name)
+            if (p[i] < 0.0 or p[i] > pvalue + 1) and 's_a' in param_name:
+                out_of_bounds.append(param_name)
+        if len(out_of_bounds) == 0:
+            return 0.0  # Return zero for in-bounds parameters
+        else:
+            return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+
+    #     def log_prior(p, params):
+    #         out_of_bounds = []
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if (p[i] < param.min-0.1 or p[i] > param.max+0.1) and '_n' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_In' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_Rn' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_ell' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_PA' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-10 or p[i] > param.max+10) and '_x0' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-10 or p[i] > param.max+10) and '_y0' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-0.1 or p[i] > param.max+0.1) and '_cg' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < 0.0 or p[i] > 10) and 's_a' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #         if len(out_of_bounds) == 0:
+    #             return 0.0  # Return zero for in-bounds parameters
+    #         else:
+    #             return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+
+    #     def log_prior(p, params):
+    #         out_of_bounds = []
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if (p[i] < param.min-0.1 or p[i] > param.max+0.1) and '_n' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_In' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_Rn' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_ell' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min or p[i] > param.max) and '_PA' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-30 or p[i] > param.max+30) and '_x0' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-30 or p[i] > param.max+30) and '_y0' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < param.min-0.5 or p[i] > param.max+0.5) and '_cg' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #             if (p[i] < 0.0 or p[i] > 10) and 's_a' in param_name:
+    #                 out_of_bounds.append(param_name)
+    #         if len(out_of_bounds) == 0:
+    #             return 0.0  # Return zero for in-bounds parameters
+    #         else:
+    #             return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+
+    #     def log_prior(p, params):
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if (p[i] < 0.25 or p[i] > param.max+1) and '_n' in param_name:
+    #                 return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+    #             if (p[i] < param.min or p[i] > param.max*10.0) and '_In' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min or p[i] > param.max) and '_Rn' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 1.0) and '_ell' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min or p[i] > param.max) and '_PA' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_x0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_y0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 10.0) and 's_a' in param_name:
+    #                 return -jnp.inf
+    #         return 0.0  # Return zero for in-bounds parameters
+    #     def log_prior(p, params):
+    #         for i, (param_name, param) in enumerate(params.items()):
+    #             if (p[i] < 0.25 or p[i] > 6.0) and '_n' in param_name:
+    #                 return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+    #             if (p[i] < 0.0 or p[i] > 10.0) and '_In' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 1.0 or p[i] > param.max) and '_Rn' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 1.0) and '_ell' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < -180. or p[i] > 180) and '_PA' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_x0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < param.min*0.9 or p[i] > param.max*1.1) and '_y0' in param_name:
+    #                 return -jnp.inf
+    #             if (p[i] < 0.0 or p[i] > 10.0) and 's_a' in param_name:
+    #                 return -jnp.inf
+    #         return 0.0  # Return zero for in-bounds parameters
+
+    # Define the log-posterior function for the MCMC
+    # @jit
+    def log_posterior(params):
+        lp = log_prior(params)
+        if not jnp.isfinite(lp):
+            return -jnp.inf  # Return negative infinity for out-of-bounds parameters
+        return lp + log_likelihood(params)[0]
+
+    # prepare the mcmc
+    nwalkers = nwalkers_multiplier * len(params)
+    ndim = len(params)
+    print('    ### Initi of MCMC ###')
+    print('--------------------------------')
+    print('    >> Number of Sersics:', n_components)
+    print('    >> Number of parameters:', ndim)
+    print('    >> Number of walkers:   ', nwalkers)
+    print('--------------------------------')
+    print('    >> Burn-in:   ', burn_in_phase)
+    print('    >> Main-Phase Steps:   ', production_steps)
+    p0 = []
+    for i in range(nwalkers):
+        walker_params = []
+        random_params = jnp.array(
+            generate_random_params_uniform(np.asarray(list(params.valuesdict().values())), stderr))
+        p0.append(random_params)
+
+    #     print(p0)
+    backend = emcee.backends.HDFBackend(backend_name)
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, ln_prob, args=(params,), threads=1,
+                                    backend=backend)
+    sampler.run_mcmc(p0, production_steps, progress=True)
+    #     samples = sampler.chain[:, burn_in_phase:, :].reshape((-1, ndim))
+    #     backend.store(chain=sampler.get_chain(), log_prob=sampler.get_log_prob(), blobs=sampler.get_blobs())
+    samples = sampler.get_chain(discard=burn_in_phase, flat=True)
+    #     RESIDUAL = []
+    #     TOTAL_FLUX = []
+    #     for result in sampler.sample(p0,ndim):
+    #     # Unpack the result tuple and save the residual and total flux to the backend
+    #         residual, total_flux = result
+    #         RESIDUAL.append(residual)
+    #         TOTAL_FLUX.append(total_flux)
+
+    #     sampler.backend.write_to_hdf5(backend_name)
+    #     backend.close()
+
+    print('--------------------------------')
+    print('    Parameter Errors            ')
+    # Compute the median and 1-sigma error bars for each parameter
+    params_median = np.median(samples, axis=0)
+    params_err_minus = np.percentile(samples, 16, axis=0) - params_median
+    params_err_plus = np.percentile(samples, 84, axis=0) - params_median
+    params_err = 0.5 * (params_err_minus + params_err_plus)
+
+    # Print the results
+    for i, param_name in enumerate(params):
+        print(f"{param_name} = {params_median[i]} +/- {params_err[i]}")
+
+    idx_cut = []  # only select n, In and Rn parameters
+    for i in range(0, n_components):
+        idx_cut.append(int(i * 8 + 4))
+        idx_cut.append(int(i * 8 + 5))
+        idx_cut.append(int(i * 8 + 6))
+
+    labels = [f"{param_name}" for param_name in params]
+    # Plot the corner plot
+    #     fig = corner.corner(samples[:,idx_cut],
+    #                         labels=np.asarray(labels)[idx_cut],
+    #                         truths=list(params_median[idx_cut]))
+
+    #     plt.show()
+
+    #     # Plot the chains
+    #     fig, axes = plt.subplots(len(idx_cut), figsize=(10, 27), sharex=True)
+    #     labels = [f"{param_name}" for param_name in params]
+    #     for i in range(0,len(idx_cut)):
+    #     # for i in idx_cut:
+    #         ax = axes[i]
+    #         ax.plot(sampler.get_chain()[:, :, idx_cut[i]], color="k", alpha=0.1)
+    #         ax.set_xlim(0, len(sampler.get_chain()))
+    #         ax.set_ylabel(labels[idx_cut[i]])
+    #     axes[-1].set_xlabel("Step")
+
+    return (samples, sampler, backend)
 
 def run_image_fitting(imagelist, residuallist, sources_photometries,
                       n_components, comp_ids=[], mask= None, mask_for_fit=None,
@@ -8547,6 +9280,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       loss="cauchy", tr_solver="exact",
                       init_params=0.25, final_params=4.0,sigma=6,
                       fix_n=[True, True, True, True, True, True, False],
+                      fix_x0_y0 = [True, True, True, True, True, True, True, True],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
                       dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None,
                       self_bkg=False, bkg_rms_map=None):
@@ -8588,13 +9322,12 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # try:
         crop_image = imagelist[i]
         crop_residual = residuallist[i]
-        print('Fitting', os.path.basename(crop_image))
+        print('  ++==>>  Fitting', os.path.basename(crop_image))
         #             dict_results['#imagename'] = crop_image
         data_2D = ctn(crop_image)
         res_2D = ctn(crop_residual)
         rms_std_data = mad_std(data_2D)
         rms_std_res = mad_std(res_2D)
-        print('rms res = ', rms_std_res / rms_std_data)
         print('rms data = ', rms_std_data * 1e6,
                 '; rms res = ', rms_std_res * 1e6,
                 '; ratio = ', rms_std_res / rms_std_data)
@@ -8613,12 +9346,12 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # psf_size = (2 * psf_size) // 2 +1
 
         psf_beam_zise = int(get_beam_size_px(crop_image)[0])
-        # psf_size = psf_beam_zise * 10
-        psf_size = int(data_2D.shape[0])
-        print('PSF BEAM SIZE is >=> ', psf_beam_zise)
+        psf_size = int(psf_beam_zise * 10)
+        # psf_size = int(data_2D.shape[0])
+        print('++==>> PSF BEAM SIZE is >=> ', psf_beam_zise)
 
         # psf_size = int(ctn(crop_image).shape[0])
-        print('PSF SIZE is >=> ', psf_size)
+        print('++==>> PSF IMAGE SIZE is ', psf_size)
         # creates a psf from the beam shape.
         psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
                                     aspect=aspect,
@@ -8639,7 +9372,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             fix_n=fix_n,
                             mask_region=mask_for_fit,
                             fix_value_n=fix_value_n,
-                            fix_x0_y0=[True, True, True, True, True, True, True, True],
+                            fix_x0_y0=fix_x0_y0,
                             dr_fix=dr_fix,
                             self_bkg=self_bkg, rms_map=bkg_rms_map,
                             convolution_mode=convolution_mode,
@@ -8656,16 +9389,33 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         lmfit_results_1st_pass.append(result_1.params)
         special_name = save_name_append
 
+
+        print('#######################')
+        print('#######################')
+        print('#######################')
+        print('Computing properties of deconvolved model components.')
+        print('#######################')
+        print('#######################')
+        print('#######################')
         deconv_model_properties = compute_model_properties(model_list=image_results_deconv[:-1],
                                                            which_model='deconv',
                                                            residualname=crop_residual,
-                                                           rms=rms_std_res
+                                                           rms=rms_std_res,
+                                                           mask_region = mask_region
                                                            )
 
+        print('#######################')
+        print('#######################')
+        print('#######################')
+        print('Computing properties of convolved model components.')
+        print('#######################')
+        print('#######################')
+        print('#######################')
         conv_model_properties = compute_model_properties(model_list=image_results_conv[:-2],
                                                          which_model='conv',
                                                          residualname=crop_residual,
-                                                         rms=rms_std_res
+                                                         rms=rms_std_res,
+                                                         mask_region = mask_region
                                                          )
         list_individual_deconv_props.append(deconv_model_properties)
         list_individual_conv_props.append(conv_model_properties)
@@ -8728,6 +9478,37 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                 extended_model_deconv = (extended_model_deconv +
                                             model_dict['model_c' + le])
                 nfunctions = None
+        
+        extended_model = extended_model + model_dict['conv_bkg']/len(ext_ids)
+        extended_model_deconv = extended_model_deconv + model_dict['deconv_bkg']/len(ext_ids)
+        compact_model = compact_model + model_dict['conv_bkg']/len(comp_ids)
+        compact_model_deconv = compact_model_deconv + model_dict['deconv_bkg']/len(comp_ids)
+        
+        
+        pf.writeto(crop_image.replace('.fits', '') +
+                "_" + "dec_ext_model" + save_name_append + ".fits",
+                extended_model_deconv, overwrite=True)
+        copy_header(crop_image, crop_image.replace('.fits', '') + 
+                    "_" + "dec_ext_model" + save_name_append + ".fits",
+                    crop_image.replace('.fits', '') + 
+                    "_" + "dec_ext_model" + save_name_append + ".fits")
+
+        pf.writeto(crop_image.replace('.fits', '') +
+                "_" + "ext_model" + save_name_append + ".fits",
+                extended_model, overwrite=True)
+        copy_header(crop_image, crop_image.replace('.fits', '') + 
+                    "_" + "ext_model" + save_name_append + ".fits",
+                    crop_image.replace('.fits', '') + 
+                    "_" + "ext_model" + save_name_append + ".fits")
+        
+        pf.writeto(crop_image.replace('.fits', '') +
+                "_" + "dec_compact" + save_name_append + ".fits",
+                compact_model_deconv, overwrite=True)
+        copy_header(crop_image, crop_image.replace('.fits', '') + 
+                    "_" + "dec_compact" + save_name_append + ".fits",
+                    crop_image.replace('.fits', '') + 
+                    "_" + "dec_compact" + save_name_append + ".fits")
+        
 
         decomp_results = plot_decomp_results(imagename=crop_image,
                                                 compact=compact_model,
@@ -8756,16 +9537,28 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
+        
+        _rms_model = mad_std(compact_model)
+        print('**************************')
+        print('**************************')
+        print('RMS MODEL COMPACT CONV:', _rms_model)
+        if _rms_model < 1e-7: 
+            rms_model = mad_std(compact_model[compact_model>1e-6])
+        else:
+            rms_model = _rms_model
+
+        
         _, mask_region_conv_comp = mask_dilation(compact_model,
-                                        rms=rms_std_res,
+                                        rms=rms_model,
                                         sigma=sigma, dilation_size=None,
                                         iterations=2, PLOT=True,
-                                                   special_name='compact conv')
+                                        special_name='compact conv')
+        print('++++ Computing properties of convolved compact model.')
         results_compact_conv_morpho, _ = \
             shape_measures(imagename=crop_image,
                             residualname=crop_residual, z=z,
-                            mask_component=None, sigma_mask=1,
-                            last_level=1.0, vmin_factor=1.0,
+                            sigma_mask=6,
+                            last_level=1.5, vmin_factor=1.0,
                             plot_catalog=False,
                             data_2D=compact_model * mask * mask_region,
                             npixels=128, fwhm=81, kernel_size=21,
@@ -8774,23 +9567,38 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             iterations=2,
                             fracX=0.10, fracY=0.10, deblend=False,
                             bkg_sub=False,
-                            bkg_to_sub=None, rms=rms_std_res,
+                            bkg_to_sub=None, rms=rms_model,
                             apply_mask=False, do_PLOT=True, SAVE=True,
                             show_figure=True,
+                            mask_component = mask_region_conv_comp,
                             mask=mask, do_measurements='partial',
                             add_save_name='_compact_conv')
 
         list_results_compact_conv_morpho.append(results_compact_conv_morpho)
+        
+        
+        _rms_model = mad_std(compact_model_deconv)
+        print('**************************')
+        print('**************************')
+        print('RMS MODEL COMPACT DECONV:', _rms_model)
+        if _rms_model < 1e-7: 
+            rms_model = mad_std(compact_model_deconv[compact_model_deconv>1e-6])
+        else:
+            rms_model = _rms_model
+        
+        
         _, mask_region_deconv_comp = mask_dilation(compact_model_deconv,
-                                        rms=rms_std_res,
+                                        rms=rms_model,
                                         sigma=sigma, dilation_size=2,
                                         iterations=2, PLOT=True,
-                                                   special_name='compact deconv')
+                                        special_name='compact deconv')
+        
+        print('++++ Computing properties of deconvolved compact model.')
         results_compact_deconv_morpho, _ = \
             shape_measures(imagename=crop_image,
                             residualname=crop_residual, z=z,
-                            mask_component=None, sigma_mask=1,
-                            last_level=6.0, vmin_factor=1.0,
+                            sigma_mask=6,
+                            last_level=3.0, vmin_factor=1.0,
                             plot_catalog=False,
                             data_2D=compact_model_deconv * mask * mask_region_deconv_comp,
                             npixels=128, fwhm=81, kernel_size=21,
@@ -8799,9 +9607,10 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             iterations=2,
                             fracX=0.10, fracY=0.10, deblend=False,
                             bkg_sub=False,
-                            bkg_to_sub=None, rms=rms_std_res,
+                            bkg_to_sub=None, rms=rms_model,
                             apply_mask=False, do_PLOT=True, SAVE=True,
                             show_figure=True,
+                            mask_component = mask_region_deconv_comp,
                             mask=mask, do_measurements='partial',
                             add_save_name='_compact_deconv')
 
@@ -8816,8 +9625,8 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             results_ext_conv_morpho, _ = \
                 shape_measures(imagename=crop_image,
                                 residualname=crop_residual, z=z,
-                                mask_component=None, sigma_mask=3,
-                                last_level=3.0, vmin_factor=3.0,
+                                sigma_mask=6,
+                                last_level=1.5, vmin_factor=3.0,
                                 plot_catalog=False,
                                 data_2D=(ctn(crop_image) - compact_model) * mask_region,
                                 npixels=128, fwhm=81, kernel_size=21,
@@ -8836,11 +9645,25 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             results_ext_deconv_morpho = results_ext_conv_morpho
             list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
         else:
+            _rms_model = mad_std(extended_model)
+            print('**************************')
+            print('**************************')
+            print('RMS MODEL EXTENDED:', _rms_model)
+            if _rms_model < 1e-7: 
+                rms_model = mad_std(extended_model[extended_model>1e-6])
+            else:
+                rms_model = _rms_model
+            _, mask_region_conv_ext = mask_dilation(extended_model,
+                                rms=rms_model,
+                                sigma=sigma, dilation_size=2,
+                                iterations=2, PLOT=True,
+                                special_name='compact deconv')
+            print('++++ Computing properties of convolved extended model.')
             results_ext_conv_morpho, _ = \
                 shape_measures(imagename=crop_image,
                                 residualname=crop_residual, z=z,
-                                mask_component=None, sigma_mask=1,
-                                last_level=1.0, vmin_factor=1.0,
+                                sigma_mask=6,
+                                last_level=1.5, vmin_factor=1.0,
                                 plot_catalog=False,
                                 data_2D=extended_model * mask * mask_region,
                                 npixels=128, fwhm=81, kernel_size=21,
@@ -8849,18 +9672,34 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                 iterations=2,
                                 fracX=0.10, fracY=0.10, deblend=False,
                                 bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_std_res / 2,
+                                bkg_to_sub=None, rms=rms_model,
                                 apply_mask=False, do_PLOT=True, SAVE=True,
                                 show_figure=True,
+                                mask_component = mask_region_conv_ext,
                                 mask=mask, do_measurements='partial',
                                 add_save_name='_extended_conv')
             list_results_ext_conv_morpho.append(results_ext_conv_morpho)
 
+            _rms_model = mad_std(extended_model_deconv)
+            print('**************************')
+            print('**************************')
+            print('RMS MODEL EXTENDED DECONV:', _rms_model)
+            if _rms_model < 1e-7: 
+                rms_model = mad_std(extended_model_deconv[extended_model_deconv>1e-6])
+            else:
+                rms_model = _rms_model
+                
+            _, mask_region_deconv_ext = mask_dilation(extended_model_deconv,
+                                rms=rms_model,
+                                sigma=sigma, dilation_size=2,
+                                iterations=2, PLOT=True,
+                                special_name='compact deconv')
+            print('++++ Computing properties of deconvolved extended model.')
             results_ext_deconv_morpho, _ = \
                 shape_measures(imagename=crop_image,
                                 residualname=crop_residual, z=z,
-                                mask_component=None, sigma_mask=1,
-                                last_level=3.0, vmin_factor=1.0,
+                                sigma_mask=1,
+                                last_level=2.0, vmin_factor=1.0,
                                 plot_catalog=False,
                                 data_2D=extended_model_deconv * mask * mask_region,
                                 npixels=128, fwhm=81, kernel_size=21,
@@ -8869,9 +9708,10 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                 iterations=2,
                                 fracX=0.10, fracY=0.10, deblend=False,
                                 bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_std_res / 2,
+                                bkg_to_sub=None, rms=rms_model,
                                 apply_mask=False, do_PLOT=True, SAVE=True,
                                 show_figure=True,
+                                mask_component = mask_region_deconv_ext,
                                 mask=mask, do_measurements='partial',
                                 add_save_name='_extended_deconv')
 
@@ -8890,8 +9730,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             pd.DataFrame(list_results_compact_deconv_morpho),
             pd.DataFrame(list_results_ext_conv_morpho),
             pd.DataFrame(list_results_ext_deconv_morpho),
-            list_individual_deconv_props,
-            list_individual_conv_props,
+            pd.DataFrame(list_individual_deconv_props[0]).T,
+            pd.DataFrame(list_individual_conv_props[0]).T,
+            image_results_conv, image_results_deconv,
             class_results,
             compact_model)
 
@@ -8909,11 +9750,17 @@ def interferometric_decomposition(image1, image2, image3=None,
     Parameters
     ----------
     image1 : str
-        Path to the e-MERLIN image.
+        Path to an e-MERLIN image.
     image2 : str
-        Path to the JVLA image.
+        Path to a combined image.
     image3 : str, optional
-        Path to the pure JVLA image.
+        Path to a JVLA image.
+    residual1 : str, optional
+        Path to the residual image of the e-MERLIN image.
+    residual2 : str, optional
+        Path to the residual image of the combined image.
+    residual3 : str, optional
+        Path to the residual image of the JVLA image.
     iterations : int, optional
         Number of iterations to perform the sigma masking.
     dilation_size : int, optional
@@ -8973,6 +9820,7 @@ def interferometric_decomposition(image1, image2, image3=None,
             sigma_level = params['sigma_level']
             # std_factor = params['std_factor']
             # print(f"Current opt values = sigma={sigma_level.value}, std_factor={std_factor.value}")
+            print(f"Current opt values = sigma={sigma_level.value}")
             _, dilated_mask = mask_dilation(image1_data, cell_size=None,
                                                  iterations=2,
                                           sigma=sigma_level,
@@ -8982,12 +9830,13 @@ def interferometric_decomposition(image1, image2, image3=None,
             M12 = _fftconvolve_jax(masked_image, PSF_BEAM_j)
             # M12 = scipy.signal.fftconvolve(masked_image, PSF_BEAM, mode='same')
             mask_M12 = (M12 > 1e-6)
-            R12 = (image2_data - M12 + offset_2 ) * ref_mask
+            _R12 = (image2_data - M12 + offset_2) * ref_mask
+            # R12 = _R12 + abs(jnp.nanmedian(_R12[_R12<0]))
             # R12 = (image2_data - (M12 + 0*std_factor * bkg_2))*ref_mask
             # residual_mask = 1000*(R12_ - std_factor * std_level) * ref_mask  # *mask_M12#avoid
-            return (np.array(R12).copy())
+            return (np.array(_R12).copy())
 
-        bounds_i, bounds_f = 6, 300
+        bounds_i, bounds_f = 6, 100
         sigma_i, sigma_f = bounds_i, bounds_f
         std_fac_bounds_i, std_fac_bounds_f = 0.99, 1.01
         std_fac_i, std_fac_f = std_fac_bounds_i, std_fac_bounds_f
@@ -9056,7 +9905,7 @@ def interferometric_decomposition(image1, image2, image3=None,
         #                                  tr_options={'regularize': True},
         #                                  ftol=1e-14, xtol=1e-14, gtol=1e-14, verbose=2)
 
-        parFit = result.params['sigma_level'].value      #, result.params['std_factor'].value
+        parFit = result.params['sigma_level'].value #, result.params['std_factor'].value
         Err_parFit = result.params['sigma_level'].stderr #, result.params['std_factor'].stderr
         # resFit = result.residual
         # chisqr = result.chisqr
@@ -9074,16 +9923,24 @@ def interferometric_decomposition(image1, image2, image3=None,
     image2_data = ctn(image_cut_j)
 
     if sub_bkg:
-        bkg_1 = sep_background(image_cut_i, apply_mask=False,
-                               show_map=False,use_beam_fraction=True).back()
-        bkg_2 = sep_background(image_cut_j, apply_mask=False,
-                               show_map=False,use_beam_fraction=True).back()
-        offset_2 = 0.5 * bkg_2
+        if residual2 is not None:
+            bkg_2 = ctn(residual2)
+            offset_2 = 0.5 * bkg_2
+        else:
+            bkg_1 = sep_background(image_cut_i, apply_mask=False,
+                                   show_map=False,use_beam_fraction=True).back()
+            bkg_2 = sep_background(image_cut_j, apply_mask=False,
+                                   show_map=False,use_beam_fraction=True).back()
+            offset_2 = 0.5 * bkg_2
 
     else:
-        bkg_1 = mad_std(image1_data)
-        bkg_2 = mad_std(image2_data)
-        offset_2 = 0.5*np.std(image2_data)
+        if residual2 is not None:
+            bkg_2 = ctn(residual2)
+            offset_2 = 0.5 * bkg_2
+        else:
+            bkg_1 = mad_std(image1_data)
+            bkg_2 = mad_std(image2_data)
+            offset_2 = 0.5*np.std(image2_data)
 
 
     psf_name_j = tcreate_beam_psf(image_cut_j,
@@ -9126,7 +9983,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                 image_cut_i.replace('.fits', '_mask_bool.fits'))
 
 
-    M12_data = scipy.signal.fftconvolve(I1mask_data, PSF_BEAM_j, mode='same')
+    M12_data = scipy.signal.fftconvolve(I1mask_data, PSF_BEAM_j, mode='same') #+offset_2
     M12 = image_cut_j.replace('.fits', '_M12opt.fits')
     pf.writeto(M12, M12_data, overwrite=True)
     copy_header(image_cut_j, M12, M12)
@@ -9161,6 +10018,7 @@ def interferometric_decomposition(image1, image2, image3=None,
     results['R12_name'] = R12
     results['M12_name'] = M12
 
+    print(f"  ++==>> Computing image statistics on Image1...")
     I1_props = compute_image_properties(img=image1,
                                         residual=residual1,
                                         rms=std_1,
@@ -9169,6 +10027,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                         mask=mask_I1,
                                         last_level=2.0)[-1]
 
+    print(f"  ++==>> Computing image statistics on Image-Mask1...")
     I1mask_props = compute_image_properties(img=I1mask_name,
                                             residual=residual1,
                                             rms=std_1,
@@ -9177,6 +10036,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                             mask=I1mask,
                                             last_level=2.0)[-1]
 
+    print(f"  ++==>> Computing image statistics on Image2...")
     I2_props = compute_image_properties(img=image2,
                                         residual=residual2,
                                         rms=std_2,
@@ -9185,6 +10045,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                         mask=mask_I2,
                                         last_level=2.0)[-1]
 
+    print(f"  ++==>> Computing image statistics on R12...")
     R12_props = compute_image_properties(img=R12,
                                          residual=residual2,
                                          rms=std_2,
@@ -9192,7 +10053,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                          show_figure=False,
                                          mask=mask_R12,
                                          last_level=2.0)[-1]
-
+    print(f"  ++==>> Computing image statistics on M12...")
     M12_props = compute_image_properties(img=M12,
                                          residual=residual2,
                                          rms=std_2,
@@ -9281,13 +10142,14 @@ def interferometric_decomposition(image1, image2, image3=None,
 
         def image_sum(image_cut_k, M13, M23,offset_3):
             def opt_res(params):
-                print(f"Params: a={params['a'].value},"
-                      f"b={params['b'].value},"
-                      f"c={params['c'].value}")
+                # print(f"Params: a={params['a'].value},"
+                #       f"b={params['b'].value},"
+                #       f"c={params['c'].value}")
                 optimisation = (params['a'] * M23_data + params['b'] * M13_data + params['c'] *
                                 offset_3)
                 I3ext = (image3_data - optimisation)
                 #     I3ext = image_data - (params['a']*M23_data-params['c']*zero_off)- (params['b']*M13_data-params['d']*zero_off)
+                # return (I3ext+abs(np.nanmin(I3ext)))
                 return (I3ext)
 
             def opt_sub_3(image_data, M23_data, M13_data, bkg_3):
@@ -9306,33 +10168,33 @@ def interferometric_decomposition(image1, image2, image3=None,
                 mini = lmfit.Minimizer(opt_res, fit_params, max_nfev=50000,
                                        nan_policy='omit', reduce_fcn='neglogcauchy')
 
-                # result_1 = mini.minimize(method='nelder', tol=1e-08,
-                #                          options={'xatol': 1e-08,
-                #                                   'fatol': 1e-08,
-                #                                   'adaptive': True})
-                #
-                # result = mini.minimize(method='nelder', params=result_1.params,
-                #                        tol=1e-08,
-                #                        options={'xatol': 1e-08,
-                #                                 'fatol': 1e-08,
-                #                                 'adaptive': True})
+                result_1 = mini.minimize(method='nelder', tol=1e-8,
+                                         options={'xatol': 1e-8,
+                                                  'fatol': 1e-8,
+                                                  'adaptive': True})
+
+                result = mini.minimize(method='nelder', params=result_1.params,
+                                       tol=1e-8,
+                                       options={'xatol': 1e-8,
+                                                'fatol': 1e-8,
+                                                'adaptive': True})
 
                 #             result_1 = mini.minimize(method=solver_method)
-                result_1 = mini.minimize(method=solver_method,
-                                         tr_solver="exact",
-                                         tr_options={'regularize': True},
-                                         x_scale='jac', loss="cauchy",
-                                         ftol=1e-12, xtol=1e-12, gtol=1e-12,
-                                         f_scale=1.0,
-                                         max_nfev=5000, verbose=2)
-                result = mini.minimize(method=solver_method,
-                                       params=result_1.params,
-                                       tr_solver="exact",
-                                       tr_options={'regularize': True},
-                                       x_scale='jac', loss="cauchy",
-                                       ftol=1e-12, xtol=1e-12, gtol=1e-12,
-                                       f_scale=1.0,
-                                       max_nfev=5000, verbose=2)
+                # result_1 = mini.minimize(method=solver_method,
+                #                          tr_solver="exact",
+                #                          tr_options={'regularize': True},
+                #                          x_scale='jac', loss="cauchy",
+                #                          ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                #                          f_scale=1.0,
+                #                          max_nfev=5000, verbose=2)
+                # result = mini.minimize(method=solver_method,
+                #                        params=result_1.params,
+                #                        tr_solver="exact",
+                #                        tr_options={'regularize': True},
+                #                        x_scale='jac', loss="cauchy",
+                #                        ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                #                        f_scale=1.0,
+                #                        max_nfev=5000, verbose=2)
 
                 parFit = result.params['a'].value, result.params['b'].value, \
                     result.params['c'].value  # ,result.params['d'].value
@@ -9361,7 +10223,7 @@ def interferometric_decomposition(image1, image2, image3=None,
             pf.writeto(M123, model_total, overwrite=True)
             copy_header(image_cut_k, M123, M123)
 
-            model_comp = 0 * a * ctn(M23) + b * ctn(M13) + 1 * c * offset_3 / 2
+            model_comp = 0 * a * ctn(M23) + b * ctn(M13) + 0 * c * offset_3 / 2
             Mcomp = image_cut_j.replace('.fits', '_M13_opt.fits')
             pf.writeto(Mcomp, model_comp, overwrite=True)
             copy_header(image_cut_k, Mcomp, Mcomp)
@@ -9371,11 +10233,11 @@ def interferometric_decomposition(image1, image2, image3=None,
             pf.writeto(Mext, model_extended, overwrite=True)
             copy_header(image_cut_k, Mext, Mext)
 
-            I3re = ctn(image_cut_k) - (a * ctn(M23) + b * ctn(M13) + 1 * c * offset_3)
+            I3re = ctn(image_cut_k) - (a * ctn(M23) + b * ctn(M13) + 0 * c * offset_3)
             I3_RT = image_cut_j.replace('.fits', '_RT.fits')
-            I3ext = ctn(image_cut_k) - (0 * a * ctn(M23) + b * ctn(M13) +  1 * c * offset_3 / 2)
+            I3ext = ctn(image_cut_k) - (0 * a * ctn(M23) + b * ctn(M13) +  0 * c * offset_3 / 2)
             I3ext_name = image_cut_j.replace('.fits', '_residual_extended.fits')
-            I3comp = ctn(image_cut_k) - (a * ctn(M23) + 0 * b * ctn(M13) + 1 * c * offset_3 / 2)
+            I3comp = ctn(image_cut_k) - (a * ctn(M23) + 0 * b * ctn(M13) + 0 * c * offset_3 / 2)
             I3comp_name = image_cut_j.replace('.fits', '_residual_comp.fits')
 
             pf.writeto(I3_RT, I3re, overwrite=True)
@@ -9421,8 +10283,12 @@ def interferometric_decomposition(image1, image2, image3=None,
             offset_3 = 0.5 * bkg_3
 
         else:
-            bkg_3 = mad_std(image3_data)
-            offset_3 = 0.5 * bkg_3
+            if residual3 is not None:
+                bkg_3 = ctn(residual3)
+                offset_3 = 0.5 * bkg_3
+            else:
+                bkg_3 = mad_std(image3_data)
+                offset_3 = 0.5 * bkg_3
 
 
         #read the result of R12, but without the offest component!
@@ -9492,6 +10358,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                    sigma=6.0,
                                    iterations=2, dilation_size=None)
 
+        print(f"  ++==>> Computing image statistics on Image3...")
         I3_props = compute_image_properties(img=image3,
                                             residual=residual3,
                                             rms=std_3,
@@ -9499,7 +10366,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                             show_figure=False,
                                             mask=mask_I3,
                                             last_level=2.0)[-1]
-
+        print(f"  ++==>> Computing image statistics on extended emission...")
         I3ext_props = compute_image_properties(img=I3ext_name,
                                                residual=residual3,
                                                rms=std_3,
@@ -9508,6 +10375,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                                mask=mask_I3,
                                                last_level=2.0)[-1]
 
+        print(f"  ++==>> Computing image statistics on M23...")
         M23_props = compute_image_properties(img=M23_opt,
                                                residual=residual3,
                                                rms=std_3,
@@ -9515,6 +10383,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                                show_figure=False,
                                                mask=mask_I3,
                                                last_level=2.0)[-1]
+        print(f"  ++==>> Computing image statistics on M13...")
         M13_props = compute_image_properties(img=M13_opt,
                                              residual=residual3,
                                              rms=std_3,
@@ -9522,6 +10391,7 @@ def interferometric_decomposition(image1, image2, image3=None,
                                              show_figure=False,
                                              mask=mask_M13,
                                              last_level=2.0)[-1]
+        print(f"  ++==>> Computing image statistics on residual RT...")
         I3_RT_props = compute_image_properties(img=I3_RT,
                                              residual=residual3,
                                              rms=std_3,
@@ -10062,7 +10932,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
                residualname=model_dict['best_residual_conv'],
                reference_image=imagename,
                NAME=image_results_conv[-2].replace('.fits',
-                                                   'result_image_conv.pdf'),
+                                                   '_data_model_res'),
                crop=crop, vmin_factor=vmin_factor,
                box_size=box_size)
 
@@ -10100,7 +10970,9 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     # plt.plot(radiis[1],profiles[1])
     # plt.plot(radiis[2],np.log(profiles[2]))
     # colors = ['black','purple','gray','red']
-    colors = ['red', 'blue', 'teal', 'brown', 'cyan','orange','forestgreen','pink']
+    colors = ['red', 'blue', 'teal', 'brown', 'cyan','orange','forestgreen',
+              'pink', 'slategrey','darkseagreen','peru','royalblue','darkorange']
+    
     plt.figure(figsize=(5, 5))
     plt.plot(r * cell_size, abs(ir), '--.', ms=10, color='purple', alpha=1.0,
              label='DATA')
@@ -10976,7 +11848,7 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image,
                extent=[-dx, dx, -dx, dx],
                colors=contour_palette, linewidths=1.2,
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
-    levels_neg = np.asarray([-3 * std])
+    levels_neg = np.asarray([-6 * std])
 
     ax.contour(r, levels=levels_neg[::-1],
                extent=[-dx, dx, -dx, dx],

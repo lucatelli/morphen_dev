@@ -75,7 +75,8 @@ class config():
                              'axes.grid.axis': 'both', 
                              'axes.spines.right': True,
                              'axes.grid': True,
-                             'axes.titlesize' : 16
+                             'axes.titlesize' : 16,
+                             'legend.framealpha': 1.0
                              })
         pass
 
@@ -495,7 +496,7 @@ class source_extraction():
         #                    show_detection=self.show_detection)
 
     def contruct_source_properties(self):
-        (self.sources_photometries, self.n_components,
+        (self.sources_photometries, self.n_components,self.n_IDs,
          self.psf_name, self.mask, self.bkg) = \
             mlibs.prepare_fit(self.input_data.filename,
                               self.input_data.residualname,
@@ -556,7 +557,7 @@ class sersic_multifit_radio():
                  fix_geometry = True,
                  comp_ids = [],
                  fix_n = None, 
-                 fix_value_n = None, dr_fix = None,
+                 fix_value_n = None, dr_fix = None,fix_x0_y0=None,
                  sigma=6.0, use_mask_for_fit=False,mask_fit=None,
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
@@ -643,16 +644,20 @@ class sersic_multifit_radio():
             self.dr_fix = [10] * self.SE.n_components
         else:
             self.dr_fix = dr_fix
+        if fix_x0_y0==None:
+            self.fix_x0_y0 = [True] * self.SE.n_components
         
         self.__sersic_radio()
 
     def __sersic_radio(self):
-        (self.results_fit, self.lmfit_results, self.lmfit_results_1st_pass,
+        (self.results_fit, self.result_mini, self.lmfit_results, self.lmfit_results_1st_pass,
          self.errors_fit, self.models, self.results_compact_conv_morpho,
          self.results_compact_deconv_morpho, self.results_ext_conv_morpho,
          self.results_ext_deconv_morpho,
          self.components_deconv_props, self.components_conv_props,
-         self.class_resuts,self.compact_model) = \
+         self.class_resuts,
+         self.image_results_conv, self.image_results_deconv,
+         self.compact_model) = \
             mlibs.run_image_fitting(imagelist=[self.input_data.filename],
                                     residuallist=[self.input_data.residualname],
                                     aspect=self.aspect,
@@ -674,6 +679,7 @@ class sersic_multifit_radio():
                                     fix_value_n=self.fix_value_n,
                                     fix_geometry=self.fix_geometry,  # unstable if  False
                                     dr_fix=self.dr_fix,
+                                    fix_x0_y0 = self.fix_x0_y0,
                                     sigma=self.sigma,
                                     logger=_logging_.logger)
         # compute sizes
@@ -759,9 +765,15 @@ class sersic_multifit_general():
     Perform a semi-automated and robust multi-sersic image decomposition.
     It supports GPU-acceleration using Jax. If no GPU is present, Jax still
     will benefit from CPU parallel processing. Do not worry, you do not have
-    to change anything, Jax will automatically detect wheter you are runnin on
+    to change anything, Jax will automatically detect wheter you are running on
     CPU or GPU.
-    This class it to help in modelling optical data.
+    
+    This class it to help in modelling optical data, but is pure experimental.
+    
+    Major milestones: 
+        - improve source detection
+        - improve background estimation
+        - improve PSF modelling, especially for JWST data. 
     """
 
     def __init__(self, input_data, SE,
@@ -776,6 +788,7 @@ class sersic_multifit_general():
                  regularize=True, f_scale=0.5, ftol=1e-12,
                  xtol=1e-12, gtol=1e-12,
                  init_params=0.2, final_params=5.0,
+                 which_residual = 'user',
                  convolution_mode='GPU',method1='least_squares',
                  method2='least_squares',z = 0.01,
                  save_name_append = ''):
@@ -803,8 +816,17 @@ class sersic_multifit_general():
         self.loss = loss
         self.z = z
         self.sigma = sigma
+        self.which_residual = which_residual
         self.self_bkg = self_bkg
         self.bkg_rms_map = bkg_rms_map
+
+        if self.bkg_rms_map is not None:
+            self.rms_map = self.bkg_rms_map
+        else:
+            if self.self_bkg == True:
+                self.rms_map = self.SE.bkg
+            else:
+                self.rms_map = None
 
         if fix_n == None:
             self.fix_n = [True] * self.SE.n_components
@@ -833,12 +855,13 @@ class sersic_multifit_general():
                            residualname=self.input_data.residualname,
                            init_constraints=self.SE.sources_photometries,
                            psf_name=self.input_data.psfname,
-                           params_values_init=None,
+                           params_values_init_IMFIT=None,
                            ncomponents=self.SE.n_components,
                            constrained=self.constrained,
                            self_bkg=self.self_bkg,
-                           # rms_map = self.bkg_rms_map,
-                           rms_map=self.SE.bkg,
+                           rms_map = self.rms_map,
+                           which_residual=self.which_residual,
+                           # rms_map=self.SE.bkg,
                            # rms_map=None,
                            fix_n=self.fix_n,
                            fix_value_n=self.fix_value_n,
@@ -896,7 +919,8 @@ class sersic_multifit_general():
                                                    nfunctions=nfunctions,
                                                    special_name=special_name)
 
-        mlibs.plot_fit_results(self.input_data.filename, self.model_dict, self.image_results_conv,
+        mlibs.plot_fit_results(self.input_data.filename, self.model_dict,
+                               self.image_results_conv,
                                self.SE.sources_photometries,
                                crop=False, box_size=200,
                                vmax_factor=0.3, vmin_factor=1.0)
