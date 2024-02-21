@@ -559,6 +559,7 @@ class sersic_multifit_radio():
                  fix_n = None, 
                  fix_value_n = None, dr_fix = None,fix_x0_y0=None,
                  sigma=6.0, use_mask_for_fit=False,mask_fit=None,
+                 mask=None,
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
                  self_bkg = False, bkg_rms_map = None,
@@ -605,7 +606,7 @@ class sersic_multifit_radio():
         self.input_data = input_data
         self.SE = SE
         if use_mask_for_fit == True:
-            if mask_fit==None:
+            if mask_fit is None:
                 _logging_.logger.info(f" ++>> Using a mask for fitting was requested, "
                                       f"but no mask was provided. Using the mask from the source "
                                       f"extraction object (SE.mask).")
@@ -616,6 +617,10 @@ class sersic_multifit_radio():
         else:
             _logging_.logger.info(f" ++>> Fitting without a mask.")
             self.mask_fit = None
+        if mask is None:
+            self.mask = self.SE.mask
+        else:
+            self.mask = mask
         self.aspect = aspect
         self.comp_ids = comp_ids
         self.fix_geometry = fix_geometry
@@ -630,21 +635,21 @@ class sersic_multifit_radio():
         self.bkg_rms_map = bkg_rms_map
 
         
-        if fix_n==None:
+        if fix_n is None:
             self.fix_n = [True] * self.SE.n_components
         else:
             self.fix_n = fix_n
             
-        if fix_value_n==None:
+        if fix_value_n is None:
             self.fix_value_n = [0.5] * self.SE.n_components
         else:
             self.fix_value_n = fix_value_n
             
-        if dr_fix==None:
+        if dr_fix is None:
             self.dr_fix = [10] * self.SE.n_components
         else:
             self.dr_fix = dr_fix
-        if fix_x0_y0==None:
+        if fix_x0_y0 is None:
             self.fix_x0_y0 = [True] * self.SE.n_components
         
         self.__sersic_radio()
@@ -655,9 +660,8 @@ class sersic_multifit_radio():
          self.results_compact_deconv_morpho, self.results_ext_conv_morpho,
          self.results_ext_deconv_morpho,
          self.components_deconv_props, self.components_conv_props,
-         self.class_resuts,
-         self.image_results_conv, self.image_results_deconv,
-         self.compact_model) = \
+         self.image_results_conv, self.image_results_deconv,self.bkg_images,
+         self.class_resuts, self.compact_model) = \
             mlibs.run_image_fitting(imagelist=[self.input_data.filename],
                                     residuallist=[self.input_data.residualname],
                                     aspect=self.aspect,
@@ -669,7 +673,7 @@ class sersic_multifit_radio():
                                     convolution_mode=self.convolution_mode,
                                     method1=self.method1,
                                     method2=self.method2,
-                                    mask=self.SE.mask,
+                                    mask=self.mask,
                                     mask_for_fit=self.mask_fit,
                                     bkg_rms_map=self.bkg_rms_map,
                                     self_bkg=self.self_bkg,
@@ -849,7 +853,7 @@ class sersic_multifit_general():
 
     def __sersic_general(self):
         (self.result_mini, self.mini, self.result_1, self.result_extra,
-         self.model_dict, self.image_results_conv, self.image_results_deconv,
+         self.model_dict, self.image_results_conv, self.image_results_deconv, self.bkg_images,
          self.smodel2D,  self.model_temp) = \
             mlibs.do_fit2D(imagename=self.input_data.filename,
                            residualname=self.input_data.residualname,

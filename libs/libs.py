@@ -596,7 +596,7 @@ def cosmo_stats(imagename,z,results=None):
     """
     Get beam shape info in physical units.
     """
-    if results == None:
+    if results is None:
         results = {}
         results['#imagename'] = os.path.basename(imagename)
     pc_scale, bmaj, bmin, BA_pc = beam_physical_area(imagename, z=z)
@@ -892,7 +892,7 @@ def cut_image(img, center=None, size=(1024, 1024),
 
     To do: crop a fration of the image.
     """
-    if center == None:
+    if center is None:
         """
         Better to include momments instead of peak.
         """
@@ -907,7 +907,7 @@ def cut_image(img, center=None, size=(1024, 1024),
     cutout = Cutout2D(hdu.data[0][0], position=position, size=size, wcs=wcs)
     hdu.data = cutout.data
     hdu.header.update(cutout.wcs.to_header())
-    if cutout_filename == None:
+    if cutout_filename is None:
         cutout_filename = img.replace('-image.fits', '-image_cutout' +
                                       special_name + '.fits')
     hdu.writeto(cutout_filename, overwrite=True)
@@ -923,7 +923,7 @@ def cut_image(img, center=None, size=(1024, 1024),
                           position=position, size=size, wcs=wcs2)
     hdu2.data = cutout_res.data
     hdu2.header.update(cutout_res.wcs.to_header())
-    # if cutout_filename == None:
+    # if cutout_filename is None:
     cutout_filename_res = img.replace('-image.fits', '-residual_cutout' +
                                       special_name + '.fits')
     hdu2.writeto(cutout_filename_res, overwrite=True)
@@ -1051,7 +1051,7 @@ def copy_header(image, image_to_copy, file_to_save=None):
         header has been copied.
     """
     from astropy.io import fits
-    if file_to_save == None:
+    if file_to_save is None:
         file_to_save = image_to_copy.replace('.fits', 'header.fits')
     # Open the source image and get its header
     with fits.open(image) as hdu1:
@@ -1164,7 +1164,7 @@ def create_box_around_peak(imagename, fractions=None):
 
     M = ihl['shape'][0]
     N = ihl['shape'][1]
-    if fractions == None:
+    if fractions is None:
         frac_X = int(0.25 * M)
         frac_Y = int(0.25 * N)
     else:
@@ -1302,6 +1302,11 @@ def get_cell_size(imagename):
     cell_size =  pixel_scale.copy()
     return(cell_size)
 
+def get_dilation_size(image):
+    omaj, omin, _, _, _ = beam_shape(image)
+    dilation_size = int(
+        np.sqrt(omaj * omin) / (2 * get_cell_size(image)))
+    return(dilation_size)
 def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                   dilation_size=None,iterations=2, dilation_type='disk',
                   PLOT=False,show_figure=True,logger=None,
@@ -1328,7 +1333,7 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                 print(f" ==>  Dilation size is "
                       f"{dilation_size} [px]")
         except:
-            if dilation_size == None:
+            if dilation_size is None:
                 dilation_size = 7
                 # dilation_size = 5
 
@@ -1407,7 +1412,7 @@ def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
             dilation_size = int(
                 np.sqrt(omaj * omin) / (2 * get_cell_size(image)))
         except:
-            if dilation_size == None:
+            if dilation_size is None:
                 dilation_size = 7
                 # dilation_size = 5
 
@@ -1418,16 +1423,16 @@ def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
     data_mask = mask * data
 
     if dilation_type == 'disk':
-        data_mask_d = ndimage.binary_dilation(mask,
+        data_mask_d = ndimage.binary_dilation(mask_init,
                                             structure=disk(dilation_size),
                                             iterations=iterations).\
-                                                astype(mask.dtype)
+                                                astype(mask_init.dtype)
 
     if dilation_type == 'square':
-        data_mask_d = ndimage.binary_dilation(mask,
+        data_mask_d = ndimage.binary_dilation(mask_init,
                                             structure=square(dilation_size),
                                             iterations=iterations).\
-                                                astype(mask.dtype)
+                                                astype(mask_init.dtype)
 
     if PLOT == True:
         fig = plt.figure(figsize=(15, 4))
@@ -1945,7 +1950,7 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
     import numpy as np
     from astropy.coordinates import SkyCoord
     # load image data and header
-    if ra_f == None:
+    if ra_f is None:
         imst = imstat(imagename)
         print(imst['maxpos'])
         print(imst['maxposf'])
@@ -2585,7 +2590,7 @@ def get_image_statistics(imagename,cell_size=None,
 
 
     """
-    if dic_data == None:
+    if dic_data is None:
         dic_data = {}
         dic_data['#imagename'] = os.path.basename(imagename)
 
@@ -2902,7 +2907,7 @@ def level_statistics(img, cell_size=None, mask_component=None,
     n_beams_mid = np.sum(pix_mid_mask) / beam_area_
     n_beams_low = np.sum(pix_low_mask) / beam_area_
     n_beams_uncertain = np.sum(pix_uncertain_mask) / beam_area_
-    if results == None:
+    if results is None:
         results = {}
         results['#imagename'] = os.path.basename(img)
 
@@ -2998,7 +3003,7 @@ def level_statistics(img, cell_size=None, mask_component=None,
 def compute_asymetries(imagename,mask,mask_component=None,
                        bkg_to_sub=None,
                        centre=None,results=None):
-    if results == None:
+    if results is None:
         results = {}
         results['#imagename'] = os.path.basename(imagename)
 
@@ -3486,7 +3491,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
         The default is None. A logger object to be used to log messages.
 
     """
-    if results == None:
+    if results is None:
         results = {}
         results['#imagename'] = os.path.basename(img)
 
@@ -3511,7 +3516,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
 
     g_hd = imhead(img)
     freq = g_hd['refval'][2] / 1e9
-    # print(freq)                                            
+    # print(freq)
     omaj = g_hd['restoringbeam']['major']['value']
     omin = g_hd['restoringbeam']['minor']['value']
     beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
@@ -3547,11 +3552,12 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     if mask_component is not None:
         #
         g = g * mask_component
-        
+
         # res = res * mask_component
 
         total_flux_nomask = np.sum(g) / beam_area_
-        total_flux = np.sum(g * (g > 3 * std)) / beam_area_
+        # total_flux = np.sum(g * (g > 3 * std)) / beam_area_
+        total_flux = np.sum(g) / beam_area_
         if mask is not None:
             mask = mask * mask_component
             omask = mask * mask_component
@@ -4111,7 +4117,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     ax1.axhline(L50_norm, ls='-.', color='lime')
     ax1.axvline(sigma_95,
                 label=r"$R_{95}\sim $"f"{C95radii*cell_size:0.2f}''",
-                # ls='--', 
+                # ls='--',
                 color='#56B4E9')
     ax1.axvline(std * 6, label=r"6.0$\times \sigma_{\mathrm{mad}}$", color='black')
     if last_level<3:
@@ -4709,14 +4715,14 @@ def momenta(image, PArad_0=None, q_0=None):
     former while it may for the later.
     """
 
-    if PArad_0 == None:
+    if PArad_0 is None:
         PArad = PA  # + np.pi/2
     else:
         PArad = PArad_0
 
     PAdeg = np.rad2deg(PArad)
 
-    if q_0 == None:
+    if q_0 is None:
         q = b / a
     else:
         q = q_0
@@ -4816,7 +4822,7 @@ def savitzky_golay_2d(z, window_size, order, derivative=None):
     Z[-half_size:, :half_size] = band - np.abs(np.fliplr(Z[-half_size:, half_size + 1:2 * half_size + 1]) - band)
 
     # solve system and convolve
-    if derivative == None:
+    if derivative is None:
         m = np.linalg.pinv(A)[0].reshape((window_size, -1))
         return scipy.signal.fftconvolve(Z, m, mode='valid')
     elif derivative == 'col':
@@ -4870,7 +4876,7 @@ def polarim(image, origin=None, log=False):
     refactored by FF, 2013-2014 (see transpolar.py)
     """
 
-    if origin == None:
+    if origin is None:
         origin = np.array(image.shape) / 2.
 
     def cart2polar(x, y):
@@ -4942,7 +4948,7 @@ def Gradindex(image_data, Rp=None):
     """
 
     def sigma_func(params):
-        ''' 
+        '''
         <<<Morfometryka-core part>>>
         calculates the sigma psi with different parameters
         called by the minimization routine '''
@@ -4958,7 +4964,7 @@ def Gradindex(image_data, Rp=None):
         #     print(galpolar)
         # print '%.5f %.5f %.5f %.5f' % (x0, y0, q, PA)
 
-        if Rp == None:
+        if Rp is None:
             galpolarpetro = galpolar[0: -1, :]
         else:
             galpolarpetro = galpolar[0: 2 * int(Rp), :]
@@ -5006,7 +5012,7 @@ def Gradindex(image_data, Rp=None):
         # print '%.5f %.5f %.5f %.5f' % (x0, y0, q, PA)
 
         #     galpolarpetro =  galpolar[ 0   : int(config.NRp * P.Rp), : ]
-        if Rp == None:
+        if Rp is None:
             galpolarpetro = galpolar[0: -1, :]
         else:
             galpolarpetro = galpolar[0: 2 * int(Rp), :]
@@ -5391,7 +5397,7 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
     # from petrofit import plot_segment_residual
     # from petrofit import order_cat
 
-    if results == None:
+    if results is None:
         results = {}
         results['#imagename'] = os.path.basename(image)
 
@@ -5642,7 +5648,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
                                  fwhm=121, kernel_size=81, npixels=128,
                                  add_save_name='',logger=None):
     # if mask:
-    if source_props == None:
+    if source_props is None:
         source_props = {}
         source_props['#imagename'] = os.path.basename(imagename)
     if imagename is not None:
@@ -6343,7 +6349,6 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     if len(data_2D_.shape) == 4:
         data_2D_ = data_2D_[0][0]
     m, s = np.mean(data_2D_), mad_std(data_2D_)
-    bkg = sep.Background(data_2D_)
 
     if apply_mask:
         if mask is not None:
@@ -6365,8 +6370,8 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     if show_bkg_map == True:
         plt.figure()
         # display bkg map.
-        plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=m - s,
-                   vmax=m + s, origin='lower')
+        plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=3*s,
+                   vmax=0.2*np.max(data_2D), origin='lower')
         plt.colorbar()
         plt.close()
         plt.figure()
@@ -6802,7 +6807,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
     the parameters space in which each parameter will vary during the fit.
 
     DEV NOTES:
-    
+
         Note that this function handles parameter/model generation in four different ways:
             -- free parameters (params_values_init_IMFIT=None, init_constraints=None,
             constrained=False)
@@ -7628,7 +7633,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     crop_image = ref_image
     crop_residual = ref_res
     data_2D = ctn(crop_image)
-    if minarea == None:
+    if minarea is None:
         try:
             minarea = int(beam_area2(crop_image))
         except:
@@ -7641,11 +7646,14 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     except:
         std_res = mad_std(data_2D)
 
+    _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
+                            iterations=2, rms=std_res)
+
+
     if apply_mask == True:
-        _, mask = mask_dilation(crop_image, sigma=sigma_mask, dilation_size=None,
-                                iterations=2, rms=std_res)
+        mask_detection = mask
     else:
-        mask = np.ones(data_2D.shape)
+        mask_detection = np.ones(data_2D.shape)
     # plt.figure()
 
     # _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
@@ -7656,7 +7664,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                        fw=fw, fh=fh,
                        minarea=minarea,
                        segmentation_map=True,
-                       filter_type='matched', mask=None,
+                       filter_type='matched',
                        deblend_nthresh=deblend_nthresh,
                        deblend_cont=deblend_cont,
                        clean_param=clean_param,
@@ -7665,6 +7673,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                        sigma=sigma,sigma_mask=sigma_mask,
                        ell_size_factor=ell_size_factor,
                        apply_mask=apply_mask,
+                       mask = mask_detection,
                        show_detection=show_detection)
 
     # masks, indices, seg_maps, objects = \
@@ -7905,7 +7914,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
 
     if convolution_mode == 'GPU':
         data_2D_gpu = jnp.array(data_2D)
-        
+
     if psf_name is not None:
         PSF_CONV = True
         try:
@@ -7929,7 +7938,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     else:
         PSF_CONV = False
         PSF_BEAM = None
-        
+
     if residualname is not None and which_residual != 'user':
         """
         This is important for radio image fitting.
@@ -7967,7 +7976,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 residual_2D_to_use = residual_2D
             """
             residual_2D_to_use = residual_2D
-            
+
         FlatSky_level = mad_std(residual_2D_to_use)
         #         background = residual_2D #residual_2D_to_use
         if convolution_mode == 'GPU':
@@ -8055,7 +8064,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
 
     def convert_params_to_numpy(_params):
         return list(_params)
-    
+
     @partial(jit, static_argnums=1)
     def func(x):
         return np.split(x, 8)
@@ -8082,7 +8091,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         # print(' <DEBUG> Fitting Iterator running...')
         model = 0
         for i in range(1, nfunctions + 1):
-            model = model + sersic2D_GPU(xy, 
+            model = model + sersic2D_GPU(xy,
                                          params['f' + str(i) + '_x0'].value,
                                          params['f' + str(i) + '_y0'].value,
                                          params['f' + str(i) + '_PA'].value,
@@ -8181,7 +8190,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                                           'disp': disp}
                                  )
 
-    
+
     if method1 == 'least_squares':
         # faster, but usually not good for first run.
         # if results_previous_run is not None:
@@ -8286,7 +8295,11 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     model_dict = {}
     image_results_conv = []
     image_results_deconv = []
+    total_image_results_deconv = []
+    total_image_results_conv = []
+    bkg_images = []
     flat_sky_total = FlatSky_cpu(background, params['s_a'].value)
+    bkg_comp_i = flat_sky_total / ncomponents
     for i in range(1, ncomponents + 1):
         model_temp = sersic2D_GPU(xy, params['f' + str(i) + '_x0'].value,
                               params['f' + str(i) + '_y0'].value,
@@ -8298,14 +8311,13 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                               params['f' + str(i) + '_cg'].value)
         #                                  params['f'+str(i)+'_Rn'])+FlatSky(FlatSky_level, params['s_a'])/ncomponents
         # print(model_temp[0])
-        model = model + model_temp
-        
+
         # We can add a fraction of 1/ncomponents of the bkg flat sky to each component.
-        bkg_comp_i = flat_sky_total / ncomponents
+        model = model + model_temp + bkg_comp_i
         #if bkg is deconvolved
         # model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
         #if bkg is convolved
-        model_dict['model_c' + str(i)] = np.asarray(model_temp).copy()
+        model_dict['model_c' + str(i)] = np.asarray(model_temp+bkg_comp_i).copy()
 
 
         if PSF_CONV == True:
@@ -8353,7 +8365,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                                     special_name + save_name_append + '.fits')
 
     #     model = model
-    model_dict['model_total'] = np.asarray(model).copy()  # + FlatSky(FlatSky_level, params['s_a'])
+    model_dict['model_total_dec'] = np.asarray(model) # +FlatSky_cpu(background,params['s_a'].value)
 
     if PSF_CONV == True:
         # model_dict['model_total_conv'] = scipy.signal.fftconvolve(model,
@@ -8363,50 +8375,63 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
             # model_dict['model_total_conv'] = np.asarray(jax_convolve(model,
             #                                                          PSF_BEAM)).copy()
             # model_conv = _fftconvolve_jax(model, PSF_BEAM).copy() + FlatSky_cpu(background, params['s_a'].value
-            model_conv = _fftconvolve_jax(model+FlatSky_cpu(background,
-                                                            params['s_a'].value),
-                                          PSF_BEAM).copy()
-            model_dict['model_total_conv'] = np.asarray(model_conv)
+            model_conv = _fftconvolve_jax(model,PSF_BEAM).copy()
         if convolution_mode == 'CPU':
             model_conv = scipy.signal.fftconvolve(model, PSF_BEAM_raw,'same')
-            model_dict['model_total_conv'] = model_conv + \
-                                             FlatSky_cpu(background, params['s_a'])
+            model_dict['model_total_conv'] = model_conv
     else:
-        model_dict['model_total_conv'] = model + FlatSky_cpu(background, params['s_a'])
+        model_dict['model_total_conv'] = model
 
 
-    model_dict['best_residual'] = data_2D - model_dict['model_total']
+    # model_dict['best_residual'] = data_2D - model_dict['model_total']
     # bkg_comp_total
-    model_dict['best_residual_conv'] = data_2D - model_dict['model_total_conv']
-    
-    
+    model_dict['model_total_conv'] = np.asarray(model_conv)
+    model_dict['best_residual_conv'] = np.asarray(data_2D) - model_dict['model_total_conv']
+
+
     model_dict['deconv_bkg'] = np.asarray(flat_sky_total)
     # bkg_comp_total
     model_dict['conv_bkg'] = np.asarray(_fftconvolve_jax(flat_sky_total,PSF_BEAM).copy())
 
     pf.writeto(imagename.replace('.fits', '') +
-               "_" + "model" + special_name + save_name_append + '.fits',
+               "_" + "conv_model" + special_name + save_name_append + '.fits',
                model_dict['model_total_conv'], overwrite=True)
+
+    total_image_results_conv.append(imagename.replace('.fits', '') +
+               "_" + "conv_model" + special_name + save_name_append + '.fits')
+
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "dec_model" + special_name + save_name_append + '.fits',
+               model_dict['model_total_dec'], overwrite=True)
+
+    total_image_results_deconv.append(imagename.replace('.fits', '') +
+               "_" + "dec_model" + special_name + save_name_append + '.fits')
+
+
     pf.writeto(imagename.replace('.fits', '') +
                "_" + "residual" + special_name + save_name_append + ".fits",
                model_dict['best_residual_conv'], overwrite=True)
     copy_header(imagename, imagename.replace('.fits', '') +
-                "_" + "model" + special_name + save_name_append + '.fits',
+                "_" + "conv_model" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
-                "_" + "C_model" + special_name + save_name_append + '.fits')
-    copy_header(imagename, imagename.replace('.fits', '') +
-                "_" + "residual" + special_name + save_name_append + '.fits',
-                imagename.replace('.fits', '') +
-                "_" + "residual" + special_name + save_name_append + '.fits')
-    
-    pf.writeto(imagename.replace('.fits', '') +
-               "_" + "dec_model" + special_name + save_name_append + '.fits',
-               model_dict['model_total'], overwrite=True)
+                "_" + "conv_model" + special_name + save_name_append + '.fits')
     copy_header(imagename, imagename.replace('.fits', '') +
                 "_" + "dec_model" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
                 "_" + "dec_model" + special_name + save_name_append + '.fits')
-    
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "residual" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "residual" + special_name + save_name_append + '.fits')
+
+    pf.writeto(imagename.replace('.fits', '') +
+               "_" + "dec_model" + special_name + save_name_append + '.fits',
+               model_dict['model_total_dec'], overwrite=True)
+    copy_header(imagename, imagename.replace('.fits', '') +
+                "_" + "dec_model" + special_name + save_name_append + '.fits',
+                imagename.replace('.fits', '') +
+                "_" + "dec_model" + special_name + save_name_append + '.fits')
+
     pf.writeto(imagename.replace('.fits', '') +
                "_" + "deconv_bkg" + special_name + save_name_append + '.fits',
                model_dict['deconv_bkg'], overwrite=True)
@@ -8414,7 +8439,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 "_" + "deconv_bkg" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
                 "_" + "deconv_bkg" + special_name + save_name_append + '.fits')
-    
+
     pf.writeto(imagename.replace('.fits', '') +
                "_" + "conv_bkg" + special_name + save_name_append + '.fits',
                model_dict['conv_bkg'], overwrite=True)
@@ -8422,8 +8447,12 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 "_" + "conv_bkg" + special_name + save_name_append + '.fits',
                 imagename.replace('.fits', '') +
                 "_" + "conv_bkg" + special_name + save_name_append + '.fits')
-    
-    
+    bkg_images.append(imagename.replace('.fits', '') +
+               "_" + "deconv_bkg" + special_name + save_name_append + '.fits')
+    bkg_images.append(imagename.replace('.fits', '') +
+               "_" + "conv_bkg" + special_name + save_name_append + '.fits')
+
+
     # # initial minimization.
     # method1 = 'differential_evolution'
     # print(' >> Using', method1, ' solver for first optimisation run... ')
@@ -8431,8 +8460,10 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     # #     method2 = 'ampgo'#'least_squares'
     # method2 = 'least_squares'
 
+
+
     image_results_conv.append(imagename.replace('.fits', '') +
-                              "_" + "model" +
+                              "_" + "conv_model" +
                               special_name + save_name_append + '.fits')
     image_results_deconv.append(imagename.replace('.fits', '') +
                                 "_" + "dec_model" +
@@ -8471,7 +8502,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         pass
 
     return (result, mini, result_1, result_extra, model_dict, image_results_conv,
-            image_results_deconv, smodel2D, model_temp)
+            image_results_deconv, bkg_images, smodel2D, model_temp)
 
 
 def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
@@ -8593,6 +8624,7 @@ def return_and_save_model(mini_results, imagename, ncomponents, background=0.0,
 def compute_model_properties(model_list,  # the model list of each component
                              which_model,  # `convolved` or `deconvolved`?
                              residualname,
+                             mask_dilated_new,
                              rms,  # the native rms from the data itself.
                              mask_region = None,
                              z=None):
@@ -8605,37 +8637,45 @@ def compute_model_properties(model_list,  # the model list of each component
     model_properties = {}
     kk = 1
     if which_model == 'conv':
-        dilation_size = 1
-    if which_model == 'deconv':
+        rms_model = rms
         dilation_size = 2
+    if which_model == 'deconv':
+        rms_model = rms/len(model_list)
+        dilation_size = 2
+    dilation_size = 2 #get_dilation_size(model_list[0])
     for model_component in model_list:
         try:
             print('Computing properties of model component: ', os.path.basename(model_component))
             model_component_data = ctn(model_component)
-            _rms_model = mad_std(model_component_data)
-            if _rms_model < 1e-7: 
-                rms_model = mad_std(model_component_data[model_component_data>1e-6])
-            else:
-                rms_model = _rms_model
-                
-            print(' --==>> MAD RMS of model component: ', _rms_model)
+            # rms_model = mad_std(model_component_data)
+
+            # if _rms_model < 1e-6:
+            #     rms_model = mad_std(model_component_data[model_component_data>1e-6])
+            # else:
+            #     rms_model = _rms_model
+
+            # print(' --==>> MAD RMS of model component: ', _rms_model)
             print(' --==>> STD RMS of model component: ', rms_model)
-            
+
             _, mask_component = mask_dilation(model_component,
                                             rms=rms_model,
-                                            sigma=6, dilation_size=None,
-                                            iterations=2, PLOT=True)
-            
-                
+                                            sigma=6, dilation_size=dilation_size,
+                                            iterations=2, PLOT=False)
+
+            # if np.sum(mask_region * mask_component) < np.sum(mask_component):
+            #     mask_region = mask_component * mask_dilated_new
+
             properties, _, _ = measures(imagename=model_component,
                                             residualname=residualname,
                                             z=z,
                                             sigma_mask=6.0,
-                                            last_level = 3.0,
+                                            last_level = 2.0,
                                             vmin_factor=3.0,
                                             dilation_size=dilation_size,
                                             mask = mask_region,
                                             mask_component=mask_component,
+                                            show_figure = True,
+                                            apply_mask=False,
                                             # data_2D=mlibs.ctn(model_component),
                                             rms=rms_model)
 
@@ -9359,7 +9399,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                     )  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
 
         result_mini, mini, result_1, result_extra, model_dict, \
-            image_results_conv, image_results_deconv, \
+            image_results_conv, image_results_deconv, bkg_images, \
             smodel2D, model_temp = \
                 do_fit2D(imagename=crop_image,
                             residualname=crop_residual,
@@ -9388,33 +9428,28 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         lmfit_results.append(result_mini.params)
         lmfit_results_1st_pass.append(result_1.params)
         special_name = save_name_append
+        bkg_deconv = bkg_images[0]
+        bkg_conv = bkg_images[1]
 
+        _, mask_dilated_new = mask_dilation_from_mask(crop_image,
+                                                      mask_region,
+                                                      rms=rms_std_res,
+                                                      iterations=10)
 
-        print('#######################')
-        print('#######################')
-        print('#######################')
-        print('Computing properties of deconvolved model components.')
-        print('#######################')
-        print('#######################')
-        print('#######################')
+        rms_bkg_deconv = mad_std(ctn(bkg_deconv))
         deconv_model_properties = compute_model_properties(model_list=image_results_deconv[:-1],
                                                            which_model='deconv',
                                                            residualname=crop_residual,
-                                                           rms=rms_std_res,
+                                                           mask_dilated_new = mask_dilated_new,
+                                                           rms=rms_bkg_deconv,
                                                            mask_region = mask_region
                                                            )
-
-        print('#######################')
-        print('#######################')
-        print('#######################')
-        print('Computing properties of convolved model components.')
-        print('#######################')
-        print('#######################')
-        print('#######################')
+        rms_bkg_conv = mad_std(ctn(bkg_conv))
         conv_model_properties = compute_model_properties(model_list=image_results_conv[:-2],
                                                          which_model='conv',
                                                          residualname=crop_residual,
-                                                         rms=rms_std_res,
+                                                         mask_dilated_new=mask_dilated_new,
+                                                         rms=rms_bkg_conv,
                                                          mask_region = mask_region
                                                          )
         list_individual_deconv_props.append(deconv_model_properties)
@@ -9432,10 +9467,6 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             header=True,index=False)
         conv_props.to_csv(image_results_conv[-2].replace('.fits','_component_properties.csv'),
                           header=True, index=False)
-
-
-
-
 
         # comp_ids = []
         print('*************************************')
@@ -9478,37 +9509,37 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                 extended_model_deconv = (extended_model_deconv +
                                             model_dict['model_c' + le])
                 nfunctions = None
-        
+
         extended_model = extended_model + model_dict['conv_bkg']/len(ext_ids)
         extended_model_deconv = extended_model_deconv + model_dict['deconv_bkg']/len(ext_ids)
         compact_model = compact_model + model_dict['conv_bkg']/len(comp_ids)
         compact_model_deconv = compact_model_deconv + model_dict['deconv_bkg']/len(comp_ids)
-        
-        
+
+
         pf.writeto(crop_image.replace('.fits', '') +
                 "_" + "dec_ext_model" + save_name_append + ".fits",
                 extended_model_deconv, overwrite=True)
-        copy_header(crop_image, crop_image.replace('.fits', '') + 
+        copy_header(crop_image, crop_image.replace('.fits', '') +
                     "_" + "dec_ext_model" + save_name_append + ".fits",
-                    crop_image.replace('.fits', '') + 
+                    crop_image.replace('.fits', '') +
                     "_" + "dec_ext_model" + save_name_append + ".fits")
 
         pf.writeto(crop_image.replace('.fits', '') +
                 "_" + "ext_model" + save_name_append + ".fits",
                 extended_model, overwrite=True)
-        copy_header(crop_image, crop_image.replace('.fits', '') + 
+        copy_header(crop_image, crop_image.replace('.fits', '') +
                     "_" + "ext_model" + save_name_append + ".fits",
-                    crop_image.replace('.fits', '') + 
+                    crop_image.replace('.fits', '') +
                     "_" + "ext_model" + save_name_append + ".fits")
-        
+
         pf.writeto(crop_image.replace('.fits', '') +
                 "_" + "dec_compact" + save_name_append + ".fits",
                 compact_model_deconv, overwrite=True)
-        copy_header(crop_image, crop_image.replace('.fits', '') + 
+        copy_header(crop_image, crop_image.replace('.fits', '') +
                     "_" + "dec_compact" + save_name_append + ".fits",
-                    crop_image.replace('.fits', '') + 
+                    crop_image.replace('.fits', '') +
                     "_" + "dec_compact" + save_name_append + ".fits")
-        
+
 
         decomp_results = plot_decomp_results(imagename=crop_image,
                                                 compact=compact_model,
@@ -9537,82 +9568,98 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
         # print('++++++++++++++++++++++++++++++++++++++++')
-        
-        _rms_model = mad_std(compact_model)
-        print('**************************')
-        print('**************************')
-        print('RMS MODEL COMPACT CONV:', _rms_model)
-        if _rms_model < 1e-7: 
-            rms_model = mad_std(compact_model[compact_model>1e-6])
-        else:
-            rms_model = _rms_model
 
-        
+        # _rms_model = mad_std(compact_model)
+        # print('**************************')
+        # print('**************************')
+        # print('RMS MODEL COMPACT CONV:', _rms_model)
+        # if _rms_model < 1e-6:
+        #     rms_model = mad_std(compact_model[compact_model>1e-6])
+        # else:
+        #     rms_model = _rms_model
+
+        rms_model = mad_std(compact_model)
+        rms_compact_conv = rms_bkg_conv #/len(comp_ids)
         _, mask_region_conv_comp = mask_dilation(compact_model,
-                                        rms=rms_model,
-                                        sigma=sigma, dilation_size=None,
+                                        # rms=rms_model,
+                                        rms=rms_compact_conv,
+                                        sigma=6,
+                                        # dilation_size=get_dilation_size(crop_image),
+                                        dilation_size=2,
                                         iterations=2, PLOT=True,
                                         special_name='compact conv')
-        print('++++ Computing properties of convolved compact model.')
-        results_compact_conv_morpho, _ = \
-            shape_measures(imagename=crop_image,
-                            residualname=crop_residual, z=z,
-                            sigma_mask=6,
-                            last_level=1.5, vmin_factor=1.0,
-                            plot_catalog=False,
-                            data_2D=compact_model * mask * mask_region,
-                            npixels=128, fwhm=81, kernel_size=21,
-                            dilation_size=None,
-                            main_feature_index=0, results_final={},
-                            iterations=2,
-                            fracX=0.10, fracY=0.10, deblend=False,
-                            bkg_sub=False,
-                            bkg_to_sub=None, rms=rms_model,
-                            apply_mask=False, do_PLOT=True, SAVE=True,
-                            show_figure=True,
-                            mask_component = mask_region_conv_comp,
-                            mask=mask, do_measurements='partial',
-                            add_save_name='_compact_conv')
+
+
+
+        # print('++++ Computing properties of convolved compact model.')
+
+        # if np.sum(mask * mask_region_conv_comp) < np.sum(mask_region_conv_comp):
+        #     _mask = mask_dilated_new * mask_region_conv_comp
+        # else:
+        #     _mask = mask
+
+        results_compact_conv_morpho, _, _ = \
+            measures(imagename=crop_image,
+                     residualname=crop_residual, z=z,
+                     sigma_mask=6,
+                     last_level=1.5, vmin_factor=1.0,
+                     data_2D=compact_model,
+                     dilation_size=None,
+                     results_final={},
+                     # rms=rms_model,
+                     rms=rms_compact_conv,
+                     apply_mask=False, do_PLOT=True, SAVE=True,
+                     do_petro = True,
+                     show_figure=True,
+                     mask_component=mask_region_conv_comp,
+                     mask=mask_region, do_measurements='partial',
+                     add_save_name='_compact_conv')
 
         list_results_compact_conv_morpho.append(results_compact_conv_morpho)
-        
-        
-        _rms_model = mad_std(compact_model_deconv)
-        print('**************************')
-        print('**************************')
-        print('RMS MODEL COMPACT DECONV:', _rms_model)
-        if _rms_model < 1e-7: 
-            rms_model = mad_std(compact_model_deconv[compact_model_deconv>1e-6])
-        else:
-            rms_model = _rms_model
-        
-        
+
+
+        # _rms_model = mad_std(compact_model_deconv)
+        # print('**************************')
+        # print('**************************')
+        # print('RMS MODEL COMPACT DECONV:', _rms_model)
+        # if _rms_model < 1e-6:
+        #     rms_model = mad_std(compact_model_deconv[compact_model_deconv>1e-6])
+        # else:
+        #     rms_model = _rms_model
+
+        rms_model = mad_std(compact_model_deconv)
+        rms_compact_deconv = rms_bkg_deconv / len(comp_ids)
         _, mask_region_deconv_comp = mask_dilation(compact_model_deconv,
-                                        rms=rms_model,
-                                        sigma=sigma, dilation_size=2,
+                                        # rms=rms_model,
+                                        rms=rms_compact_deconv,
+                                        sigma=6,
+                                        # dilation_size=get_dilation_size(crop_image),
+                                        dilation_size=2,
                                         iterations=2, PLOT=True,
                                         special_name='compact deconv')
-        
-        print('++++ Computing properties of deconvolved compact model.')
-        results_compact_deconv_morpho, _ = \
-            shape_measures(imagename=crop_image,
-                            residualname=crop_residual, z=z,
-                            sigma_mask=6,
-                            last_level=3.0, vmin_factor=1.0,
-                            plot_catalog=False,
-                            data_2D=compact_model_deconv * mask * mask_region_deconv_comp,
-                            npixels=128, fwhm=81, kernel_size=21,
-                            dilation_size=None,
-                            main_feature_index=0, results_final={},
-                            iterations=2,
-                            fracX=0.10, fracY=0.10, deblend=False,
-                            bkg_sub=False,
-                            bkg_to_sub=None, rms=rms_model,
-                            apply_mask=False, do_PLOT=True, SAVE=True,
-                            show_figure=True,
-                            mask_component = mask_region_deconv_comp,
-                            mask=mask, do_measurements='partial',
-                            add_save_name='_compact_deconv')
+
+        # if np.sum(mask * mask_region_deconv_comp) < np.sum(mask_region_deconv_comp):
+        #     _mask = mask_dilated_new * mask_region_deconv_comp
+        # else:
+        #     _mask = mask
+
+        # print('++++ Computing properties of deconvolved compact model.')
+        results_compact_deconv_morpho, _, _ = \
+            measures(imagename=crop_image,
+                     residualname=crop_residual, z=z,
+                     sigma_mask=6,
+                     last_level=1.5, vmin_factor=1.0,
+                     data_2D=compact_model_deconv,
+                     dilation_size=None,
+                     results_final={},
+                     # rms=rms_model,
+                     rms=rms_compact_deconv,
+                     apply_mask=False, do_PLOT=True, SAVE=True,
+                     show_figure=True,
+                     do_petro=True,
+                     mask_component=mask_region_deconv_comp,
+                     mask=mask_region, do_measurements='partial',
+                     add_save_name='_compact_deconv')
 
         list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
 
@@ -9622,98 +9669,106 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             compact component. Hence, extended emission is considered
             to be only the residual after removing that component. 
             """
-            results_ext_conv_morpho, _ = \
-                shape_measures(imagename=crop_image,
-                                residualname=crop_residual, z=z,
-                                sigma_mask=6,
-                                last_level=1.5, vmin_factor=3.0,
-                                plot_catalog=False,
-                                data_2D=(ctn(crop_image) - compact_model) * mask_region,
-                                npixels=128, fwhm=81, kernel_size=21,
-                                dilation_size=None,
-                                main_feature_index=0, results_final={},
-                                iterations=2,
-                                fracX=0.10, fracY=0.10, deblend=False,
-                                bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_std_res,
-                                apply_mask=False, do_PLOT=True, SAVE=True,
-                                show_figure=True,
-                                mask=mask, do_measurements='partial',
-                                add_save_name='_extended_conv')
+            results_ext_conv_morpho, _, _ = \
+                measures(imagename=crop_image,
+                         residualname=crop_residual, z=z,
+                         sigma_mask=6,
+                         last_level=2.0, vmin_factor=1.0,
+                         data_2D=(ctn(crop_image) - compact_model) * mask_region,
+                         dilation_size=None,
+                         results_final={},
+                         rms=rms_std_res,
+                         apply_mask=False, do_PLOT=True, SAVE=True,
+                         show_figure=True,
+                         do_petro=False,
+                         # mask_component=mask_region_deconv_comp,
+                         mask=mask, do_measurements='partial',
+                         add_save_name='_extended_conv')
 
             list_results_ext_conv_morpho.append(results_ext_conv_morpho)
             results_ext_deconv_morpho = results_ext_conv_morpho
             list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
         else:
-            _rms_model = mad_std(extended_model)
-            print('**************************')
-            print('**************************')
-            print('RMS MODEL EXTENDED:', _rms_model)
-            if _rms_model < 1e-7: 
-                rms_model = mad_std(extended_model[extended_model>1e-6])
-            else:
-                rms_model = _rms_model
+            rms_model = mad_std(extended_model)
+            rms_ext_conv = rms_bkg_conv #/ len(ext_ids)
+            # if _rms_model < 1e-6:
+            #     rms_model = mad_std(extended_model[extended_model>1e-6])
+            # else:
+            #     rms_model = _rms_model
             _, mask_region_conv_ext = mask_dilation(extended_model,
-                                rms=rms_model,
-                                sigma=sigma, dilation_size=2,
+                                # rms=rms_model,
+                                rms=rms_ext_conv,
+                                sigma=6,
+                                # dilation_size=get_dilation_size(crop_image),
+                                dilation_size=2,
                                 iterations=2, PLOT=True,
-                                special_name='compact deconv')
-            print('++++ Computing properties of convolved extended model.')
-            results_ext_conv_morpho, _ = \
-                shape_measures(imagename=crop_image,
-                                residualname=crop_residual, z=z,
-                                sigma_mask=6,
-                                last_level=1.5, vmin_factor=1.0,
-                                plot_catalog=False,
-                                data_2D=extended_model * mask * mask_region,
-                                npixels=128, fwhm=81, kernel_size=21,
-                                dilation_size=None,
-                                main_feature_index=0, results_final={},
-                                iterations=2,
-                                fracX=0.10, fracY=0.10, deblend=False,
-                                bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_model,
-                                apply_mask=False, do_PLOT=True, SAVE=True,
-                                show_figure=True,
-                                mask_component = mask_region_conv_ext,
-                                mask=mask, do_measurements='partial',
-                                add_save_name='_extended_conv')
+                                special_name='extended conv')
+            # print('++++ Computing properties of convolved extended model.')
+
+            # if np.sum(mask * mask_region_conv_ext) < np.sum(mask_region_conv_ext):
+            #     _mask = mask_dilated_new * mask_region_conv_ext
+            # else:
+            #     _mask = mask
+
+            results_ext_conv_morpho, _,_ = \
+                measures(imagename=crop_image,
+                         residualname=crop_residual, z=z,
+                         sigma_mask=6,
+                         last_level=2.0, vmin_factor=1.0,
+                         data_2D=extended_model,
+                         dilation_size=None,
+                         results_final={},
+                         # rms=rms_model,
+                         rms=rms_ext_conv,
+                         apply_mask=False, do_PLOT=True, SAVE=True,
+                         show_figure=True,
+                         do_petro=True,
+                         mask_component=mask_region_conv_ext,
+                         mask=mask_region, do_measurements='partial',
+                         add_save_name='_extended_conv')
             list_results_ext_conv_morpho.append(results_ext_conv_morpho)
 
-            _rms_model = mad_std(extended_model_deconv)
-            print('**************************')
-            print('**************************')
-            print('RMS MODEL EXTENDED DECONV:', _rms_model)
-            if _rms_model < 1e-7: 
-                rms_model = mad_std(extended_model_deconv[extended_model_deconv>1e-6])
-            else:
-                rms_model = _rms_model
-                
+            rms_model = mad_std(extended_model_deconv)
+            rms_ext_deconv = rms_bkg_deconv / len(ext_ids)
+            # print('**************************')
+            # print('**************************')
+            # print('RMS MODEL EXTENDED DECONV:', _rms_model)
+            # if _rms_model < 1e-6:
+            #     rms_model = mad_std(extended_model_deconv[extended_model_deconv>1e-6])
+            # else:
+            #     rms_model = _rms_model
+
             _, mask_region_deconv_ext = mask_dilation(extended_model_deconv,
-                                rms=rms_model,
-                                sigma=sigma, dilation_size=2,
+                                # rms=rms_model,
+                                rms = rms_ext_deconv,
+                                sigma=6,
+                                # dilation_size=get_dilation_size(crop_image),
+                                dilation_size=2,
                                 iterations=2, PLOT=True,
-                                special_name='compact deconv')
-            print('++++ Computing properties of deconvolved extended model.')
-            results_ext_deconv_morpho, _ = \
-                shape_measures(imagename=crop_image,
-                                residualname=crop_residual, z=z,
-                                sigma_mask=1,
-                                last_level=2.0, vmin_factor=1.0,
-                                plot_catalog=False,
-                                data_2D=extended_model_deconv * mask * mask_region,
-                                npixels=128, fwhm=81, kernel_size=21,
-                                dilation_size=None,
-                                main_feature_index=0, results_final={},
-                                iterations=2,
-                                fracX=0.10, fracY=0.10, deblend=False,
-                                bkg_sub=False,
-                                bkg_to_sub=None, rms=rms_model,
-                                apply_mask=False, do_PLOT=True, SAVE=True,
-                                show_figure=True,
-                                mask_component = mask_region_deconv_ext,
-                                mask=mask, do_measurements='partial',
-                                add_save_name='_extended_deconv')
+                                special_name='extended deconv')
+
+            # if np.sum(mask * mask_region_deconv_ext) < np.sum(mask_region_deconv_ext):
+            #     _mask = mask_dilated_new * mask_region_deconv_ext
+            # else:
+            #     _mask = mask
+
+            # print('++++ Computing properties of deconvolved extended model.')
+            results_ext_deconv_morpho, _,_ = \
+                measures(imagename=crop_image,
+                         residualname=crop_residual, z=z,
+                         sigma_mask=6,
+                         last_level=2.0, vmin_factor=1.0,
+                         data_2D=extended_model_deconv,
+                         dilation_size=None,
+                         results_final={},
+                         # rms=rms_model,
+                         rms=rms_ext_deconv,
+                         apply_mask=False, do_PLOT=True, SAVE=True,
+                         show_figure=True,
+                         do_petro=True,
+                         mask_component=mask_region_deconv_ext,
+                         mask=mask_region, do_measurements='partial',
+                         add_save_name='_extended_deconv')
 
             list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
 
@@ -9732,7 +9787,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             pd.DataFrame(list_results_ext_deconv_morpho),
             pd.DataFrame(list_individual_deconv_props[0]).T,
             pd.DataFrame(list_individual_conv_props[0]).T,
-            image_results_conv, image_results_deconv,
+            image_results_conv, image_results_deconv,bkg_images,
             class_results,
             compact_model)
 
@@ -10667,6 +10722,39 @@ def make_scalebar(ax, left_side, length, color='w', linestyle='-', label='',
     ax.axis(axlims)
     return lines,txt
 
+
+def plot_radial_profile(imagedatas, refimage=None,
+                        ax=None, centre=None, labels=None,
+                        figsize=(4, 6)):
+    if ax is None:
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(1, 1, 1)
+    else:
+        pass
+
+    if labels is None:
+        _labels = [''] * len(imagedatas)
+
+    if refimage != None:
+        cell_size = get_cell_size(refimage)
+        xaxis_units = '[arcsec]'
+    else:
+        cell_size = 1.0
+        xaxis_units = '[px]'
+
+    for i in range(len(imagedatas)):
+        radius, intensity = get_profile(imagedatas[i], center=centre)
+        ax.plot(radius * cell_size, intensity, label=_labels[i])
+
+    plt.semilogy()
+    plt.xlabel(f"Radius {xaxis_units}")
+    plt.ylabel(f"Rdial Intensity [mJy/beam]")
+    # mlibs.plt.xlim(0,cell_size*radius[int(len(radius)/2)])
+    # mlibs.plt.semilogx()
+    if labels != None:
+        plt.legend()
+    return (ax)
+
 def fast_plot2(imagename, crop=False, box_size=128, center=None, with_wcs=True,vmax_factor=0.5,
                vmin_factor=1, plot_colorbar=True, figsize=(5, 5), aspect=1, ax=None):
     """
@@ -10689,7 +10777,7 @@ def fast_plot2(imagename, crop=False, box_size=128, center=None, with_wcs=True,v
 
 
     """
-    if ax == None:
+    if ax is None:
         fig = plt.figure(figsize=figsize)
     #     ax = fig.add_subplot(1,1,1)
     #     try:
@@ -10727,7 +10815,7 @@ def fast_plot2(imagename, crop=False, box_size=128, center=None, with_wcs=True,v
         std = g.std()
     else:
         std = mad_std(g)
-    if ax == None:
+    if ax is None:
         if with_wcs == True and isinstance(imagename, str) == True:
             ax = fig.add_subplot(projection=ww.celestial)
             ax.set_xlabel('RA')
@@ -10972,7 +11060,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     # colors = ['black','purple','gray','red']
     colors = ['red', 'blue', 'teal', 'brown', 'cyan','orange','forestgreen',
               'pink', 'slategrey','darkseagreen','peru','royalblue','darkorange']
-    
+
     plt.figure(figsize=(5, 5))
     plt.plot(r * cell_size, abs(ir), '--.', ms=10, color='purple', alpha=1.0,
              label='DATA')
@@ -11051,7 +11139,7 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
                         special_name=''):
 
     decomp_results = {}
-    if rms == None:
+    if rms is None:
         rms = mad_std(ctn(imagename))
     else:
         rms = rms
@@ -12035,7 +12123,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
               'to use its colormaps, install it. '
               'Then you can use for example:'
               'CM = cmr.flamingo')
-    if ax == None:
+    if ax is None:
         if isinstance(box_size, int):
             fig = plt.figure(figsize=figsize)
         else:
@@ -12118,7 +12206,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
     dx = g.shape[0] / 2
     dy = g.shape[1] / 2
-    if ax == None:
+    if ax is None:
 
         if (projection == 'celestial') and (with_wcs == True) and (isinstance(
                 imagename, str) == True):
@@ -12191,7 +12279,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     # ax.axis(show_axis)
 
     vmin = vmin_factor * std
-    if extent == None:
+    if extent is None:
         extent = [-dx, dx, -dy, dy]
     #     print(g)
 
@@ -12438,7 +12526,7 @@ def plot_image(image, residual_name=None, box_size=200, box_size_inset=60,
     #     ww.wcs.ctype = [ 'XOFFSET' , 'YOFFSET' ]
     imhd = imhead(image)
     if do_cut == True:
-        if center == None:
+        if center is None:
             st = imstat(image)
             print('  >> Center --> ', st['maxpos'])
             yin, yen, xin, xen = st['maxpos'][0] - box_size, st['maxpos'][
