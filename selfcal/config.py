@@ -18,12 +18,12 @@ quiet = True
 run_mode = 'terminal'
 
 
-path = ''
+path = ('')
 vis_list = ['']
 
 
 #VLA
-receiver = 'Ka'
+receiver = 'X'
 instrument = 'EVLA' # 'EVLA' or 'eM'
 
 
@@ -35,9 +35,9 @@ steps = [
     'test_image',#create a test image
     'select_refant', #select reference antenna
     'p0',#initial test  of selfcal, phase only (p)
-    'p1',#continue phase-only selfcal
+    'p1',#redo phase-only selfcal (if enough flux density); ignores p0
     'p2',#continue phase-only selfcal (incremental)
-    'ap1',#amp-selfcal (ap)
+    'ap1',#amp-selfcal (ap); uses p0 or (p1 and p2)
     'split_trial_1',#split the data after first trial (and run wsclean)
     'report_results',#report results of first trial
     # 'run_rflag_final',#run rflag on the final data
@@ -47,9 +47,9 @@ steps = [
 cell_sizes_JVLA = {'L':'0.2arcsec',
                    'S':'0.1arcsec',
                    'C':'0.04arcsec',
-                   'X':'0.04arcsec',
+                   'X':'0.02arcsec',
                    'Ku':'0.02arcsec',
-                   'K':'0.014arcsec',
+                   'K':'0.01arcsec',
                    'Ka':'0.01arcsec'}
 
 cell_sizes_eMERLIN = {'L':'0.05arcsec',
@@ -76,17 +76,17 @@ if instrument == 'EVLA':
     taper_size = taper_sizes_JVLA[receiver]
 
 
-init_parameters = {'fov_image': {'imsize': 1024*6,
+init_parameters = {'fov_image': {'imsize': 1024*8,
                                 'cell': '0.5arcsec',
                                 'basename': 'FOV_phasecal_image',
                                 'niter': 100,
                                 'robust': 0.5},
-                  'test_image': {'imsize': int(1024*2),
-                                 'imsizey': int(1024*2),
+                  'test_image': {'imsize': int(1024*1),
+                                 'imsizey': int(1024*1),
                                  'FIELD_SHIFT':None,
                                  'cell': cell_size,
                                  'prefix': 'test_image',
-                                 'uvtaper': ['0.05asec'],
+                                 'uvtaper': [''],
                                  'niter': 10000,
                                  'robust': 0.0}
                   }
@@ -113,30 +113,30 @@ with a total integrated flux density lower than 10 mJy.
 """
 params_very_faint = {'name': 'very_faint',
                      'p0': {'robust': 0.5,
-                            'solint' : '240s' if instrument == 'eM' else '96s',
+                            'solint' : '240s' if receiver in ('K', 'Ka', 'Ku') or instrument == 'eM' else '96s',
                             'sigma_mask': 8.0 if instrument == 'eM' else 12,
-                            'combine': 'spw',
+                            'combine': '',
                             'gaintype': 'T',
                             'calmode': 'p',
-                            'minsnr': 0.75 if instrument == 'eM' else 1.5,
-                            'spwmap': [],#leavy empty here. It will be filled later
+                            'minsnr': 0.75 if instrument == 'eM' else 1.0,
+                            'spwmap': [], #leavy empty here. It will be filled later if combine='spw'
                             'nsigma_automask' : '3.0',
                             'nsigma_autothreshold' : '1.5',
-                            'uvtaper' : ['0.05asec'],
+                            'uvtaper' : [''],
                             'with_multiscale' : False,
                             'scales': 'None',
                             'compare_solints' : False},
                      'ap1': {'robust': 0.5,
-                             'solint' : '240s' if instrument == 'eM' else '96s',
+                             'solint' : '240s' if receiver in ('K', 'Ka', 'Ku') or instrument == 'eM' else '96s',
                              'sigma_mask': 6,
-                             'combine': 'spw',
+                             'combine': '',
                              'gaintype': 'T',
                              'calmode': 'ap',
-                             'minsnr': 0.75 if instrument == 'eM' else 1.5,
-                             'spwmap': [],#leavy empty here. It will be filled later
+                             'minsnr': 0.75 if instrument == 'eM' else 1.0,
+                             'spwmap': [], #leavy empty here. It will be filled later if combine='spw'
                              'nsigma_automask' : '3.0',
                              'nsigma_autothreshold' : '1.5',
-                             'uvtaper' : ['0.05asec'],
+                             'uvtaper' : [''],
                              'with_multiscale' : False,
                              'scales': 'None',
                              'compare_solints' : False},
@@ -149,7 +149,7 @@ with a total integrated flux density between 10 and 20 mJy.
 """
 params_faint = {'name': 'faint',
                 'p0': {'robust': 0.0,
-                       'solint' : '120s' if instrument == 'eM' else '60s',
+                       'solint' : '120s' if receiver in ('K', 'Ka', 'Ku') or instrument == 'eM' else '60s',
                        'sigma_mask': 12.0 if instrument == 'eM' else 20,
                        'combine': 'spw',
                        'gaintype': 'T',
@@ -219,7 +219,7 @@ params_standard_1 = {'name': 'standard_1',
                    'p0': {
                           'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
                           'solint' : '120s' if instrument == 'eM' else '96s',
-                          'sigma_mask': 15.0 if instrument == 'eM' else 25.0,
+                          'sigma_mask': 15.0 if instrument == 'eM' else 40.0,
                           'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T',
                           'calmode': 'p',
@@ -234,7 +234,7 @@ params_standard_1 = {'name': 'standard_1',
                           'compare_solints' : False},
                    'p1': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
                           'solint' : '60s',
-                          'sigma_mask': 15,
+                          'sigma_mask': 15.0 if instrument == 'eM' else 40.0,
                           'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T' if receiver in ('K', 'Ka') else 'G',
                           'calmode': 'p',
@@ -249,7 +249,7 @@ params_standard_1 = {'name': 'standard_1',
                           'compare_solints' : False},
                    'p2': {'robust': 0.0,
                           'solint': '60s',
-                          'sigma_mask': 8,
+                          'sigma_mask': 12.0 if instrument == 'eM' else 18.0,
                           'combine': '',
                           'gaintype': 'T',
                           'calmode': 'p',
@@ -290,13 +290,13 @@ with a total integrated flux density between 50 and 100 mJy.
 Note that some values may change if using e-MERLIN or VLA.
 """
 params_standard_2 = {'name': 'standard_2',
-                   'p0': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
-                          'solint' : '96s' if instrument == 'eM' else '96s',
+                   'p0': {'robust': 0.0 if receiver in ('K', 'Ku', 'Ka') or instrument == 'eM' else -0.5,
+                          'solint' : '192s' if instrument == 'eM' else '96s',
                           'sigma_mask': 25.0 if instrument == 'eM' else 50.0,
                           'combine': 'spw' if instrument == 'eM' else '',
                           'gaintype': 'T',
                           'calmode': 'p',
-                          'minsnr': 1.5 if receiver in ('K', 'Ka') or instrument == 'eM' else 3.0,
+                          'minsnr': 1.5 if receiver in ('K', 'Ku', 'Ka') or instrument == 'eM' else 3.0,
                           'spwmap': [],
                           'nsigma_automask' : '6.0',
                           'nsigma_autothreshold' : '3.0',
@@ -305,13 +305,13 @@ params_standard_2 = {'name': 'standard_2',
                           # 'scales': '0,5,10',
                           'scales': 'None',
                           'compare_solints' : False},
-                   'p1': {'robust': 0.0 if receiver in ('K', 'Ka') or instrument == 'eM' else -0.5,
+                   'p1': {'robust': 0.0 if receiver in ('K', 'Ku', 'Ka') or instrument == 'eM' else -0.5,
                           'solint' : '96s' if instrument == 'eM' else '60s',
                           'sigma_mask': 18 if instrument == 'eM' else 35,
-                          'combine': '' if instrument == 'eM' else '',
+                          'combine': '' if instrument == 'eM' else '', #needs to be tested
                           'gaintype': 'G',
                           'calmode': 'p',
-                          'minsnr': 1.5 if instrument == 'eM' else 2.0,
+                          'minsnr': 1.5 if instrument == 'eM' else 3.0,
                           'spwmap': [],
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
@@ -383,7 +383,7 @@ params_bright = {'name': 'bright',
                         'nsigma_automask': '6.0',
                         'nsigma_autothreshold': '3.0',
                         'uvtaper' : [''],
-                        'with_multiscale': False,
+                        'with_multiscale': True,
                         # 'scales': '0,5,10,20',
                         'scales': 'None',
                         'compare_solints': False},

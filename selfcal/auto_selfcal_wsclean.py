@@ -1450,7 +1450,7 @@ if run_mode == 'terminal':
         ########################################
 
         # if 'test_image' in steps and 'test_image' not in steps_performed:
-        if 'test_image' in steps:
+        if 'test_image' in steps and 'test_image' not in steps_performed:
             """
             After creating a FOV image or checking info about other sources in the 
             field (e.g. NVSS, FIRST, etc), you may want to create a basic 
@@ -1493,19 +1493,29 @@ if run_mode == 'terminal':
                 """
                 if init_parameters['test_image']['uvtaper'] != ['']:
                     uvtaper = init_parameters['test_image']['uvtaper']
+                    run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
+                                robust=robust, base_name=prefix,
+                                nsigma_automask=global_parameters['nsigma_automask'],
+                                nsigma_autothreshold=global_parameters['nsigma_autothreshold'],
+                                n_interaction='0', savemodel=False, quiet=quiet,
+                                datacolumn='DATA', shift=FIELD_SHIFT,
+                                with_multiscale=False, scales='0,5,20,40',
+                                uvtaper=uvtaper,
+                                niter=niter,
+                                PLOT=False)
                 else:
                     modified_robust = robust + 0.5
+                    run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
+                                robust=modified_robust, base_name=prefix,
+                                nsigma_automask=global_parameters['nsigma_automask'],
+                                nsigma_autothreshold=global_parameters['nsigma_autothreshold'],
+                                n_interaction='0', savemodel=False, quiet=quiet,
+                                datacolumn='DATA', shift=FIELD_SHIFT,
+                                with_multiscale=False, scales='0,5,20,40',
+                                uvtaper=[''],
+                                niter=niter,
+                                PLOT=False)
 
-
-                run_wsclean(g_name, imsize=imsize, imsizey = imsizey, cell=cell,
-                            robust=modified_robust, base_name=prefix,
-                            nsigma_automask='5.0', nsigma_autothreshold='3.0',
-                            n_interaction='0', savemodel=False, quiet=quiet,
-                            datacolumn='DATA', shift=FIELD_SHIFT,
-                            with_multiscale=False, scales='0,5,20,40',
-                            uvtaper=uvtaper,
-                            niter=niter,
-                            PLOT=False)
                 image_statistics,image_list = compute_image_stats(path=path,
                                                                   image_list=image_list,
                                                                   image_statistics=image_statistics,
@@ -1524,7 +1534,7 @@ if run_mode == 'terminal':
                 # current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
                 selfcal_params = select_parameters(image_statistics['test_image']['total_flux_mask'] * 1000)
                 parameter_selection['test_image'] = selfcal_params
-                print('Initial Template of Parameters:')
+                print('Initial Template of Parameters:',parameter_selection['test_image']['name'])
                 p0_params = parameter_selection['test_image']['p0']
                 print_table(p0_params)
             except:
@@ -1546,7 +1556,7 @@ if run_mode == 'terminal':
             if p0_params['combine'] == 'spw':
                 p0_params['spwmap'] = get_spwmap(g_vis)
 
-            print('Params that are currently being used:')
+            print('Params that are currently being used:',parameter_selection['test_image']['name'])
             print_table(p0_params)
 
             if 'start_image' not in steps_performed:
@@ -1735,7 +1745,7 @@ if run_mode == 'terminal':
             ####    start to consider more extended emission.                       ####
             ############################################################################
             p1_params = parameter_selection['p0_pos']['p1']
-            print('Params that are currently being used:')
+            print('Params that are currently being used:', parameter_selection['p0_pos']['name'])
             print_table(p1_params)
             if 'update_model_1' not in steps_performed:
                 if params_trial_2 is not None:
@@ -1752,15 +1762,15 @@ if run_mode == 'terminal':
                                 niter=niter, shift=FIELD_SHIFT,
                                 PLOT=False)
 
-                    image_statistics, image_list = compute_image_stats(path=path,
-                                                                       image_list=image_list,
-                                                                       image_statistics=image_statistics,
-                                                                       prefix='selfcal_test_0')
+                image_statistics, image_list = compute_image_stats(path=path,
+                                                                   image_list=image_list,
+                                                                   image_statistics=image_statistics,
+                                                                   prefix='selfcal_test_0')
 
-                    mask_name = create_mask(image_list['selfcal_test_0'],
-                                            rms_mask=rms_mask,
-                                            sigma_mask=p1_params['sigma_mask'],
-                                            mask_grow_iterations=mask_grow_iterations)
+                mask_name = create_mask(image_list['selfcal_test_0'],
+                                        rms_mask=rms_mask,
+                                        sigma_mask=p1_params['sigma_mask'],
+                                        mask_grow_iterations=mask_grow_iterations)
 
                 run_wsclean(g_name, robust=p1_params['robust'],
                             imsize=imsize, imsizey=imsizey, cell=cell,
@@ -1855,7 +1865,7 @@ if run_mode == 'terminal':
             selfcal_params = parameter_selection['p0_pos']
             p2_params = selfcal_params['p2']
 
-            print('Params that are currently being used:')
+            print('Params that are currently being used:',parameter_selection['p0_pos']['name'])
             print_table(p2_params)
 
 
@@ -1991,7 +2001,7 @@ if run_mode == 'terminal':
 
             selfcal_params = parameter_selection['p0_pos']
             ap1_params = selfcal_params['ap1']
-            print('Params that are currently being used:')
+            print('Params that are currently being used:',parameter_selection['p0_pos']['name'])
             print_table(ap1_params)
 
             if 'update_model_3' not in steps_performed:
