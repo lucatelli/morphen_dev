@@ -52,7 +52,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
                 ' ' + deconvolver + ' ' + deconvolver_options +
                 ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
                 ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
-            print('Command to be executed by WSClean: ')
+            print(' ++==>> Command to be executed by WSClean: ')
             print(command_exec)
             os.system(command_exec)
 
@@ -69,7 +69,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
             ' ' + deconvolver_args + ' ' + taper_mode + uvtaper +
             ' ' + opt_args + ' ' + data_column + ' ' + root_dir + g_vis)
 
-            print('Command to be executed by Singularity > WSClean: ')
+            print(' ++==>> Command to be executed by Singularity > WSClean: ')
             print(command_exec)
             os.system(command_exec)
 
@@ -135,7 +135,7 @@ if __name__ == "__main__":
                         help="New phase center to shift for imaging."
                              "Eg. --shift 13:15:30.68 +62.07.45.357")
 
-    parser.add_argument("--scales", type=str, nargs='?', default="'0,5,20,40'",
+    parser.add_argument("--scales", type=str, nargs='?', default="None",
                         help="Scales to be used with the multiscale deconvolver in WSClean. "
                              "If None, scales will be determined automatically by WSClean.")
 
@@ -162,6 +162,10 @@ if __name__ == "__main__":
 
     parser.add_argument("--mask", nargs='?', default=None,
                         const=True, help="A fits-file mask to be used.")
+
+    parser.add_argument("--nc", type=int, nargs='?', default=8,
+                        help="Number of channels division to be used in "
+                             "the MFS deconvolution.")
 
     parser.add_argument("--quiet", type=str, nargs='?', default='False',
                         help="Print wsclean output?")
@@ -204,6 +208,7 @@ if __name__ == "__main__":
         # wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_cpu_v2.simg'
+        # wsclean_dir = '/mnt/scratch/lucatelli/apps/morphen_test.simg/morphen_test.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_v1.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         # wsclean_dir = '/home/sagauga/apps/wsclean_nvidia470_gpu.simg'
@@ -242,33 +247,32 @@ if __name__ == "__main__":
                 deconvolver_options = deconvolver_options + ' -multiscale-max-scales 6 '
             else:
                 deconvolver_options = (deconvolver_options + ' -multiscale-scales ' + args.scales + ' ')
-
-            print('++++====>>>> Deconvolver Options:')
-            print(deconvolver_options)
+            # print('++++====>>>> Deconvolver Options:')
+            # print(deconvolver_options)
             # deconvolver = ''
             # deconvolver_options = opt_args_list
-            print(' ++>> ', deconvolver_options)
-            if deconvolver_options != '' or []:
-                if 'multiscale' in deconvolver_options:
-                    print(' ++>> Using Multiscale deconvolver.')
+            # print(' ++>> ', deconvolver_options)
+            # if deconvolver_options != '' or []:
+            #     if 'multiscale' in deconvolver_options:
+                    # print(' ++>> Using Multiscale deconvolver.')
                 # else:
                 #     print(' ++>> Using Hogbom deconvolver.')
                 #     deconvolver = 'multiscale'
-
         else:
             deconvolver = ' '
             deconvolver_options = (' ')
 
             # deconvolver_options = ('-multiscale-max-scales 5 -multiscale-scale-bias 0.5 ')
-        nc = 4
+        nc = args.nc
         deconvolver_args = (' '
                             '-channels-out '+str(nc)+' -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
-                            '-deconvolution-threads 24 -j 24 -parallel-reordering 8 '
+                            '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
                             '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            '-gridder wgridder -wstack-nwlayers-factor 3 '
-                            ' -circular-beam ' #-circular-beam -beam-size 0.1arcsec
+                            '-gridder wgridder -wstack-nwlayers-factor 3 -beam-fitting-size 0.5 '
+                            # ' -circular-beam ' 
+                            # ' -circular-beam -beam-size 0.1arcsec -no-negative -beam-fitting-size = 0.7 ' 
                             '-no-mf-weighting -parallel-deconvolution 1024 ' 
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
@@ -278,7 +282,7 @@ if __name__ == "__main__":
         deconvolver = ' '
         deconvolver_options = (' ')
         deconvolver_args = (' -save-source-list '
-                            ' -deconvolution-threads 24 -j 24 -parallel-reordering 12 '
+                            ' -deconvolution-threads 16 -j 16 -parallel-reordering 16 '
                             ' -parallel-deconvolution 2048') #-parallel-gridding 24
 
     # image parameters
@@ -308,7 +312,7 @@ if __name__ == "__main__":
     if args.minuv_l is not None:
         uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.6 -gain 0.1 -nmiter 500 -super-weight 9.0 '
+    gain_args = ' -mgain 0.5 -gain 0.1 -nmiter 500 ' # -super-weight 9.0
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
@@ -355,7 +359,7 @@ if __name__ == "__main__":
                                        nc=int(1*nc))
 
             exec_time = time.time() - startTime
-            print('Exec time cleaning=', exec_time, 's')
+            print(f" ++==>> Exec time cleaning = {exec_time:.1f} s")
 
             if image_statistics is not None:
                 image_statistics['robust'] = robust
