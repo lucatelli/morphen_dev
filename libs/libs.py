@@ -9570,21 +9570,22 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         compact_model = compact_model + model_dict['conv_bkg']
         compact_model_deconv = compact_model_deconv + model_dict['deconv_bkg']
 
-        pf.writeto(crop_image.replace('.fits', '') +
-                "_" + "dec_ext_model" + save_name_append + ".fits",
-                extended_model_deconv, overwrite=True)
-        copy_header(crop_image, crop_image.replace('.fits', '') +
+        if ext_ids != []:
+            pf.writeto(crop_image.replace('.fits', '') +
                     "_" + "dec_ext_model" + save_name_append + ".fits",
-                    crop_image.replace('.fits', '') +
-                    "_" + "dec_ext_model" + save_name_append + ".fits")
+                    extended_model_deconv, overwrite=True)
+            copy_header(crop_image, crop_image.replace('.fits', '') +
+                        "_" + "dec_ext_model" + save_name_append + ".fits",
+                        crop_image.replace('.fits', '') +
+                        "_" + "dec_ext_model" + save_name_append + ".fits")
 
-        pf.writeto(crop_image.replace('.fits', '') +
-                "_" + "ext_model" + save_name_append + ".fits",
-                extended_model, overwrite=True)
-        copy_header(crop_image, crop_image.replace('.fits', '') +
-                    "_" + "ext_model" + save_name_append + ".fits",
-                    crop_image.replace('.fits', '') +
-                    "_" + "ext_model" + save_name_append + ".fits")
+            pf.writeto(crop_image.replace('.fits', '') +
+                       "_" + "ext_model" + save_name_append + ".fits",
+                       extended_model, overwrite=True)
+            copy_header(crop_image, crop_image.replace('.fits', '') +
+                        "_" + "ext_model" + save_name_append + ".fits",
+                        crop_image.replace('.fits', '') +
+                        "_" + "ext_model" + save_name_append + ".fits")
 
         pf.writeto(crop_image.replace('.fits', '') +
                 "_" + "dec_compact" + save_name_append + ".fits",
@@ -9603,6 +9604,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                                 special_name=special_name)
         plot_fit_results(crop_image, model_dict, image_results_conv,
                             sources_photometries,
+                            bkg_image = ctn(bkg_conv),
                             crop=False, box_size=200,
                             vmax_factor=0.3, vmin_factor=1.0)
         # plt.xlim(0,3)
@@ -11063,7 +11065,7 @@ def plot_slices(data_2D, residual_2D, model_dict, image_results_conv=None,
 
 
 def plot_fit_results(imagename, model_dict, image_results_conv,
-                     sources_photometies,vmax_factor=0.1,data_2D_=None,
+                     sources_photometies,bkg_image=None,vmax_factor=0.1,data_2D_=None,
                      vmin_factor=3, show_figure=True,crop=False,box_size=100):
     if data_2D_ is not None:
         data_2D = data_2D_
@@ -11107,6 +11109,8 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     r, ir = get_profile(data_2D, center=center)
     rmodel, irmodel = get_profile(model_name, center=center)
     rre, irre = get_profile(residual_name, center=center)
+    if bkg_image is not None:
+        r_bkg, ir_bkg = get_profile(bkg_image,center=center)
 
     # plt.plot(radiis[0],profiles[0])
     # plt.plot(radiis[1],profiles[1])
@@ -11126,9 +11130,14 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
                  label='COMP_' + str(i + 1), color=colors[i])
     #     except:
     #         pass
+    if bkg_image is not None:
+        ir_model_data =  irmodel + ir_bkg
+        plt.plot(r_bkg * cell_size, abs(ir_bkg), '--', label='bkg', color='brown')
+    else:
+        ir_model_data = irmodel
 
     plt.plot(r * cell_size, abs(irre), '.-', label='RESIDUAL', color='black')
-    plt.plot(r * cell_size, abs(irmodel), '--', color='limegreen', label='MODEL',
+    plt.plot(r * cell_size, abs(ir_model_data), '--', color='limegreen', label='MODEL',
              linewidth=4)
     plt.semilogy()
     plt.xlabel(r'Projected Radius $R$ [arcsec]')
