@@ -173,6 +173,32 @@ def report_flag(summary, axis):
     pass
 
 
+def compute_flux_density(imagename, residualname, mask=None):
+    beam_area = mlibs.beam_area2(imagename)
+    image_data = mlibs.ctn(imagename)
+    if mask is None:
+        rms = mlibs.mad_std(mlibs.ctn(residualname))
+        _, mask = mlibs.mask_dilation(imagename, show_figure=False, PLOT=True, rms=rms, sigma=6,
+                                      iterations=2)
+    total_flux_density = mlibs.np.nansum(image_data * mask) / beam_area
+
+    # compute error in flux density
+    data_res = mlibs.ctn(residualname)
+    res_error_rms = mlibs.np.sqrt(mlibs.np.nansum(
+        (abs(data_res * mask - mlibs.np.nanmean(data_res * mask))) ** 2 * mlibs.np.nansum(
+            mask))) / beam_area
+
+    # res_error_rms = 3 * mlibs.np.nansum(data_res * mask)/beam_area
+
+    print('-----------------------------------------------------------------')
+    print('Estimate of flux error (based on rms of '
+          'residual x area): ')
+    print('Flux Density = ', total_flux_density * 1000, '+/-',
+          res_error_rms * 1000, 'mJy')
+    print('Fractional error flux = ', abs(res_error_rms) / total_flux_density)
+    print('-----------------------------------------------------------------')
+    # print(f"Flux Density = {total_flux_density*1000:.2f} mJy")
+    return (total_flux_density, abs(res_error_rms))
 def compute_image_stats(path,
                         image_list,
                         image_statistics,
@@ -229,10 +255,39 @@ def compute_image_stats(path,
                                                results = image_stats,
                                                sigma_mask = sigma,
                                                show_figure=False)[-1]
-
-
-
     image_statistics[prefix] = img_props
+
+    sub_band_images = glob.glob(
+        image_list[prefix].replace('-MFS-image.fits', '') + '-????-image.fits')
+    sub_band_residuals = glob.glob(
+        image_list[prefix + '_residual'].replace('-MFS-residual.fits',
+                                                    '') + '-????-residual.fits')
+
+    _FLUXES = []
+    _FLUXES_err = []
+    for i in range(len(sub_band_images)):
+        flux_density, flux_density_err = compute_flux_density(sub_band_images[i],
+                                                              sub_band_residuals[i],
+                                                              mask=None)
+        print('Flux density = ', flux_density)
+        _FLUXES.append(flux_density)
+        _FLUXES_err.append(flux_density_err)
+    FLUXES = mlibs.np.asarray(_FLUXES)
+    FLUXES_err = mlibs.np.asarray(_FLUXES_err)
+    freqlist = mlibs.getfreqs(sub_band_images)
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(freqlist / 1e9, FLUXES * 1000,
+                 yerr=FLUXES_err * 1000,
+                 fmt='o',
+                 # label='Observed data',
+                 color='k', ecolor='gray', alpha=0.5)
+    plt.xlabel('Frequency [GHz]')
+    plt.ylabel('Flux Density [mJy]')
+    plt.title('Sub-Band Images')
+    plt.savefig(image_list[prefix].replace('-MFS-image.fits', '_freq_flux.jpg'), dpi=300,
+                bbox_inches='tight')
+
     return(image_statistics,image_list)
 
 def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
@@ -244,8 +299,9 @@ def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
         mask_valid = mlibs.mask_dilation(imagename,
                                          PLOT=PLOT,
                                          rms=rms_mask,
+                                         dilation_size = 1,
                                          sigma=valid_sigma_mask,
-                                         iterations=mask_grow_iterations)[1]
+                                         iterations=1)[1]
         if mask_valid.sum() > 0:
             break
         valid_sigma_mask = valid_sigma_mask - 2.0
@@ -257,8 +313,9 @@ def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
     mask_valid = mlibs.mask_dilation(imagename,
                                      PLOT=PLOT,
                                      rms=rms_mask,
+                                     dilation_size=1,
                                      sigma=valid_sigma_mask-1,
-                                     iterations=mask_grow_iterations)[1]
+                                     iterations=1)[1]
 
     mask = mask_valid
     mask_wslclean = mask * 1.0  # mask in wsclean is inverted
