@@ -763,6 +763,16 @@ def beam_area2(image, cellsize=None):
     BArea = ((np.pi * Omaj * Omin) / (4 * np.log(2))) / (cellsize ** 2.0)
     return (BArea)
 
+def getfreqs(fitslist):
+    freqs = []
+    for fitsfile in fitslist:
+        hdu = fits.open(fitsfile)
+        hdr = hdu[0].header
+        freq = hdr['CRVAL3']
+        freqs.append(freq)
+    _freqs = np.array(freqs)
+    return _freqs
+
 def beam_shape(image):
     '''
     Return the beam shape (bmin,bmaj,pa) from given image.
