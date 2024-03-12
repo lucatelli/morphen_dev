@@ -123,6 +123,27 @@ def select_parameters(total_flux,snr=None):
 
     return params
 
+def get_spwids(vis):
+    lobs = listobs(vis=vis)
+    extract_spwids = {key: lobs[key] for key in lobs if 'scan_' in key}
+
+    unique_spwids = set()
+
+    for key in extract_spwids:
+        nested_dict = extract_spwids[key]
+        for inner_key in nested_dict:
+            spwids = nested_dict[inner_key]['SpwIds']
+            # Convert the array to a sorted tuple and add to the set
+            unique_spwids.add(tuple(sorted(spwids)))
+
+    # Convert the set of tuples back to a sorted list of lists
+    unique_spwids_lists = sorted([list(t) for t in unique_spwids])
+    # Flatten the list and then convert to a set to get unique elements
+    unique_elements = set(element for sublist in unique_spwids_lists for element in sublist)
+
+    # Convert the set back to a list and sort it
+    unique_elements_sorted = sorted(list(unique_elements))
+    return unique_elements_sorted
 def get_spwmap(vis):
     lobs = listobs(vis=vis)
     extract_spwids = {key: lobs[key] for key in lobs if 'scan_' in key}
@@ -139,19 +160,21 @@ def get_spwmap(vis):
     # Convert the set of tuples back to a sorted list of lists
     unique_spwids_lists = sorted([list(t) for t in unique_spwids])
 
-    # Dictionary to keep track of counts
     counts = {}
     for lst in unique_spwids_lists:
         if lst[0] not in counts:
             counts[lst[0]] = len(lst)
 
     # Construct the spwmap
-    spwmap = [[item for item, count in counts.items() for _ in range(count)]]
+    spwmap_i = [item for item, count in counts.items() for _ in range(count)]
+    spwmap = [spwmap_i[:len(get_spwids(g_vis))]]
     return spwmap
+
+
 
 def print_table(data):
     """
-    Print a simple dictionary as a user-friendly readable table.
+    Print a simple dictionary as a user-friendly readable table to the terminal.
     """
     import tableprint
     rows = []
@@ -203,6 +226,7 @@ def compute_image_stats(path,
                         image_list,
                         image_statistics,
                         prefix='',
+                        sigma=None,
                         selfcal_step=None):
     """
     This function will compute statistics of a cleaned image from a wsclean run
@@ -233,18 +257,20 @@ def compute_image_stats(path,
     image_list[prefix+'_model'] = image_list[prefix].replace(
         'MFS-image.fits', 'MFS-model.fits')
 
-    if (selfcal_step == 'test_image') or (selfcal_step == 'p0'):
-        """
-        We must be more conservative when creating masks to compute the total flux density 
-        before self-calibration. The image may contain artifacts above the default sigma 
-        threshold of 6.0, and may lead to overestimation of the total flux density.
-        An alternative sigma is 8. Note that the mask dilation is a very powerful approach and 
-        very sensitive to the sigma threshold. A sigma of 8 results large differences in 
-        relation to a sigma of 6. 
-        """
-        sigma = 8.0
-    else:
-        sigma = 6.0
+    if sigma is None:
+        if (selfcal_step == 'test_image') or (selfcal_step == 'p0'):
+            """
+            We must be more conservative when creating masks to compute the total flux density 
+            before self-calibration. The image may contain artifacts above the default sigma 
+            threshold of 6.0, and may lead to overestimation of the total flux density.
+            An alternative sigma is 8. Note that the mask dilation is a very powerful approach and 
+            very sensitive to the sigma threshold. A sigma of 8 results large differences in 
+            relation to a sigma of 6. 
+            """
+            sigma = 8.0
+        else:
+            sigma = 6.0
+
 
     level_stats = mlibs.level_statistics(image_list[prefix],sigma=sigma)
     image_stats = mlibs.get_image_statistics(imagename=image_list[prefix],
@@ -284,6 +310,7 @@ def compute_image_stats(path,
                  color='k', ecolor='gray', alpha=0.5)
     plt.xlabel('Frequency [GHz]')
     plt.ylabel('Flux Density [mJy]')
+    plt.ylim(0,)
     plt.title('Sub-Band Images')
     plt.savefig(image_list[prefix].replace('-MFS-image.fits', '_freq_flux.jpg'), dpi=300,
                 bbox_inches='tight')
@@ -294,16 +321,16 @@ def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
 
     valid_sigma_mask = sigma_mask
     while True:
-        print(' ++>> No mask found with sigma_mask:',valid_sigma_mask)
-        print(' ++>> Reducing sigma_mask by 2 until valid mask is found...')
         mask_valid = mlibs.mask_dilation(imagename,
                                          PLOT=PLOT,
                                          rms=rms_mask,
-                                         dilation_size = 1,
+                                         dilation_size = None,
                                          sigma=valid_sigma_mask,
                                          iterations=1)[1]
         if mask_valid.sum() > 0:
             break
+        print(' ++>> No mask found with sigma_mask:',valid_sigma_mask)
+        print(' ++>> Reducing sigma_mask by 2 until valid mask is found...')
         valid_sigma_mask = valid_sigma_mask - 2.0
 
         if valid_sigma_mask <= 6:
@@ -1539,6 +1566,14 @@ if run_mode == 'terminal':
                                                               selfcal_step='test_image')
 
             current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
+            if current_total_flux > 50.0:
+                image_statistics, image_list = compute_image_stats(path=path,
+                                                                   image_list=image_list,
+                                                                   image_statistics=image_statistics,
+                                                                   prefix=prefix,
+                                                                   sigma=25,
+                                                                   selfcal_step='test_image')
+
             modified_robust = None
             if current_total_flux < 5.0:
                 """
@@ -1805,19 +1840,19 @@ if run_mode == 'terminal':
             print('Params that are currently being used:', parameter_selection['p0_pos']['name'])
             print_table(p1_params)
             if 'update_model_1' not in steps_performed:
-                if params_trial_2 is not None:
-                    run_wsclean(g_name, robust=p1_params['robust'],
-                                imsize=imsize, imsizey=imsizey, cell=cell,
-                                base_name='selfcal_test_0',
-                                nsigma_automask=p1_params['nsigma_automask'],
-                                nsigma_autothreshold=p1_params['nsigma_autothreshold'],
-                                n_interaction='', savemodel=False, quiet=quiet,
-                                with_multiscale=p1_params['with_multiscale'],
-                                scales = p1_params['scales'],
-                                datacolumn='CORRECTED_DATA',
-                                uvtaper=p1_params['uvtaper'],
-                                niter=niter, shift=FIELD_SHIFT,
-                                PLOT=False)
+                # if params_trial_2 is not None:
+                run_wsclean(g_name, robust=p1_params['robust'],
+                            imsize=imsize, imsizey=imsizey, cell=cell,
+                            base_name='selfcal_test_0',
+                            nsigma_automask=p1_params['nsigma_automask'],
+                            nsigma_autothreshold=p1_params['nsigma_autothreshold'],
+                            n_interaction='', savemodel=False, quiet=quiet,
+                            with_multiscale=p1_params['with_multiscale'],
+                            scales = p1_params['scales'],
+                            datacolumn='CORRECTED_DATA',
+                            uvtaper=p1_params['uvtaper'],
+                            niter=niter, shift=FIELD_SHIFT,
+                            PLOT=False)
 
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
