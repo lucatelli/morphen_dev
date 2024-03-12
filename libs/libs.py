@@ -91,6 +91,12 @@ import corner
 import re
 from tqdm import tqdm
 
+import dynesty
+from dynesty import plotting as dyplot
+import corner
+
+
+
 import numpy as np
 from scipy import ndimage
 from sklearn.neighbors import KNeighborsClassifier
@@ -3172,6 +3178,42 @@ def shape_measures(imagename, residualname, z, mask_component=None, sigma_mask=6
     return (results_final, mask)
 
 
+def compute_flux_density(imagename, residualname, mask=None, systematic_error_fraction=0.05):
+    beam_area = beam_area2(imagename)
+    image_data = ctn(imagename)
+    rms = mad_std(ctn(residualname))
+    if mask is None:
+        _, mask = mask_dilation(imagename, show_figure=True, PLOT=True, rms=rms, sigma=6,
+                                      iterations=2)
+    total_flux_density = np.nansum(image_data * mask) / beam_area
+
+    # compute error in flux density
+    data_res = ctn(residualname)
+    res_error_rms = np.sqrt(np.nansum(
+        (abs(data_res * mask - np.nanmean(data_res * mask))) ** 2 * np.nansum(
+            mask))) / beam_area
+
+    total_flux_density_residual = np.nansum(data_res * mask) / beam_area
+
+    # Calculate systematic error as a fraction of the total flux density of the image
+    systematic_error = systematic_error_fraction * total_flux_density
+
+    # Calculate total flux density error in quadrature
+    total_flux_density_error = np.sqrt(
+        systematic_error ** 2 + (rms / beam_area) ** 2 + total_flux_density_residual ** 2)
+
+    # res_error_rms = 3 * mlibs.np.nansum(data_res * mask)/beam_area
+
+    print('-----------------------------------------------------------------')
+    print('Estimate of flux error (based on rms of '
+          'residual x area): ')
+    print('Flux Density = ', total_flux_density * 1000, '+/-',
+          total_flux_density_error * 1000, 'mJy')
+    print('Fractional error flux = ', total_flux_density_error / total_flux_density)
+    print('-----------------------------------------------------------------')
+    # print(f"Flux Density = {total_flux_density*1000:.2f} mJy")
+    return (total_flux_density, total_flux_density_error)
+
 def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
              last_level=2.0, vmin_factor=1.0, plot_catalog=False,data_2D=None,
              npixels=128, fwhm=81, kernel_size=21, dilation_size=None,
@@ -3531,7 +3573,8 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     # print(freq)
     omaj = g_hd['restoringbeam']['major']['value']
     omin = g_hd['restoringbeam']['minor']['value']
-    beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
+    # beam_area_ = beam_area(omaj, omin, cellsize=cell_size)
+    beam_area_ = beam_area2(img)
 
     if rms is not None:
         std = rms
@@ -3605,39 +3648,49 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     # results['flux_error_mc'] = flux_error_m
 
     if residual is not None:
+        systematic_error_fraction = 0.05
         data_res = ctn(residual)
         flux_res_error = 3 * np.sum(data_res * mask) \
                          / beam_area2(img, cell_size)
         # rms_res =imstat(residual_name)['flux'][0]
-        flux_res = np.sum(ctn(residual)) / beam_area2(img, cell_size)
 
+        total_flux_density_residual = np.nansum(data_res * mask) / beam_area_
         res_error_rms =np.sqrt(
             np.sum((abs(data_res * mask -
-                        np.mean(data_res * mask))) ** 2 * np.sum(mask))) / \
-                       beam_area2(img,cell_size)
+                        np.mean(data_res * mask))) ** 2 * np.sum(mask))) / beam_area_
 
-        # try:
-        #     total_flux_tmp = results['total_flux_mask']
-        # except:
-        #     total_flux_tmp = flux_im
-        #     total_flux_tmp = total_flux(image_data,img,mask=mask)
-        # print('Estimate #1 of flux error (based on sum of residual map): ')
-        # print('Flux = ', total_flux_tmp * 1000, '+/-',
-        #       abs(flux_res_error) * 1000, 'mJy')
-        # print('Fractional error flux = ', flux_res_error / total_flux_tmp)
-        print('-----------------------------------------------------------------')
-        print('Estimate of flux error (based on rms of '
-              'residual x area): ')
-        print('Flux Density = ', results['total_flux_mask'] * 1000, '+/-',
-              abs(res_error_rms) * 1000, 'mJy')
-        print('Fractional error flux = ', res_error_rms / results['total_flux_mask'])
-        print('-----------------------------------------------------------------')
+        # Calculate systematic error as a fraction of the total flux density of the image
+        systematic_error = systematic_error_fraction * results['total_flux_mask']
 
+        # Calculate total flux density error in quadrature
+        total_flux_density_error = np.sqrt(
+            systematic_error ** 2 + (std / beam_area_) ** 2 + total_flux_density_residual ** 2)
+        # print('total_flux_density_residual = ',total_flux_density_residual)
+        # print('systematic_error = ', systematic_error)
+        # print('(std / beam_area_) = ', (std / beam_area_))
+
+        print('-----------------------------------------------------------------')
+        print('Flux Density and error (based on rms of residual x area): ')
+        print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
+              f"+/- {res_error_rms * 1000:.2f} mJy")
+        print(f"Fractional error = {(res_error_rms / results['total_flux_mask']):.2f}")
+        print('Flux Density and error (quadrature total): ')
+        print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
+              f"+/- {total_flux_density_error * 1000:.2f} mJy")
+        print(f"Fractional error = {(total_flux_density_error / results['total_flux_mask']):.2f}")
+        print('-----------------------------------------------------------------')
+        # plt.figure()
+        # plt.imshow(mask, origin='lower')
+        # plt.figure()
+        # plt.imshow(mask*data_res, origin='lower')
+        # plt.figure()
+        # plt.imshow(mask*g, origin='lower')
         results['max_residual'] = np.max(data_res * mask)
         results['min_residual'] = np.min(data_res * mask)
-        results['flux_residual'] = flux_res
+        results['flux_residual'] = total_flux_density_residual
         results['flux_error_res'] = abs(flux_res_error)
         results['flux_error_res_2'] = abs(res_error_rms)
+        results['flux_error_res_3'] = abs(total_flux_density_error)
         results['mad_std_residual'] = mad_std(data_res)
         results['rms_residual'] = rms_estimate(data_res)
 
@@ -6410,13 +6463,13 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     for i in range(len(objects)):
         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
                     width=2 * ell_size_factor * objects['a'][i],
-                    height=2 * ell_size_factor * objects['b'][i],
+                    height=2 * ell_size_factor * objects['a'][i],
                     angle=objects['theta'][i] * 180. / np.pi)
 
         xc = objects['x'][i]
         yc = objects['y'][i]
         a = ell_size_factor * objects['a'][i]
-        b = ell_size_factor * objects['b'][i]
+        b = ell_size_factor * objects['a'][i]
         theta = objects['theta'][i]
         rx = (x - xc) * np.cos(theta) + (y - yc) * np.sin(theta)
         ry = (y - yc) * np.cos(theta) - (x - xc) * np.sin(theta)
@@ -10744,6 +10797,400 @@ def perform_interferometric_decomposition(imagelist_em, imagelist_comb,
     M13_Mcomp_opt_LIST, I3RE_RT_LIST, I3EXT_LIST)
 
 
+def RC_function(nu, A1l, A2, alpha_nt, nu0):
+    return A1l * ((nu / nu0) ** (-0.1)) + A2 * (nu0 ** (alpha_nt)) * ((nu / nu0) ** (alpha_nt))
+
+
+def RC_function_linear(nu, A1l, alpha):
+    return A1l * ((nu) ** (alpha))
+
+
+
+
+def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
+    from scipy.stats import t
+    x = freqs / 1e9
+    nu0 = np.mean(x)
+    y = fluxes
+    yerr = fluxes_err
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y,
+                 yerr=yerr,
+                 fmt='o', label='Observed data', color='k', ecolor='gray', alpha=0.5)
+    plt.xlabel('Frequency [GHz]')
+    plt.ylabel('Flux Density [mJy]')
+    plt.legend()
+    plt.semilogy()
+    plt.semilogx()
+    plt.show()
+
+    def log_likelihood_linear(theta, nu, y):
+        A1l, alpha = theta
+        model = RC_function_linear(nu, A1l, alpha)
+        # sigma2 = (np.std(y)) ** 2
+        sigma2 = yerr ** 2
+        return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+        # return np.sum(y-model)**2.0
+
+    # def log_likelihood_linear(theta, nu, y):
+    #     dof = 10  # degrees of freedom for the t-distribution; adjust as needed
+    #     A1l, alpha = theta
+    #     model = RC_function_linear(nu, A1l, alpha)
+    #     residuals = y - model
+    #     log_likelihood = np.sum(t.logpdf(residuals / yerr, df=dof, scale=yerr))
+    #     return log_likelihood
+
+    def prior_transform_linear(utheta):
+        ua1l, ualpha = utheta  # nu0 is not a parameter to be estimated, so it's removed from here
+        a1l = -1.0 + ua1l * (15)  # Transforming ua1l to be in the range -5 to 50
+        alpha = -2.0 + ualpha * (2.0)  # Transforming ualpha_nt to be in the range -2 to 1.5
+        return a1l, alpha
+
+    ndim = 2
+    dsampler = dynesty.DynamicNestedSampler(log_likelihood_linear, prior_transform_linear,
+                                            bound='balls',
+                                            ndim=ndim, nlive=30000, sample='rwalk',  # hslice, rwalk
+                                            logl_args=(x, y))
+
+    # dsampler.run_nested(dlogz_init=0.05, nlive_init=1500, nlive_batch=500,
+    #                     # use_stop=False,
+    #                 # maxiter_init=10000, maxiter_batch=1000, maxbatch=10
+    #                    )
+    dsampler.run_nested(nlive_init=5000, nlive_batch=1000)
+    results = dsampler.results
+
+    results.summary()
+
+    try:
+        lnz_truth = ndim * -np.log(2 * 10.)  # analytic evidence solution
+        fig, axes = dyplot.runplot(results, lnz_truth=lnz_truth)
+
+        fig, axes = dyplot.traceplot(results, truths=np.zeros(ndim),
+                                     truth_color='black', show_titles=True,
+                                     trace_cmap='magma', connect=True,
+                                     connect_highlight=range(5))
+    except:
+        pass
+
+    try:
+        # # initialize figure
+        # fig, axes = plt.subplots(3, 3, figsize=(8, 8))
+        # axes = axes.reshape((3, 3))  # reshape axes
+        #
+        # fg, ax = dyplot.cornerplot(results, color='blue', truths=np.zeros(ndim),
+        #                            truth_color='black', show_titles=True,
+        #                            max_n_ticks=3, quantiles=None,
+        #                            fig=(fig, axes[:, :3]))
+        fig, axes = dyplot.cornerplot(results,
+                                      show_titles=True,  # Show titles with parameter values
+                                      title_kwargs={'y': 1.03},  # Adjust title position
+                                      labels=[r'$A_1$', r'$\alpha$'],  # Label axes
+                                      label_kwargs=dict(fontsize=16),
+                                      # Adjust label font size
+                                      # quantiles = [0.16, 0.5, 0.84],title_quantiles = [0.16, 0.5, 0.84],
+                                      max_n_ticks=4, use_math_text=True, verbose=True,
+                                      title_fmt='.3f',
+                                      fig=plt.subplots(2, 2, figsize=(5, 5)))
+    except:
+        pass
+
+    # Extract the best-fit parametershttps://dynesty.readthedocs.io/en/latest/examples.html
+    best_fit_indices = np.argmax(results.logl)
+    best_fit_params = results.samples[best_fit_indices]
+    A1l_best, alpha_nt_best = best_fit_params
+
+    # Calculate the best-fit model
+    x_resample = np.linspace(x[0], x[-1], 100)
+    best_fit_model = RC_function_linear(x_resample, A1l_best, alpha_nt_best)
+
+    # Plotting the data
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y, yerr=yerr, fmt='o', label='Observed data', color='k', ecolor='gray',
+                 alpha=0.5)
+    plt.plot(x_resample, best_fit_model, label='Best-fit model', color='red')
+    plt.xlabel('Frequency (GHz)')
+    plt.ylabel('Flux Density')
+    plt.semilogx()
+    plt.semilogy()
+    plt.legend()
+    plt.show()
+
+    try:
+        # Extracting samples for the corner plot
+        samples = results.samples
+
+        # Creating a corner plot
+        fig = corner.corner(samples,
+                            labels=[r'$A_1$', r'$\alpha_{\rm nt}$'],
+                            truths=[A1l_best, alpha_nt_best],
+                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            title_kwargs={"fontsize": 12})
+        plt.show()
+    except:
+        pass
+    return (results, dsampler)
+
+
+def calc_specidx_region_S2(freqs, fluxes, fluxes_err, ndim=3):
+    x = freqs / 1e9
+    nu0 = np.mean(x)
+    y = fluxes
+    yerr = fluxes_err
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y,
+                 yerr=yerr,
+                 fmt='o', label='Observed data', color='k', ecolor='gray', alpha=0.5)
+    plt.xlabel('Frequency [GHz]')
+    plt.ylabel('Flux Density [mJy]')
+    plt.legend()
+    plt.semilogy()
+    plt.semilogx()
+    plt.show()
+
+    def log_likelihood(theta, nu, y):
+        A1l, A2, alpha_nt = theta
+        model = RC_function(nu, A1l, A2, alpha_nt, nu0)
+        sigma2 = yerr ** 2
+        return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+
+    def prior_transform(utheta):
+        ua1l, ua2, ualpha_nt = utheta  # nu0 is not a parameter to be estimated, so it's removed from here
+        a1l = 0 + ua1l * (15)  # Transforming ua1l to be in the range -5 to 50
+        a2 = 0 + ua2 * (15)  # Transforming ua2 to be in the range -5 to 50
+        alpha_nt = -2.0 + ualpha_nt * (2.0)  # Transforming ualpha_nt to be in the range -2 to 1.5
+        return a1l, a2, alpha_nt
+
+    dsampler = dynesty.DynamicNestedSampler(log_likelihood, prior_transform, bound='balls',
+                                            ndim=ndim, nlive=15000, sample='rwalk',  # hslice, rwalk
+                                            logl_args=(x, y))
+
+    # dsampler.run_nested(dlogz_init=0.05, nlive_init=1500, nlive_batch=500,
+    #                     # use_stop=False,
+    #                 # maxiter_init=10000, maxiter_batch=1000, maxbatch=10
+    #                    )
+    dsampler.run_nested(nlive_init=2500, nlive_batch=1000)
+    # dsampler.run_nested()
+    results = dsampler.results
+
+    results.summary()
+
+    try:
+        lnz_truth = ndim * -np.log(2 * 10.)  # analytic evidence solution
+        fig, axes = dyplot.runplot(results, lnz_truth=lnz_truth)
+
+        fig, axes = dyplot.traceplot(results, truths=np.zeros(ndim),
+                                     truth_color='black', show_titles=True,
+                                     trace_cmap='magma', connect=True,
+                                     connect_highlight=range(5))
+    except:
+        pass
+
+    try:
+        # initialize figure
+        fig, axes = dyplot.cornerplot(results,
+                                      show_titles=True,  # Show titles with parameter values
+                                      title_kwargs={'y': 1.03},  # Adjust title position
+                                      labels=[r'$A_1$',r'$A_2$', r'$\alpha$'],  # Label axes
+                                      label_kwargs=dict(fontsize=16),
+                                      # Adjust label font size
+                                      # quantiles = [0.16, 0.5, 0.84],title_quantiles = [0.16, 0.5, 0.84],
+                                      max_n_ticks=4, use_math_text=True, verbose=True,
+                                      title_fmt='.3f',
+                                      fig=plt.subplots(3, 3, figsize=(7, 7)))
+    except:
+        pass
+
+    # Extract the best-fit parametershttps://dynesty.readthedocs.io/en/latest/examples.html
+    best_fit_indices = np.argmax(results.logl)
+    best_fit_params = results.samples[best_fit_indices]
+    A1l_best, A2_best, alpha_nt_best = best_fit_params
+
+    # Calculate the best-fit model
+    x_resample = np.linspace(x[0], x[-1], 100)
+    best_fit_model = RC_function(x_resample, A1l_best, A2_best, alpha_nt_best, nu0)
+
+    # Plotting the data
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y, yerr=yerr, fmt='o', label='Observed data', color='k', ecolor='gray',
+                 alpha=0.5)
+    plt.plot(x_resample, best_fit_model, label='Best-fit model', color='red')
+    plt.xlabel('Frequency (GHz)')
+    plt.ylabel('Flux Density')
+    plt.semilogx()
+    plt.semilogy()
+    plt.legend()
+    plt.show()
+
+    try:
+        # Extracting samples for the corner plot
+        samples = results.samples
+
+        # Creating a corner plot
+        fig = corner.corner(samples,
+                            labels=[r'$A_1$', r'$A_2$', r'$\alpha_{\rm nt}$'],
+                            truths=[A1l_best, A2_best, alpha_nt_best],
+                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            title_kwargs={"fontsize": 12})
+        plt.show()
+    except:
+        pass
+    return (results, dsampler)
+
+
+
+
+def do_fit_spec_RC_linear(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
+    x = freqs / 1e9
+    y = fluxes
+    yerr = fluxes_err
+    if nu0 is None:
+        nu0 = np.mean(x)
+
+    def min_func(params):
+        A1 = params['A1']
+        alpha_nt = params['alpha_nt']
+        res = y - RC_function_linear(x, A1, alpha_nt)
+        # res = data - RC_function(nu, A1l, alpha_nt)
+        return res.copy()
+
+    fit_params = lmfit.Parameters()
+    fit_params.add("A1", value=0.5, min=-5, max=15)
+    fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=2.5)
+
+    mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
+                           nan_policy='omit', reduce_fcn='neglogcauchy')
+
+    result_1 = mini.minimize(method='least_squares',
+                             max_nfev=200000,  # f_scale = 1.0,
+                             loss="cauchy", tr_solver="lsmr",
+                             ftol=1e-15, xtol=1e-15, gtol=1e-15,
+                             verbose=verbose
+                             )
+    second_run_params = result_1.params
+
+    result = mini.minimize(method='least_squares',
+                           params=second_run_params,
+                           max_nfev=200000,  # f_scale = 1.0,
+                           loss="cauchy", tr_solver="lsmr",
+                           ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                           verbose=verbose
+                           )
+
+    # result_1 = mini.minimize(method='nelder',
+    #                          options={'maxiter': 30000, 'maxfev': 30000,
+    #                                   'xatol': 1e-12, 'fatol': 1e-12,
+    #                                   'return_all': True,'adaptive': True,
+    #                                   'disp': True}
+    #                      )
+    # second_run_params = result_1.params
+
+    # result = mini.minimize(method='nelder',params=second_run_params,
+    #                        options={'maxiter': 30000, 'maxfev': 30000,
+    #                                 'xatol': 1e-12, 'fatol': 1e-12,
+    #                                 'return_all': True,'adaptive': True,
+    #                                 'disp': True}
+    #                  )
+    x_resample = np.linspace(x[0], x[-1], 100)
+    plt.plot(x, y, 'o')
+    plt.plot(x_resample, (RC_function_linear(x_resample,
+                             result.params['A1'].value,
+                             result.params['alpha_nt'].value)),
+             '-', label='best fit')
+    # plt.plot(x, (RC_function(x,
+    #                         result_mini.params['A1l'].value,
+    #                         result_mini.params['A2'].value*0,
+    #                         result_mini.params['alpha_nt'].value)),
+    #          '-', label='A1 term')
+    # plt.plot(x, (RC_function(x,
+    #                         result_mini.params['A1l'].value*0,
+    #                         result_mini.params['A2'].value,
+    #                         result_mini.params['alpha_nt'].value)),
+    #          '-', label='A2 term')
+    plt.legend()
+    plt.show()
+    return result
+
+
+def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
+    x = freqs / 1e9
+    y = fluxes
+    yerr = fluxes_err
+    if nu0 is None:
+        nu0 = np.mean(x)
+
+
+    def min_func(params):
+        A1 = params['A1']
+        A2 = params['A2']
+        alpha_nt = params['alpha_nt']
+        res = y - RC_function(x, A1, A2, alpha_nt,nu0)
+        # res = data - RC_function(nu, A1l, alpha_nt)
+        return res.copy()
+
+    fit_params = lmfit.Parameters()
+    fit_params.add("A1", value=0.5, min=0, max=15)
+    fit_params.add("A2", value=0.5, min=-5, max=15)
+    fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=2.5)
+
+    mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
+                           nan_policy='omit', reduce_fcn='neglogcauchy')
+
+    result_1 = mini.minimize(method='least_squares',
+                             max_nfev=200000,  # f_scale = 1.0,
+                             loss="cauchy", tr_solver="lsmr",
+                             ftol=1e-15, xtol=1e-15, gtol=1e-15,
+                             verbose=verbose
+                             )
+    second_run_params = result_1.params
+
+    result = mini.minimize(method='least_squares',
+                           params=second_run_params,
+                           max_nfev=200000,  # f_scale = 1.0,
+                           loss="cauchy", tr_solver="lsmr",
+                           ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                           verbose=verbose
+                           )
+
+    # result_1 = mini.minimize(method='nelder',
+    #                          options={'maxiter': 30000, 'maxfev': 30000,
+    #                                   'xatol': 1e-12, 'fatol': 1e-12,
+    #                                   'return_all': True,'adaptive': True,
+    #                                   'disp': True}
+    #                      )
+    # second_run_params = result_1.params
+
+    # result = mini.minimize(method='nelder',params=second_run_params,
+    #                        options={'maxiter': 30000, 'maxfev': 30000,
+    #                                 'xatol': 1e-12, 'fatol': 1e-12,
+    #                                 'return_all': True,'adaptive': True,
+    #                                 'disp': True}
+    #                  )
+    x_resample = np.linspace(x[0], x[-1], 100)
+    plt.plot(x, y, 'o')
+    # plt.plot(x, result.init_fit, '--', label='initial fit')
+    plt.plot(x_resample,
+             RC_function(x_resample,
+                         result.params['A1'].value,
+                         result.params['A2'].value,
+                         result.params['alpha_nt'].value,
+                         nu0),
+             '-', label='best fit')
+    # plt.plot(x, (RC_function(x,
+    #                         result_mini.params['A1l'].value,
+    #                         result_mini.params['A2'].value*0,
+    #                         result_mini.params['alpha_nt'].value)),
+    #          '-', label='A1 term')
+    # plt.plot(x, (RC_function(x,
+    #                         result_mini.params['A1l'].value*0,
+    #                         result_mini.params['A2'].value,
+    #                         result_mini.params['alpha_nt'].value)),
+    #          '-', label='A2 term')
+    plt.legend()
+    plt.show()
+
+    return result
 
 
 """
