@@ -678,7 +678,7 @@ def start_image(g_name, n_interaction, imsize='2048', imsizey=None, cell='0.05as
 
     if PLOT == True:
         plot_visibilities(g_vis=g_vis, name=base_name,
-                          with_MODEL=True, with_DATA=True, with_CORRECTED=True)
+                          with_MODEL=True, with_DATA=False, with_CORRECTED=True)
 
     pass
 
@@ -1067,7 +1067,7 @@ def run_wsclean(g_name, n_interaction, imsize='2048', imsizey=None,cell='0.05ase
                 datacolumn='CORRECTED',mask=None,
                 niter=1000,quiet=True,
                 with_multiscale=False, scales="'0,5,20,40'",
-                uvtaper=[], PLOT=False):
+                uvtaper=[], PLOT=False,with_DATA=True,with_CORRECTED=True,with_MODEL=True):
 
 
     g_vis = g_name + '.ms'
@@ -1095,8 +1095,8 @@ def run_wsclean(g_name, n_interaction, imsize='2048', imsizey=None,cell='0.05ase
 
 
     if PLOT == True:
-        plot_visibilities(g_vis=g_vis, name=base_name,
-                          with_MODEL=True, with_CORRECTED=True)
+        plot_visibilities(g_vis=g_vis, name=base_name,with_DATA=with_DATA,
+                          with_MODEL=with_MODEL, with_CORRECTED=with_CORRECTED)
 
     pass
 
@@ -1557,7 +1557,7 @@ if run_mode == 'terminal':
                         with_multiscale=False, scales='0,5,20,40',
                         uvtaper=init_parameters['test_image']['uvtaper'],
                         niter=niter_test,
-                        PLOT=False)
+                        PLOT=True,with_DATA=True,with_CORRECTED=False,with_MODEL=False)
 
             image_statistics,image_list = compute_image_stats(path=path,
                                                               image_list=image_list,
