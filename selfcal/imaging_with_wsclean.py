@@ -154,16 +154,16 @@ if __name__ == "__main__":
     parser.add_argument("--minuv_l", type=str, nargs='?', default=None,
                         help="Min uv distance in lambda.")
 
-    parser.add_argument("--nsigma_automask", type=str, nargs='?', default='5.0',
+    parser.add_argument("--nsigma_automask", type=str, nargs='?', default='3.0',
                         help="Sigma level for automasking in wsclean.")
 
-    parser.add_argument("--nsigma_autothreshold", type=str, nargs='?', default='2.0',
+    parser.add_argument("--nsigma_autothreshold", type=str, nargs='?', default='1.5',
                         help="Sigma level for autothreshold in wsclean.")
 
     parser.add_argument("--mask", nargs='?', default=None,
                         const=True, help="A fits-file mask to be used.")
 
-    parser.add_argument("--nc", type=int, nargs='?', default=8,
+    parser.add_argument("--nc", type=int, nargs='?', default=4,
                         help="Number of channels division to be used in "
                              "the MFS deconvolution.")
 
@@ -265,19 +265,21 @@ if __name__ == "__main__":
             # deconvolver_options = ('-multiscale-max-scales 5 -multiscale-scale-bias 0.5 ')
         nc = args.nc
         deconvolver_args = (' '
-                            '-channels-out '+str(nc)+' -join-channels '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
                             '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
-                            '-weighting-rank-filter 3 -weighting-rank-filter-size 64 '
-                            '-gridder wgridder -wstack-nwlayers-factor 3 -beam-fitting-size 0.5 '
-                            # ' -circular-beam ' 
+                            '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
+                            # '-save-weights -local-rms -local-rms-window 50 '
+                            '-gridder wgridder -wstack-nwlayers-factor 3 ' #-beam-fitting-size 0.7
+                            # ' -circular-beam  ' # -no-negative
                             # ' -circular-beam -beam-size 0.1arcsec -no-negative -beam-fitting-size = 0.7 ' 
-                            '-no-mf-weighting -parallel-deconvolution 1024 ' 
+                            '-no-mf-weighting ' # -parallel-deconvolution 1024 
+                            # '-save-psf-pb -apply-primary-beam ' 
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
+                            '-channels-out '+str(nc)+' -join-channels '
                             '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(nc)+' '
-                            '')
+                            )
     if args.deconvolution_mode == 'fast':
         deconvolver = ' '
         deconvolver_options = (' ')
@@ -312,7 +314,7 @@ if __name__ == "__main__":
     if args.minuv_l is not None:
         uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.5 -gain 0.1 -nmiter 500 ' # -super-weight 9.0
+    gain_args = ' -mgain 0.4 -gain 0.05 -nmiter 500 -super-weight 9.0 '
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
