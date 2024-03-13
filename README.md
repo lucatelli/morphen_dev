@@ -209,20 +209,6 @@ Alongside, it was also clear that the reproducibility in radio astronomy is a ch
 we were in need of a package towards reproducibility of scientific results. Hence, the ideas of 
 `morphen` were brought back to be incorporated within radio astronomy.
 
-### Our Philosophy
-***Better science is done with better practices***
-
-We are commited to transparency in science, sharing all the tools and data. 
-
-We think about science as a collective effort, not personal achievements. 
-
-### What is the bird in the logo?
-It is a [**Southern lapwing**](https://pt.wikipedia.org/wiki/Quero-quero),
-or in portuguese, *Quero-quero*, which means "I want-I want". It is a cultural 
-identity in south, of America, specially south of Brazil. 
-
-[//]: # (https://upload.wikimedia.org/wikipedia/commons/e/e8/Southern_lapwing_%28Vanellus_chilenis_lampronotus%29.JPG)
-
 ## How to contribute
 This is an open-source project. We are welcoming all kinds of contributions, suggestions and bug 
 reports. Feel free to open an issue or contact us. 
