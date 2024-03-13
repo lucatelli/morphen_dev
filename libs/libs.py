@@ -3293,7 +3293,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     else:
         print('     >> CALC: Computing image properties.')
 
-    levels, fluxes, agrow, plt, \
+    levels, fluxes, agrow, \
         omask2, mask2, results_final = compute_image_properties(imagename,
                                                         residual=residualname,
                                                         cell_size=cell_size,
@@ -3336,6 +3336,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                              global_mask=mask,
                                              source_props=results_final,
                                              apply_mask=False,
+                                             # error = ,
                                              sigma_level=sigma_mask,
                                              bkg_sub=bkg_sub, bkg_to_sub=bkg_to_sub,
                                              vmin=vmin_factor, plot=do_PLOT,
@@ -4255,7 +4256,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
         plt.show()
     else:
         plt.close()
-    return (levels, fluxes, agrow, plt, omask, mask, results)
+    return (levels, fluxes, agrow, omask, mask, results)
 
 
 def structural_morphology(imagelist, residuallist,
@@ -5565,7 +5566,7 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
     from copy import copy
 
     p_copy = copy(p)
-    p_copy.eta = 0.15
+    p_copy.eta = 0.2
     p_copy.epsilon = 2
 
     print('eta =', p_copy.eta)
@@ -5622,7 +5623,7 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
 
 
 def petrosian_metrics(source, data_2D, segm, mask_source,global_mask=None,
-                 i='1', petro_properties={},sigma_type='clip',eta_value=0.15,
+                 i='1', petro_properties={},sigma_type='clip',eta_value=0.2,
                  rlast=None, sigma=3, vmin=3, bkg_sub=False,error=None,
                  plot=False):
     if rlast is None:
@@ -5664,7 +5665,7 @@ def petrosian_metrics(source, data_2D, segm, mask_source,global_mask=None,
     from copy import copy
     p_015 = copy(p)
     if eta_value is None:
-        p_015.eta = 0.15
+        p_015.eta = 0.2
     else:
         p_015.eta = eta_value
 
@@ -5931,6 +5932,16 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
         #         plt.semilogx()
         p.plot(plot_r=True)
         plt.savefig(imagename.replace('.fits', '_Rpetro_flux'+
+                                      add_save_name+'.jpg'),
+                    dpi=300, bbox_inches='tight')
+        if show_figure == True:
+            plt.show()
+        else:
+            plt.close()
+
+        plt.figure()
+        p.plot_cog()
+        plt.savefig(imagename.replace('.fits', '_cog_flux'+
                                       add_save_name+'.jpg'),
                     dpi=300, bbox_inches='tight')
         if show_figure == True:
@@ -6406,6 +6417,11 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     else:
         data_2D = data_2D_
 
+    print('+++++++++++++++++++++++')
+    print('SEP Filter sizes:')
+    print('    bw,bh=(', bw, bh,')')
+    print('    fw,fh=(', fw, fh,')')
+    print('+++++++++++++++++++++++')
     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
     # print(bkg.globalback)
     # print(bkg.globalrms)
@@ -6463,13 +6479,13 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     for i in range(len(objects)):
         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
                     width=2 * ell_size_factor * objects['a'][i],
-                    height=2 * ell_size_factor * objects['a'][i],
+                    height=2 * ell_size_factor * objects['b'][i],
                     angle=objects['theta'][i] * 180. / np.pi)
 
         xc = objects['x'][i]
         yc = objects['y'][i]
         a = ell_size_factor * objects['a'][i]
-        b = ell_size_factor * objects['a'][i]
+        b = ell_size_factor * objects['b'][i]
         theta = objects['theta'][i]
         rx = (x - xc) * np.cos(theta) + (y - yc) * np.sin(theta)
         ry = (y - yc) * np.cos(theta) - (x - xc) * np.sin(theta)
@@ -7516,15 +7532,7 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
     if len(data_2D.shape) == 4:
         data_2D = data_2D[0][0]
     m, s = np.mean(data_2D), np.std(data_2D)
-    bkg = 0.0
-
-    bkg = 0.0  # sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
-    # print(bkg.globalback)
-    # print(bkg.globalrms)
-    bkg_image = 0.0  # bkg.back()
-    bkg_rms = 0.0  # bkg.rms()
-
-    data_sub = data_2D - bkg
+    # bkg = 0.0
 
     if apply_mask:
         if mask is not None:
@@ -7534,13 +7542,33 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
                                     dilation_size=dilation_size)
             data_sub = data_sub * mask
 
+    bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
+    # print(bkg.globalback)
+    # print(bkg.globalrms)
+
+    bkg_image = bkg.back()
+    bkg_rms = bkg.rms()
+
+    if show_bkg_map == True:
+        plt.figure()
+        # display bkg map.
+        plt.imshow(data_2D, interpolation='nearest', cmap='gray', vmin=3*s,
+                   vmax=0.2*np.max(data_2D), origin='lower')
+        plt.colorbar()
+        plt.close()
+        plt.figure()
+        plt.imshow(bkg_image)
+        plt.close()
+
+    data_sub = data_2D - bkg_image
+
     # else:
     #     mask = None
     if segmentation_map == True:
         # print(data_sub)
         npixels = int(minarea * minarea_factor)
         print(' INFO: Uinsg min number of pixels of :', npixels)
-        cat, segm, seg_maps = make_catalog(image=data_sub,
+        cat, segm, seg_maps = make_catalog(image=data_2D,
                                            threshold=sigma * s,
                                            deblend=True, contrast=deblend_cont,
                                            nlevels=deblend_nthresh,
@@ -7657,16 +7685,16 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
         plt.show()
 
     if segmentation_map == True:
-        return (masks_regions, sorted_indices_desc, seg_maps, objects_sorted)
+        return (masks_regions, sorted_indices_desc, bkg, seg_maps, objects_sorted)
     else:
-        return (masks_regions, sorted_indices_desc, objects_sorted)
+        return (masks_regions, sorted_indices_desc, bkg, objects_sorted)
 
 def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 bw=51, bh=51, fw=15, fh=15, sigma=15, ell_size_factor=2.0,
                 deblend_cont=1e-7, deblend_nthresh=15,minarea=None,sigma_mask=6,
                 show_detection=True,use_extraction_positions=False,
                 clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
-                obs_type = 'radio',
+                obs_type = 'radio',algorithm='SEP',
                 show_petro_plots=False):
     """
     Prepare the imaging data to be modelled.
@@ -7703,40 +7731,41 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
 
     # _, mask = mask_dilation(crop_image, sigma=6, dilation_size=None,
     #                         iterations=2)
-    masks, indices, bkg, seg_maps, objects = \
-        sep_source_ext(crop_image, bw=bw,
-                       bh=bh,
-                       fw=fw, fh=fh,
-                       minarea=minarea,
-                       segmentation_map=True,
-                       filter_type='matched',
-                       deblend_nthresh=deblend_nthresh,
-                       deblend_cont=deblend_cont,
-                       clean_param=clean_param,
-                       clean=clean,
-                       sort_by=sort_by,
-                       sigma=sigma,sigma_mask=sigma_mask,
-                       ell_size_factor=ell_size_factor,
-                       apply_mask=apply_mask,
-                       mask = mask_detection,
-                       show_detection=show_detection)
-
-    # masks, indices, seg_maps, objects = \
-    #     phot_source_ext(crop_image, bw=bw,
-    #                    bh=bh,
-    #                    fw=fw, fh=fh,
-    #                    minarea=minarea,
-    #                    segmentation_map=True,
-    #                    filter_type='matched', mask=None,
-    #                    deblend_nthresh=deblend_nthresh,
-    #                    deblend_cont=deblend_cont,
-    #                    clean_param=clean_param,
-    #                    clean=clean,
-    #                    sort_by=sort_by,
-    #                    sigma=sigma,
-    #                    ell_size_factor=ell_size_factor,
-    #                    apply_mask=apply_mask,
-    #                    show_detection=show_detection)
+    if algorithm == 'SEP':
+        masks, indices, bkg, seg_maps, objects = \
+            sep_source_ext(crop_image, bw=bw,
+                           bh=bh,
+                           fw=fw, fh=fh,
+                           minarea=minarea,
+                           segmentation_map=True,
+                           filter_type='matched',
+                           deblend_nthresh=deblend_nthresh,
+                           deblend_cont=deblend_cont,
+                           clean_param=clean_param,
+                           clean=clean,
+                           sort_by=sort_by,
+                           sigma=sigma,sigma_mask=sigma_mask,
+                           ell_size_factor=ell_size_factor,
+                           apply_mask=apply_mask,
+                           mask = mask_detection,
+                           show_detection=show_detection)
+    if algorithm == 'PF':
+        masks, indices, bkg, seg_maps, objects = \
+            phot_source_ext(crop_image, bw=bw,
+                           bh=bh,
+                           fw=fw, fh=fh,
+                           minarea=minarea,
+                           segmentation_map=True,
+                           filter_type='matched', mask=mask,
+                           deblend_nthresh=deblend_nthresh,
+                           deblend_cont=deblend_cont,
+                           clean_param=clean_param,
+                           clean=clean,
+                           sort_by=sort_by,
+                           sigma=sigma,
+                           ell_size_factor=ell_size_factor,
+                           apply_mask=apply_mask,
+                           show_detection=show_detection)
 
 
 

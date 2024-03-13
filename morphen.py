@@ -313,7 +313,7 @@ class source_extraction():
                  crop=False, box_size=256,
                  apply_mask=False, mask=None, dilation_size = None,
                  sigma_level=3, sigma_mask=6, vmin_factor=3, mask_component=None,
-                 bwf=2, bhf=2, fwf=2, fhf=2,
+                 bwf=1, bhf=1, fwf=1, fhf=1,
                  segmentation_map = True, filter_type='matched',
                  deblend_nthresh=3, deblend_cont=1e-8,
                  clean_param=0.5, clean=True,
@@ -321,7 +321,7 @@ class source_extraction():
                  sort_by='flux',  # sort detected source by flux
                  sigma=12,  # min rms to search for sources
                  ell_size_factor=2.0,  # unstable, please inspect!
-                 obs_type = 'radio',
+                 obs_type = 'radio', algorithm='SEP',
                  show_detection=False,show_petro_plots=False,
                  SAVE=True, show_figure=True,dry_run = False):
         """
@@ -415,6 +415,7 @@ class source_extraction():
         self.ell_size_factor = ell_size_factor
         self.vmin_factor = vmin_factor
         self.mask_component = mask_component
+        self.algorithm = algorithm
         # self.bw = bw
         # self.bh = bh
         # self.fw = fw
@@ -429,11 +430,10 @@ class source_extraction():
             self.fw = self.aO / fwf
             self.fh = self.bO / fhf
         except:
-            self.bw = 51
-            self.bh = 51
-            self.fw = 15
-            self.fh = 15
-
+            self.bw = int((input_data.image_data_2D.shape[0]*0.2)/bwf)
+            self.bh = int((input_data.image_data_2D.shape[1]*0.2)/bhf)
+            self.fw = int((input_data.image_data_2D.shape[0]*0.1)/fwf)
+            self.fh = int((input_data.image_data_2D.shape[1]*0.1)/fhf)
         try:
             self.minarea = mlibs.beam_area2(self.input_data.filename)
         except:
@@ -460,40 +460,43 @@ class source_extraction():
             self.contruct_source_properties()
 
     def get_sources(self):
-        self.masks, self.indices, self.bkg, self.seg_maps, self.objects = \
-            mlibs.sep_source_ext(self.input_data.filename,
-                           bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
-                           # filtering options for source detection
-                           minarea=self.minarea,
-                           segmentation_map=self.segmentation_map,
-                           filter_type=self.filter_type, mask=self.mask,
-                           deblend_nthresh=self.deblend_nthresh,
-                           deblend_cont=self.deblend_cont,
-                           clean_param=self.clean_param,
-                           clean=self.clean,
-                           sort_by=self.sort_by,
-                           minarea_factor=self.minarea_factor,
-                           sigma=self.sigma,sigma_mask=self.sigma_mask,
-                           ell_size_factor=self.ell_size_factor,
-                           apply_mask=self.apply_mask,
-                           show_detection=self.show_detection)
-        # self.masks, self.indices, self.seg_maps, self.objects = \
-        #     mlibs.phot_source_ext(self.input_data.filename,
-        #                    bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
-        #                    # filtering options for source detection
-        #                    minarea=self.minarea,
-        #                    segmentation_map=self.segmentation_map,
-        #                    filter_type=self.filter_type, mask=self.mask,
-        #                    deblend_nthresh=self.deblend_nthresh,
-        #                    deblend_cont=self.deblend_cont,
-        #                    clean_param=self.clean_param,
-        #                    clean=self.clean,
-        #                    sort_by=self.sort_by,
-        #                    sigma=self.sigma,sigma_mask=self.sigma_mask,
-        #                    minarea_factor = self.minarea_factor,
-        #                    ell_size_factor=self.ell_size_factor,
-        #                    apply_mask=self.apply_mask,
-        #                    show_detection=self.show_detection)
+        if self.algorithm == 'SEP':
+            self.masks, self.indices, self.bkg, self.seg_maps, self.objects = \
+                mlibs.sep_source_ext(self.input_data.filename,
+                               bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
+                               # filtering options for source detection
+                               minarea=self.minarea,
+                               segmentation_map=self.segmentation_map,
+                               filter_type=self.filter_type, mask=self.mask,
+                               deblend_nthresh=self.deblend_nthresh,
+                               deblend_cont=self.deblend_cont,
+                               clean_param=self.clean_param,
+                               clean=self.clean,
+                               sort_by=self.sort_by,
+                               minarea_factor=self.minarea_factor,
+                               dilation_size=self.dilation_size,
+                               sigma=self.sigma,sigma_mask=self.sigma_mask,
+                               ell_size_factor=self.ell_size_factor,
+                               apply_mask=self.apply_mask,
+                               show_detection=self.show_detection)
+        if self.algorithm == 'PF':
+            self.masks, self.indices, self.bkg, self.seg_maps, self.objects = \
+                mlibs.phot_source_ext(self.input_data.filename,
+                               bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
+                               # filtering options for source detection
+                               minarea=self.minarea,
+                               segmentation_map=self.segmentation_map,
+                               filter_type=self.filter_type, mask=self.mask,
+                               deblend_nthresh=self.deblend_nthresh,
+                               deblend_cont=self.deblend_cont,
+                               clean_param=self.clean_param,
+                               clean=self.clean,
+                               sort_by=self.sort_by,
+                               sigma=self.sigma,sigma_mask=self.sigma_mask,
+                               minarea_factor = self.minarea_factor,
+                               ell_size_factor=self.ell_size_factor,
+                               apply_mask=self.apply_mask,
+                               show_detection=self.show_detection)
 
     def contruct_source_properties(self):
         (self.sources_photometries, self.n_components,self.n_IDs,
@@ -508,7 +511,7 @@ class source_extraction():
                               ell_size_factor=self.ell_size_factor,
                               deblend_cont=self.deblend_cont,
                               clean_param=self.clean_param,
-                              obs_type=self.obs_type,
+                              obs_type=self.obs_type,algorithm=self.algorithm,
                               show_petro_plots=self.show_petro_plots)
 
 class evaluate_source_structure():
