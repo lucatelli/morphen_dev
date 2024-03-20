@@ -484,7 +484,6 @@ class source_extraction():
                 mlibs.phot_source_ext(self.input_data.filename,
                                bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
                                # filtering options for source detection
-                               minarea=self.minarea,
                                segmentation_map=self.segmentation_map,
                                filter_type=self.filter_type, mask=self.mask,
                                deblend_nthresh=self.deblend_nthresh,
@@ -493,6 +492,8 @@ class source_extraction():
                                clean=self.clean,
                                sort_by=self.sort_by,
                                sigma=self.sigma,sigma_mask=self.sigma_mask,
+                               dilation_size=self.dilation_size,
+                               minarea=self.minarea,
                                minarea_factor = self.minarea_factor,
                                ell_size_factor=self.ell_size_factor,
                                apply_mask=self.apply_mask,
@@ -509,6 +510,8 @@ class source_extraction():
                               apply_mask=self.apply_mask,
                               deblend_nthresh=self.deblend_nthresh,
                               ell_size_factor=self.ell_size_factor,
+                              minarea=self.minarea,
+                              minarea_factor=self.minarea_factor,
                               deblend_cont=self.deblend_cont,
                               clean_param=self.clean_param,
                               obs_type=self.obs_type,algorithm=self.algorithm,
@@ -654,6 +657,11 @@ class sersic_multifit_radio():
             self.dr_fix = dr_fix
         if fix_x0_y0 is None:
             self.fix_x0_y0 = [True] * self.SE.n_components
+
+        if fix_geometry is None:
+            self.fix_geometry = [True] * self.SE.n_components
+        else:
+            self.fix_geometry = fix_geometry
         
         self.__sersic_radio()
 
@@ -792,8 +800,8 @@ class sersic_multifit_general():
                  sigma=6.0, use_mask_for_fit=False,
                  bkg_rms_map = None,
                  loss='cauchy', tr_solver='exact',
-                 regularize=True, f_scale=0.5, ftol=1e-12,
-                 xtol=1e-12, gtol=1e-12,
+                 regularize=True, f_scale=1.0, ftol=1e-10,
+                 xtol=1e-10, gtol=1e-10,
                  init_params=0.2, final_params=5.0,
                  which_residual = 'user',
                  convolution_mode='GPU',method1='least_squares',
@@ -835,20 +843,25 @@ class sersic_multifit_general():
             else:
                 self.rms_map = None
 
-        if fix_n == None:
+        if fix_n is None:
             self.fix_n = [True] * self.SE.n_components
         else:
             self.fix_n = fix_n
 
-        if fix_value_n == None:
+        if fix_value_n is None:
             self.fix_value_n = [0.5] * self.SE.n_components
         else:
             self.fix_value_n = fix_value_n
 
-        if dr_fix == None:
+        if dr_fix is None:
             self.dr_fix = [10] * self.SE.n_components
         else:
             self.dr_fix = dr_fix
+
+        if fix_geometry is None:
+            self.fix_geometry = [True] * self.SE.n_components
+        else:
+            self.fix_geometry = fix_geometry
 
         self.save_name_append = save_name_append
 
@@ -929,6 +942,7 @@ class sersic_multifit_general():
         mlibs.plot_fit_results(self.input_data.filename, self.model_dict,
                                self.image_results_conv,
                                self.SE.sources_photometries,
+                               bkg_image=self.bkg_images[-1],
                                crop=False, box_size=200,
                                vmax_factor=0.3, vmin_factor=1.0)
 

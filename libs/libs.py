@@ -7138,12 +7138,22 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                     if fix_n is not False:
                         fix_n_j = fix_n[j]
                         fix_value_n_j = fix_value_n[j]
+                    else:
+                        fix_n_j = False
+                        fix_value_n_j = 1.0 # will be skipped.
+
                     if fix_x0_y0 is not False:
                         fix_x0_y0_j = fix_x0_y0[j]
                         dr_fix_j = dr_fix[j]
                     else:
                         fix_x0_y0_j = False
                         dr_fix_j = False
+
+                    if fix_geometry is not False:
+                        fix_geometry_j = fix_geometry[j]
+                    else:
+                        fix_geometry_j = False
+
                     jj = str(j + 1)
                     for param in model_temp.param_names:
                         #                         smodel2D.set_param_hint('f' + str(i + 1) + '_' + param,
@@ -7197,7 +7207,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 value=ell, min=ell_min, max=ell_max)
 
                         if param == 'cg':
-                            if fix_geometry == True:
+                            if fix_geometry_j == True:
                                 smodel2D.set_param_hint(
                                     'f' + str(j + 1) + '_' + param,
                                     value=0.0, min=-0.01, max=0.01)
@@ -7214,8 +7224,13 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             A high value of I50 is required because the
                             deconvolved model has a higher peak intensity
                             (and therefore the same for the I50 region) than the
-                            convolved model. The PSF convolution atenuates a lot
-                            the signal, specially for radio images.
+                            convolved model. The PSF convolution attenuates significantly
+                            the peak intensity.
+                            
+                            To-do:
+                            1. Use a more robust approach, from the theoretical prediction of a 
+                            deconvolved signal from a convolved signal with a Gaussian 
+                            kernel.
                             """
                             I50_max = I50 * 500
                             I50_min = I50 * 0.01
@@ -7224,7 +7239,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                                 value=I50, min=I50_min, max=I50_max)
                         if param == 'Rn':
                             R50 = init_constraints['c' + jj + '_R50']
-                            dR = R50 * 0.5
+                            dR = R50 * 0.25
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
                             R50_max = 1.5*init_constraints['c' + jj + '_R50']
@@ -7535,12 +7550,9 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
     # bkg = 0.0
 
     if apply_mask:
-        if mask is not None:
-            data_sub = data_sub * mask
-        else:
-            _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
-                                    dilation_size=dilation_size)
-            data_sub = data_sub * mask
+        _, mask = mask_dilation(data_2D, sigma=sigma_mask, iterations=iterations,
+                                dilation_size=dilation_size)
+
 
     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
     # print(bkg.globalback)
@@ -7561,7 +7573,10 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
         plt.close()
 
     data_sub = data_2D - bkg_image
-
+    if mask is not None:
+        data_sub = data_sub * mask
+    else:
+        data_sub = data_sub
     # else:
     #     mask = None
     if segmentation_map == True:
@@ -7691,7 +7706,9 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
 
 def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 bw=51, bh=51, fw=15, fh=15, sigma=15, ell_size_factor=2.0,
-                deblend_cont=1e-7, deblend_nthresh=15,minarea=None,sigma_mask=6,
+                deblend_cont=1e-7, deblend_nthresh=15,
+                minarea=None,minarea_factor=1.0,
+                sigma_mask=6,
                 show_detection=True,use_extraction_positions=False,
                 clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
                 obs_type = 'radio',algorithm='SEP',
@@ -7737,6 +7754,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                            bh=bh,
                            fw=fw, fh=fh,
                            minarea=minarea,
+                           minarea_factor=minarea_factor,
                            segmentation_map=True,
                            filter_type='matched',
                            deblend_nthresh=deblend_nthresh,
@@ -7755,6 +7773,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                            bh=bh,
                            fw=fw, fh=fh,
                            minarea=minarea,
+                           minarea_factor=minarea_factor,
                            segmentation_map=True,
                            filter_type='matched', mask=mask,
                            deblend_nthresh=deblend_nthresh,
@@ -7845,7 +7864,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
              fix_geometry=True, contrain_nelder=False, workers=6,mask_region = None,
              special_name='', method1='least_squares', method2='least_squares',
              reduce_fcn='neglogcauchy',loss="cauchy",tr_solver="exact",x_scale = 'jac',
-             ftol=1e-12, xtol=1e-12, gtol=1e-12, verbose=2,max_nfev=200000,
+             ftol=1e-10, xtol=1e-10, gtol=1e-10, verbose=2,max_nfev=200000,
              regularize  = True, f_scale = 1.0,
              maxiter = 30000, maxfev = 30000, xatol = 1e-12,
              fatol = 1e-12, return_all = True, disp = True,
@@ -11617,7 +11636,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
     #     except:
     #         pass
     if bkg_image is not None:
-        ir_model_data =  irmodel + ir_bkg
+        ir_model_data =  irmodel# + ir_bkg
         plt.plot(r_bkg * cell_size, abs(ir_bkg), '--', label='bkg', color='brown')
     else:
         ir_model_data = irmodel
