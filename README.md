@@ -18,30 +18,33 @@
 ```
 
 
-## `morphen`: A gentle overview of its potentials and limitations
+# `morphen`: Overview, features and limitations
 ***Readme file under development!***
-### What is `morphen`?
+## What is `morphen`?
 `morphen` is a collection of python-based astronomical functionalities for image analysis and 
-processing. You will be able to measure basic image morphology and photometry. Also, it comes with a 
-state-of-the-art python-based image fitting implementation based on the Sersic function.
-Particularly to radio astronomy, these tools involve pure python, but also are integrated with 
-CASA (https://casa.nrao.edu/) in order to work with common `casatasks` as well `WSClean` -- a 
-code for fast interferometric imaging (https://wsclean.readthedocs.io/en/latest/).
+processing. The three main functionalities of `morphen` are:
+1. Image Analysis ([image_analysis/README.md](image_analysis/README.md))
+2. Multi-Sersic Image Fitting Decomposition ([image_decomposition/README.md](image_decomposition/README.md))
+3. Radio Interferometric Self-calibration ([selfcal/README.md](selfcal/README.md))
 
 
-The three main functionalities of `morphen` are:
-1. Image Analysis
-2. Image Fitting Decomposition
-3. Radio Interferometric Data Processing, selfcalibration and imaging. 
 
+You will be able to measure basic image morphology and photometry. `morphen` also comes with a 
+state-of-the-art python-based image fitting implementation based on the Sersic 
+function. Particularly to radio astronomy, these tools involve pure python, but also are 
+integrated with CASA (https://casa.nrao.edu/) in order to work with common `casatasks` as well 
+`WSClean` -- a code for fast interferometric imaging (https://wsclean.readthedocs.io/en/latest/).
+
+## Getting Started
 Some specifics of what you can do with `morphen` includes:
-- Perform morphological analysis on radio interferometric images.
-- Basic source extraction and photometry.
-- Perform a multi-component Sersic image decomposition to astronomical images of galaxies.
-- Perform self-calibration and imaging with `WSClean` and `CASA`.
+- Perform morphological analysis of astronomical images (general.)
+- Basic source extraction and photometry (general).
+- Perform a multi-component Sersic image decomposition to astronomical images of galaxies (general).
+- Perform self-calibration and imaging with `WSClean` and `CASA` (radio astronomy).
 - Use information from distinct interferometric arrays to perform a joint separation of distinct 
-  physical mechanisms of the radio emission. 
-- Experimental: some functionalities are applicable to optical images (but more testing required). 
+  physical mechanisms of the radio emission (radio astronomy).
+- Experimental: some functionalities are applicable to general astronomical data, but more 
+  testing is required beyond radio astronomy.
 
 While in development, these modules will be kept in the same place. Stable releases will be 
 provided for the full module. However, we plan to release these separated functionalities 
@@ -103,8 +106,8 @@ Prior photometry is measured from the data using the `PetroFit` code
 (https://petrofit.readthedocs.io/en/latest/index.html) and the 
 `photutils` package (https://photutils.readthedocs.io/en/stable/) and used as initial 
 constraints for the minimisation.
-Examples of how to use it can be found in the Notebook [```image_decomposition/morphen_sersic.
-ipynb```](image_decomposition/morphen_sersic.ipynb)
+Examples of how to use it can be found in the Notebook 
+[```image_decomposition/morphen_sersic.ipynb```](image_decomposition/morphen_sersic.ipynb)
 
 
 The decomposition was first designed for radio interferometric images, but can be used with any 
@@ -194,7 +197,7 @@ disentangle the radio emission using combined images from distinct interferometr
 ### Origin of `morphen`
 The idea of `morphen` predates back to 2018 alongside the development of 
 `morfometryka` (https://iopscience.iop.org/article/10.1088/0004-637X/814/1/55/pdf) and 
-kurvature (https://academic.oup.com/mnras/article/489/1/1161/5543965). The aim was to 
+$$\kappa$$urvature (https://academic.oup.com/mnras/article/489/1/1161/5543965). The aim was to 
 expand the functionalities of `morfometryka` (such as automated bulge-disk decomposition) and some optimisations.
 Development was on pause, but soon after I started working with radio astronomy, it was 
 clear that we needed a set of automated tools for radio interferometric data processing and analysis,
