@@ -4,7 +4,7 @@
                                               _||||.           .*+;].,#_
                                          _|||*_                _    .@@@#@.
                                    _|||||_               .@##@#| _||_
-   Radio Morphen              |****_                   .@.,/\..@_.
+       Morphen                |****_                   .@.,/\..@_.
                              #///#+++*|    .       .@@@;#.,.\@.
                               .||__|**|||||*||*+@#];_.  ;,;_
  Geferson Lucatelli                            +\*_.__|**#
@@ -16,13 +16,12 @@
                                               ...._@* __ .....     ]]+ ..   _
                                                   .. .       . .. .|.|_ ..
 
-Using testing library file.
 """
 __version__ = '0.3.1alpha-1'
 __codename__ = 'Pelicoto'
 __author__  = 'Geferson Lucatelli'
 __email__   = 'geferson.lucatelli@postgrad.manchester.ac.uk; gefersonlucatelli@gmail.com'
-__date__    = '2024 01 25'
+__date__    = '2024 03 25'
 print(__doc__)
 print('Version',__version__, '('+__codename__+')')
 print('By',__author__)
@@ -35,6 +34,8 @@ from matplotlib.patches import Circle
 from matplotlib.text import Text
 from matplotlib.patches import Ellipse
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.text import Text
+from matplotlib import rcParams
 
 import numpy as np
 from sympy import *
@@ -61,6 +62,8 @@ import matplotlib as mpl_
 import glob
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS
+import sep
+import fitsio
 
 from astropy.stats import mad_std
 from scipy.ndimage import gaussian_filter
@@ -119,6 +122,9 @@ import matplotlib.ticker as mticker
 import coloredlogs
 import logging
 import warnings
+warnings.filterwarnings('ignore', module='photutils')
+warnings.filterwarnings('ignore', module='astropy')
+
 from functools import partial
 try:
     import jax
@@ -1142,7 +1148,7 @@ def tcreate_beam_psf(imname, cellsize=None,size=(128,128),app_name='',
             imhd['restoringbeam']['minor']['unit'])
         majoraxis = str(imhd['restoringbeam']['major']['value']) + str(
             imhd['restoringbeam']['major']['unit'])
-    print(f"++==>>  PSF major/minor axis = ', {majoraxis} X {minoraxis}")
+    # print(f"++==>>  PSF major/minor axis = ', {majoraxis} X {minoraxis}")
 
     pa = str(imhd['restoringbeam']['positionangle']['value']) + str(
         imhd['restoringbeam']['positionangle']['unit'])
@@ -3223,7 +3229,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
              crop=False, box_size=256,
              apply_mask=True, do_PLOT=False, SAVE=True, show_figure=True,
              mask=None,do_measurements='all',compute_A=False,
-             add_save_name='',logger=None):
+             add_save_name='',logger=None,verbose=0):
     """
     Main function that perform other function calls responsible for
     all relevant calculations on the images.
@@ -3239,10 +3245,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
         mask = mask
         apply_mask = False
         omask = None
-        if logger is not None:
-            logger.info(f"  >> Using provided mask.")
-        else:
-            print('     >> INFO: Using provided mask.')
+        if verbose >= 1:
+            if logger is not None:
+                logger.info(f"  >> Using provided mask.")
+            else:
+                print('     >> INFO: Using provided mask.')
 
     if apply_mask == True:
         if logger is not None:
@@ -3273,10 +3280,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     else:
         data_2D = ctn(imagename)
 
-    if logger is not None:
-        logger.info(f"  CALC >> Performing level statistics.")
-    else:
-        print('     >> CALC: Performing level statistics.')
+    if verbose >= 1:
+        if logger is not None:
+            logger.info(f"  CALC >> Performing level statistics.")
+        else:
+            print('     >> CALC: Performing level statistics.')
 
     results_final = level_statistics(img=imagename, cell_size=cell_size,
                                     mask_component=mask_component,
@@ -3288,10 +3296,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                     rms=rms,
                                     add_save_name=add_save_name,
                                     SAVE=SAVE, ext='.jpg')
-    if logger is not None:
-        logger.info(f"  CALC >> Computing image properties.")
-    else:
-        print('     >> CALC: Computing image properties.')
+    if verbose >=1:
+        if logger is not None:
+            logger.info(f"  CALC >> Computing image properties.")
+        else:
+            print('     >> CALC: Computing image properties.')
 
     levels, fluxes, agrow, \
         omask2, mask2, results_final = compute_image_properties(imagename,
@@ -3325,10 +3334,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     error_petro = False
     if do_petro == True:
         try:
-            if logger is not None:
-                logger.info(f"  CALC >> Computing Petrosian properties.")
-            else:
-                print('     >> CALC: Computing Petrosian properties.')
+            if verbose >= 1:
+                if logger is not None:
+                    logger.info(f"  CALC >> Computing Petrosian properties.")
+                else:
+                    print('     >> CALC: Computing Petrosian properties.')
             r_list, area_arr, area_beam, p, flux_arr, error_arr, results_final, cat, \
                 segm, segm_deblend, sorted_idx_list = \
                 compute_petrosian_properties(data_2D, imagename,
@@ -3348,10 +3358,10 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
             error_petro = False
         except:
             if logger is not None:
-                logger.warning(f"  CALC >> ERROR when computing Petrosian properties. "
+                logger.warning(f"  -->> ERROR when computing Petrosian properties. "
                                f"Will flag error_petro as True.")
             else:
-                print("     >> CALC: ERROR when computing Petrosian properties. Will "
+                print("     -->> ERROR when computing Petrosian properties. Will "
                       "flag error_petro as True.")
             error_petro = True
     else:
@@ -3415,7 +3425,8 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
         # idx_R50 = np.where(flux_arr < 0.5 * results_final['flux_rp'])[0][-1]
         # flux_arr[idx_R50], r_list[idx_R50], results_final['R50']
         # if mask_component is None:
-        print('--==>> Computing image statistics...')
+        if verbose >= 1:
+            print('--==>> Computing image statistics...')
         results_final = get_image_statistics(imagename=imagename,
                                              mask_component=mask_component,
                                              mask=mask,
@@ -3475,7 +3486,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
                              apply_mask=True, vmin_factor=3, vmax_factor=0.5,
                              crop=False, box_size=256,
                              SAVE=True, add_save_name='', show_figure=True,
-                             ext='.jpg',logger=None):
+                             ext='.jpg',logger=None,verbose=0):
     """
     Params
     ------
@@ -3669,23 +3680,18 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
         # print('total_flux_density_residual = ',total_flux_density_residual)
         # print('systematic_error = ', systematic_error)
         # print('(std / beam_area_) = ', (std / beam_area_))
+        if verbose >= 1:
+            print('-----------------------------------------------------------------')
+            print('Flux Density and error (based on rms of residual x area): ')
+            print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
+                  f"+/- {res_error_rms * 1000:.2f} mJy")
+            print(f"Fractional error = {(res_error_rms / results['total_flux_mask']):.2f}")
+            print('Flux Density and error (quadrature |fract_err + res_err + rms|): ')
+            print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
+                  f"+/- {total_flux_density_error * 1000:.2f} mJy")
+            print(f"Fractional error = {(total_flux_density_error / results['total_flux_mask']):.2f}")
+            print('-----------------------------------------------------------------')
 
-        print('-----------------------------------------------------------------')
-        print('Flux Density and error (based on rms of residual x area): ')
-        print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
-              f"+/- {res_error_rms * 1000:.2f} mJy")
-        print(f"Fractional error = {(res_error_rms / results['total_flux_mask']):.2f}")
-        print('Flux Density and error (quadrature total): ')
-        print(f"Flux Density = {results['total_flux_mask'] * 1000:.2f} "
-              f"+/- {total_flux_density_error * 1000:.2f} mJy")
-        print(f"Fractional error = {(total_flux_density_error / results['total_flux_mask']):.2f}")
-        print('-----------------------------------------------------------------')
-        # plt.figure()
-        # plt.imshow(mask, origin='lower')
-        # plt.figure()
-        # plt.imshow(mask*data_res, origin='lower')
-        # plt.figure()
-        # plt.imshow(mask*g, origin='lower')
         results['max_residual'] = np.max(data_res * mask)
         results['min_residual'] = np.min(data_res * mask)
         results['flux_residual'] = total_flux_density_residual
@@ -5569,15 +5575,15 @@ def do_petrofit(image, cell_size, mask_component=None, fwhm=8, kernel_size=5, np
     p_copy.eta = 0.2
     p_copy.epsilon = 2
 
-    print('eta =', p_copy.eta)
-    print('epsilon =', p_copy.epsilon)
-    print('r_half_light (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_half_light, p_copy.r_half_light))
-    print('r_total_flux (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_total_flux, p_copy.r_total_flux))
+    # print('eta =', p_copy.eta)
+    # print('epsilon =', p_copy.epsilon)
+    # print('r_half_light (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_half_light, p_copy.r_half_light))
+    # print('r_total_flux (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_total_flux, p_copy.r_total_flux))
 
 
 
-    print('R50 = ', p_copy.r_half_light)
-    print('Rp=', p_copy.r_petrosian)
+    # print('R50 = ', p_copy.r_half_light)
+    # print('Rp=', p_copy.r_petrosian)
 
     results['R50'] = p_copy.r_half_light
     results['Rp'] = p_copy.r_petrosian
@@ -5821,9 +5827,9 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
             (p.r_total_flux is np.nan):
         print('WARNING: Number of pixels for petro region is to small. Finding '
               'a good condition...')
-        print('Rlast     >> ', source_props['rlast'])
-        print('Rp        >> ', source_props['Rp'])
-        print('Rtotal    >> ', p.r_total_flux)
+        # print('Rlast     >> ', source_props['rlast'])
+        # print('Rp        >> ', source_props['Rp'])
+        # print('Rtotal    >> ', p.r_total_flux)
 
         if (mask_component is not None):
             _, area_convex_mask = convex_shape(mask_component)
@@ -5850,9 +5856,9 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
             (np.isnan(p.r_total_flux)):
         print('WARNING: Number of pixels for petro region is to small. Finding '
               'a good condition...')
-        print('Rlast     >> ', source_props['rlast'])
-        print('Rp        >> ', source_props['Rp'])
-        print('Rtotal    >> ', p.r_total_flux)
+        # print('Rlast     >> ', source_props['rlast'])
+        # print('Rp        >> ', source_props['Rp'])
+        # print('Rtotal    >> ', p.r_total_flux)
         Rlast_new = 2 * source_props['Rp'] + 3
         source_props, flux_arr, area_arr, error_arr, p, r_list = \
             petrosian_metrics(source=source,data_2D=data_component,
@@ -5873,12 +5879,12 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
     # p_copy.eta = 0.2
     # p_copy.epsilon = 2
 
-    print('eta =', p.eta)
-    print('epsilon =', p.epsilon)
-    print('r_half_light (old vs new) = {:0.2f}'.
-          format(p.r_half_light))
-    print('r_total_flux (old vs new) = {:0.2f}'.
-          format(p.r_total_flux))
+    # print('eta =', p.eta)
+    # print('epsilon =', p.epsilon)
+    # print('r_half_light (old vs new) = {:0.2f}'.
+    #       format(p.r_half_light))
+    # print('r_total_flux (old vs new) = {:0.2f}'.
+    #       format(p.r_total_flux))
 
 
     """
@@ -5893,8 +5899,8 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
         # I50 = ir[0]*0.1
     source_props['I50'] = I50
 
-    print('R50 = ', p.r_half_light)
-    print('Rp=', p.r_petrosian)
+    # print('R50 = ', p.r_half_light)
+    # print('Rp=', p.r_petrosian)
 
     source_props['R50'] = p.r_half_light
     source_props['Rp'] = p.r_petrosian
@@ -5959,7 +5965,40 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
 def compute_petro_source(data_2D, mask_component=None, global_mask=None,
                          imagename=None, i=0, source_props={},positions=None,
                          sigma_level=3, bkg_sub=False,
-                         vmin=1, plot=False, deblend=False, ):
+                         vmin=1, plot=False, deblend=False):
+    """
+    Perform petrosian photometry of a source. It can be used for the full structure of the source
+    or for individual regions (incl. deblended).
+
+    Parameters:
+    -----------
+    data_2D: 2D numpy array
+        Image data.
+    mask_component: 2D numpy array
+        Mask of a given region (e.g. used when analysing multiple distinc regions of a source.
+    global_mask: 2D numpy array
+        Mask of the full source.
+    imagename: str
+        Name of the image. Used when one wants to point the original .fits header (wcs) of the
+        image where the data_2D comes from.
+    i: int
+        Index of the component (when analysing multiple regions).
+    source_props: dict
+        Dictionary to store the properties of the source.
+    positions: list
+        List of positions of the sources.
+    sigma_level: float
+        Level of the sigma to be used for the thresholding.
+    bkg_sub: bool
+        If True, subtract the background.
+    vmin: float
+        Minimum value of the image.
+    plot: bool
+        If True, plot the results.
+    deblend: bool
+        If True, deblend the sources.
+    """
+
     # if mask:
     if imagename is not None:
         beam_area_ = beam_area2(imagename, cellsize=None)
@@ -6000,7 +6039,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
     """
     Check if Rp is larger than last element (rlast) of the R_list. If yes,
     we need to run petro_params again, with a larger rlast, at least r_last>=Rp.
-    If not, R50 will be np.nan as well Snu.
+    If not, R50 will be np.nan.
     """
     if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
             or (np.isnan(p.r_total_flux)):
@@ -6110,6 +6149,8 @@ def petro_params(source, data_2D, segm, mask_source, positions=None,
         if plot == True:
             plt.figure()
             p.plot(plot_r=plot)
+            plt.figure()
+            p.plot_cog()
         #     print('    R50 =', R50)
         #     print('     Rp =', Rp)
 
@@ -6117,7 +6158,7 @@ def petro_params(source, data_2D, segm, mask_source, positions=None,
     if eta_value is not None:
         from copy import copy
         p_new = copy(p)
-        p_new.eta = 0.25
+        p_new.eta = eta_value
         R50 = p_new.r_half_light
         R20 = p_new.fraction_flux_to_r(fraction=0.2)
         R80 = p_new.fraction_flux_to_r(fraction=0.8)
@@ -6128,6 +6169,7 @@ def petro_params(source, data_2D, segm, mask_source, positions=None,
         if plot == True:
             plt.figure()
             p_new.plot(plot_r=plot)
+            p_new.plot_cog()
         #     print('    R50 =', R50)
         #     print('     Rp =', Rp)
 
@@ -6289,8 +6331,6 @@ def sep_background(imagename,mask=None,apply_mask=False,show_map=False,
     bkg : sep.Background
         Background object.
     """
-    import sep
-    import fitsio
     '''
     If using astropy.io.fits, you get an error (see bug on sep`s page).
     '''
@@ -6388,11 +6428,6 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     minarea_factor : float
 
     """
-    import sep
-    import fitsio
-    import matplotlib.pyplot as plt
-    from matplotlib.text import Text
-    from matplotlib import rcParams
 
     # filter_kernel_5x5 = np.array([
     #     [1, 1, 1, 1, 1],
@@ -6419,8 +6454,8 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
 
     print('+++++++++++++++++++++++')
     print('SEP Filter sizes:')
-    print('    bw,bh=(', bw, bh,')')
-    print('    fw,fh=(', fw, fh,')')
+    print('    bw,bh=(', int(bw), int(bh),')')
+    print('    fw,fh=(', int(fw), int(fh),')')
     print('+++++++++++++++++++++++')
     bkg = sep.Background(data_2D, mask=mask, bw=bw, bh=bh, fw=fw, fh=fh)
     # print(bkg.globalback)
@@ -6475,7 +6510,7 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     masks_regions = []
 
     y, x = np.indices(data_2D.shape[:2])
-    print('INFO: Total number of Sources/Structures (deblended) = ', len(objects))
+    print('++==>> INFO: Total number of Sources/Structures (deblended) = ', len(objects))
     for i in range(len(objects)):
         e = Ellipse(xy=(objects['x'][i], objects['y'][i]),
                     width=2 * ell_size_factor * objects['a'][i],
@@ -7233,17 +7268,16 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             kernel.
                             """
                             I50_max = I50 * 500
-                            I50_min = I50 * 0.01
+                            I50_min = I50 * 0.1
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=I50, min=I50_min, max=I50_max)
                         if param == 'Rn':
                             R50 = init_constraints['c' + jj + '_R50']
-                            dR = R50 * 0.25
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
                             R50_max = 1.5*init_constraints['c' + jj + '_R50']
-                            R50_min = R50 * 0.05 #should be small.
+                            R50_min = R50 * 0.2 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=R50, min=R50_min, max=R50_max)
@@ -7513,7 +7547,7 @@ def add_extra_component(petro_properties, copy_from_id):
             petro_properties_copy[
                 'c' + str(copy_from_id) + '_' + unique_list[k]] * factor
         if unique_list[k] == 'I50':
-            # divide the I50 value by a factor, e.g., 1
+            # multiply the I50 value by a factor, e.g., 0.2
             factor = 0.1
             petro_properties_copy[
                 'c' + str(new_comp_id) + '_' + unique_list[k]] = \
@@ -7537,11 +7571,6 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
 
 
     """
-    import sep
-    import fitsio
-    import matplotlib.pyplot as plt
-    from matplotlib.text import Text
-    from matplotlib import rcParams
 
     data_2D = ctn(imagename)
     if len(data_2D.shape) == 4:
@@ -7573,41 +7602,28 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
         plt.close()
 
     data_sub = data_2D - bkg_image
+
     if mask is not None:
         data_sub = data_sub * mask
     else:
         data_sub = data_sub
     # else:
     #     mask = None
-    if segmentation_map == True:
-        # print(data_sub)
-        npixels = int(minarea * minarea_factor)
-        print(' INFO: Uinsg min number of pixels of :', npixels)
-        cat, segm, seg_maps = make_catalog(image=data_2D,
-                                           threshold=sigma * s,
-                                           deblend=True, contrast=deblend_cont,
-                                           nlevels=deblend_nthresh,
-                                           npixels=npixels,
-                                           plot=True, vmin=1.0 * s)
-        indices = order_cat(cat, key='segment_flux', reverse=True)
-        masks_deblended = []
-        for k in range(len(indices)):
-            print(k)
-            masks_deblended.append(seg_maps == seg_maps.labels[indices[k]])
+    # print(data_sub)
+    npixels = int(minarea * minarea_factor)
+    # print(' INFO: Uinsg min number of pixels of :', npixels)
+    cat, segm, seg_maps = make_catalog(image=data_sub,
+                                       threshold=sigma * s,
+                                       deblend=True, contrast=deblend_cont,
+                                       nlevels=deblend_nthresh,
+                                       npixels=npixels,
+                                       plot=show_detection, vmin=1.0 * s)
+    indices = order_cat(cat, key='segment_flux', reverse=True)
+    masks_deblended = []
+    for k in range(len(indices)):
+        # print(k)
+        masks_deblended.append(seg_maps == seg_maps.labels[indices[k]])
 
-    else:
-        npixels = int(minarea * minarea_factor)
-        cat, segm, seg_maps = make_catalog(image=data_sub,
-                                           threshold=sigma * s,
-                                           deblend=True, contrast=deblend_cont,
-                                           nlevels=deblend_nthresh,
-                                           npixels=npixels,
-                                           plot=True, vmin=1.0 * s)
-        indices = order_cat(cat, key='segment_flux', reverse=True)
-        masks_deblended = []
-        for k in range(len(indices)):
-            print(k)
-            masks_deblended.append(seg_maps == seg_maps.labels[indices[k]])
 
     # len(objects)
     from matplotlib.patches import Ellipse
@@ -7714,10 +7730,10 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 obs_type = 'radio',algorithm='SEP',
                 show_petro_plots=False):
     """
-    Prepare the imaging data to be modelled.
+    Prepare the imaging data to be modeled.
 
-    This function runs a source extraction, compute basic petrosian properties
-    from the data for each detected source as well shape morphology
+    This function runs a source extraction, computes basic petrosian properties
+    from the data for each detected source as well as shape morphology
     (e.g. position angle, axis ration, effective intensity and radii).
     """
     crop_image = ref_image
@@ -7829,7 +7845,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
         # psf_size = dilation_size*6
         # psf_size = (2 * psf_size) // 2 +1
         psf_size = int(data_2D.shape[0])
-        print('++==>> PSF IMAGE SIZE is', psf_size)
+        # print('++==>> PSF IMAGE SIZE is', psf_size)
         # creates a psf from the beam shape.
         psf_name = tcreate_beam_psf(crop_image, size=(
             psf_size, psf_size))  # ,app_name='_'+str(psf_size)+'x'+str(psf_size)+'')
@@ -8798,7 +8814,8 @@ def compute_model_properties(model_list,  # the model list of each component
                              residualname,
                              rms,  # the native rms from the data itself.
                              mask_region = None,
-                             z=None):
+                             z=None,
+                             verbose=0):
     """
     Helper function function to calculate model component properties.
 
@@ -8814,30 +8831,36 @@ def compute_model_properties(model_list,  # the model list of each component
     #     rms_model = rms/len(model_list)
     #     dilation_size = 2
     dilation_size = get_dilation_size(model_list[0])
+    if verbose >= 1:
+        show_figure = True
+    else:
+        show_figure = False
+
     for model_component in model_list:
         try:
             print('Computing properties of model component: ', os.path.basename(model_component))
             model_component_data = ctn(model_component)
             rms_model = mad_std(model_component_data)
-            print(' --==>> STD RMS of model component: ', rms_model)
-            print(' --==>> STD RMS of model bkg: ', rms)
-            print(' --==>> Ratio rms_model/rms_bkg: ', rms_model/rms)
+            if verbose >= 1:
+                print(' --==>> STD RMS of model component: ', rms_model)
+                print(' --==>> STD RMS of model bkg: ', rms)
+                print(' --==>> Ratio rms_model/rms_bkg: ', rms_model/rms)
 
             _, mask_component = mask_dilation(model_component,
                                             rms=rms,
                                             sigma=7.0, dilation_size=dilation_size,
-                                            iterations=2, PLOT=True)
+                                            iterations=2, PLOT=show_figure)
 
             properties, _, _ = measures(imagename=model_component,
                                             residualname=residualname,
                                             z=z,
                                             sigma_mask=7.0,
-                                            last_level = 1.5,
+                                            last_level = 2.0,
                                             vmin_factor=3.0,
                                             dilation_size=dilation_size,
                                             mask = mask_region,
                                             mask_component=mask_component,
-                                            show_figure = True,
+                                            show_figure = show_figure,
                                             apply_mask=False,
                                             # data_2D=mlibs.ctn(model_component),
                                             rms=rms)
@@ -9486,7 +9509,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       fix_x0_y0 = [True, True, True, True, True, True, True, True],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
                       dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None,
-                      self_bkg=False, bkg_rms_map=None):
+                      self_bkg=False, bkg_rms_map=None,verbose=0):
     """
     Support function to run the image fitting to a image or to a list of images.
 
@@ -9531,9 +9554,10 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         res_2D = ctn(crop_residual)
         rms_std_data = mad_std(data_2D)
         rms_std_res = mad_std(res_2D)
-        print('rms data = ', rms_std_data * 1e6,
-                '; rms res = ', rms_std_res * 1e6,
-                '; ratio = ', rms_std_res / rms_std_data)
+        if verbose >= 2:
+            print('rms data = ', rms_std_data * 1e6,
+                    '; rms res = ', rms_std_res * 1e6,
+                    '; ratio = ', rms_std_res / rms_std_data)
 
         sigma_level = 3
         vmin = 3
@@ -9551,10 +9575,12 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         psf_beam_zise = int(get_beam_size_px(crop_image)[0])
         psf_size = int(psf_beam_zise * 10)
         # psf_size = int(data_2D.shape[0])
-        print('++==>> PSF BEAM SIZE is >=> ', psf_beam_zise)
+        if verbose >= 2:
+            print('++==>> PSF BEAM SIZE is >=> ', psf_beam_zise)
+            print('++==>> PSF IMAGE SIZE is ', psf_size)
 
         # psf_size = int(ctn(crop_image).shape[0])
-        print('++==>> PSF IMAGE SIZE is ', psf_size)
+
         # creates a psf from the beam shape.
         psf_name = tcreate_beam_psf(crop_image, size=(psf_size, psf_size),
                                     aspect=aspect,
@@ -9586,7 +9612,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             init_params=init_params, final_params=final_params,
                             save_name_append=save_name_append,logger=logger)
 
-        print(result_mini.params)
+        # print(result_mini.params)
         models.append(model_dict)
         lmfit_results.append(result_mini.params)
         lmfit_results_1st_pass.append(result_1.params)
@@ -9604,14 +9630,16 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                                            which_model='deconv',
                                                            residualname=crop_residual,
                                                            rms=rms_bkg_deconv,
-                                                           mask_region = mask_region
+                                                           mask_region = mask_region,
+                                                           verbose=verbose
                                                            )
         rms_bkg_conv = mad_std(ctn(bkg_conv))
         conv_model_properties = compute_model_properties(model_list=image_results_conv[:-2],
                                                          which_model='conv',
                                                          residualname=crop_residual,
                                                          rms=rms_bkg_conv,
-                                                         mask_region = mask_region
+                                                         mask_region = mask_region,
+                                                         verbose=verbose
                                                          )
         list_individual_deconv_props.append(deconv_model_properties)
         list_individual_conv_props.append(conv_model_properties)
@@ -9630,8 +9658,8 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                           header=True, index=False)
 
         # comp_ids = []
-        print('*************************************')
-        print(class_results)
+        # print('*************************************')
+        # print(class_results)
         if comp_ids == []:
             ID = 1
             for key in class_results.keys():
@@ -9641,7 +9669,6 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         if comp_ids == []:
             comp_ids = ['1']
 
-        print(comp_ids)
         all_comps_ids = np.arange(1, n_components + 1).astype('str')
         mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
         ext_ids = list(all_comps_ids[~mask_compact_ids])
@@ -9713,6 +9740,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                                 rms=rms_std_res,
                                                 nfunctions=nfunctions,
                                                 special_name=special_name)
+
         plot_fit_results(crop_image, model_dict, image_results_conv,
                             sources_photometries,
                             bkg_image = ctn(bkg_conv),
@@ -9721,7 +9749,16 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # plt.xlim(0,3)
         plot_slices(ctn(crop_image), ctn(crop_residual), model_dict,
                     image_results_conv[-2], sources_photometries)
+        
         parameter_results = result_mini.params.valuesdict().copy()
+
+        try:
+            for param in result_mini.params.valuesdict().keys():
+                parameter_results[param+'_err'] = result_mini.params[param].stderr
+        except:
+            pass
+
+        
         parameter_results['#imagename'] = os.path.basename(crop_image)
         parameter_results['residualname'] = os.path.basename(crop_residual)
         parameter_results['beam_size_px'] = psf_beam_zise
@@ -9745,6 +9782,17 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # else:
         #     rms_model = _rms_model
 
+        if verbose >= 1:
+            do_PLOT = True
+            PLOT = True
+            SAVE = True
+            show_figure = True
+        else:
+            do_PLOT = False
+            PLOT = False
+            SAVE = False
+            show_figure = False
+
         rms_model = mad_std(compact_model)
         rms_compact_conv = rms_bkg_conv # * len(comp_ids)
         _, mask_region_conv_comp = mask_dilation(compact_model,
@@ -9753,7 +9801,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                         sigma=7.0,
                                         dilation_size=get_dilation_size(crop_image),
                                         # dilation_size=2,
-                                        iterations=2, PLOT=True,
+                                        iterations=2, PLOT=PLOT,
                                         special_name='compact conv')
 
 
@@ -9775,12 +9823,12 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                      results_final={},
                      # rms=rms_model,
                      rms=rms_compact_conv,
-                     apply_mask=False, do_PLOT=True, SAVE=True,
+                     apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
                      do_petro = True,
-                     show_figure=True,
+                     show_figure=show_figure,
                      mask_component=mask_region_conv_comp,
                      mask=mask_region, do_measurements='partial',
-                     add_save_name='_compact_conv')
+                     add_save_name='_compact_conv',verbose=verbose)
 
         list_results_compact_conv_morpho.append(results_compact_conv_morpho)
 
@@ -9802,7 +9850,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                         sigma=7.0,
                                         dilation_size=get_dilation_size(crop_image),
                                         # dilation_size=2,
-                                        iterations=2, PLOT=True,
+                                        iterations=2, PLOT=PLOT,
                                         special_name='compact deconv')
 
         # if np.sum(mask * mask_region_deconv_comp) < np.sum(mask_region_deconv_comp):
@@ -9821,9 +9869,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                      results_final={},
                      # rms=rms_model,
                      rms=rms_compact_deconv,
-                     apply_mask=False, do_PLOT=True, SAVE=True,
-                     show_figure=True,
-                     do_petro=True,
+                     apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
+                     do_petro = True,
+                     show_figure=show_figure,
                      mask_component=mask_region_deconv_comp,
                      mask=mask_region, do_measurements='partial',
                      add_save_name='_compact_deconv')
@@ -9845,9 +9893,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                          dilation_size=None,
                          results_final={},
                          rms=rms_std_res,
-                         apply_mask=False, do_PLOT=True, SAVE=True,
-                         show_figure=True,
+                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
                          do_petro=False,
+                         show_figure=show_figure,
                          # mask_component=mask_region_deconv_comp,
                          mask=mask, do_measurements='partial',
                          add_save_name='_extended_conv')
@@ -9868,7 +9916,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                 sigma=7.0,
                                 dilation_size=get_dilation_size(crop_image),
                                 # dilation_size=2,
-                                iterations=2, PLOT=True,
+                                iterations=2, PLOT=PLOT,
                                 special_name='extended conv')
             # print('++++ Computing properties of convolved extended model.')
 
@@ -9887,9 +9935,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                          results_final={},
                          # rms=rms_model,
                          rms=rms_ext_conv,
-                         apply_mask=False, do_PLOT=True, SAVE=True,
-                         show_figure=True,
+                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
                          do_petro=True,
+                         show_figure=show_figure,
                          mask_component=mask_region_conv_ext,
                          mask=mask_region, do_measurements='partial',
                          add_save_name='_extended_conv')
@@ -9911,7 +9959,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                                 sigma=7.0,
                                 dilation_size=get_dilation_size(crop_image),
                                 # dilation_size=2,
-                                iterations=2, PLOT=True,
+                                iterations=2, PLOT=PLOT,
                                 special_name='extended deconv')
 
             # if np.sum(mask * mask_region_deconv_ext) < np.sum(mask_region_deconv_ext):
@@ -9930,9 +9978,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                          results_final={},
                          # rms=rms_model,
                          rms=rms_ext_deconv,
-                         apply_mask=False, do_PLOT=True, SAVE=True,
-                         show_figure=True,
+                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
                          do_petro=True,
+                         show_figure=show_figure,
                          mask_component=mask_region_deconv_ext,
                          mask=mask_region, do_measurements='partial',
                          add_save_name='_extended_deconv')
@@ -11737,14 +11785,14 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
     ax = fig.add_subplot(3, 3, 2)
     # ax.yaxis.set_ticks([])
     ax = eimshow(compact,ax=ax,rms=rms,
-                 plot_title='Compact Emission',max_factor=data_2D.max(),
+                 plot_title='Compact Emission',
                  vmax_factor=vmax_factor,vmin_factor=vmin_factor)
     # ax.yaxis.set_ticks([])
     ax.axis('off')
 
     ax = fig.add_subplot(3, 3, 3)
     # ax.yaxis.set_ticks([])
-    ax = eimshow(extended,ax=ax,rms=rms,max_factor=data_2D.max(),
+    ax = eimshow(extended,ax=ax,rms=rms,
                  plot_title='Diffuse Emission',vmax_factor=vmax_factor,
                  vmin_factor=vmin_factor)
     # ax.yaxis.set_ticks([])
@@ -11815,10 +11863,10 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
         beam_area_px = beam_area2(imagename)
     except:
         beam_area_px = 1
-    print('Flux on compact (self rms) = ',
-          1000*np.sum(compact*mask_model_rms_self_compact)/beam_area_px)
-    print('Flux on compact (data rms) = ',
-          1000 * np.sum(compact * mask_model_rms_image_compact) / beam_area_px)
+    # print('Flux on compact (self rms) = ',
+    #       1000*np.sum(compact*mask_model_rms_self_compact)/beam_area_px)
+    # print('Flux on compact (data rms) = ',
+    #       1000 * np.sum(compact * mask_model_rms_image_compact) / beam_area_px)
     flux_density_compact = 1000*np.sum(
         compact*mask_model_rms_image_compact)/beam_area_px
     if nfunctions == 1:
@@ -11828,9 +11876,9 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
         flux_density_extended_model = 1000 * np.sum(
             extended_model * mask_data) / beam_area_px
 
-    flux_density_ext = 1000*total_flux(extended,imagename,BA=beam_area_px,
+    flux_density_ext_old = 1000*total_flux(extended,imagename,BA=beam_area_px,
                                        mask = mask_model_rms_image_extended)
-    flux_density_ext2 = 1000*np.sum(
+    flux_density_ext = 1000*np.sum(
         extended*mask_data)/beam_area_px
 
     flux_data = 1000*total_flux(data_2D,imagename,BA=beam_area_px,
@@ -11844,29 +11892,29 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
         flux_res = flux_data - (
                     flux_density_extended_model + flux_density_compact)
 
-    print('Flux on extended (self rms) = ',flux_density_ext_self_rms)
-    print('Flux on extended (data rms) = ',flux_density_ext)
-    print('Flux on extended2 (data rms) = ', flux_density_ext2)
-    print('Flux on extended model (data rms) = ', flux_density_extended_model)
-    print('Flux on data = ', flux_data)
-    print('Flux on residual = ', flux_res)
+    # print('Flux on extended (self rms) = ',flux_density_ext_self_rms)
+    # print('Flux on extended (data rms) = ',flux_density_ext_old)
+    # print('Flux on extended2 (data rms) = ', flux_density_ext)
+    # print('Flux on extended model (data rms) = ', flux_density_extended_model)
+    # print('Flux on data = ', flux_data)
+    # print('Flux on residual = ', flux_res)
 
     decomp_results['flux_data'] = flux_data
+    decomp_results['flux_density_ext_old'] = flux_density_ext_old
     decomp_results['flux_density_ext'] = flux_density_ext
-    decomp_results['flux_density_ext2'] = flux_density_ext2
     decomp_results['flux_density_ext_self_rms'] = flux_density_ext_self_rms
     decomp_results['flux_density_extended_model'] = flux_density_extended_model
     decomp_results['flux_density_compact'] = flux_density_compact
     decomp_results['flux_density_model'] = (flux_density_compact +
                                             flux_density_extended_model)
-    decomp_results['flux_res'] = flux_res
+    decomp_results['flux_density_res'] = flux_res
 
 
 
     # print('r_half_light (old vs new) = {:0.2f} vs {:0.2f}'.format(p.r_half_light, p_copy.r_half_light))
     ax.annotate(r"$S_\nu^{\rm core-comp}/S_\nu^{\rm total}=$"+'{:0.2f}'.format(flux_density_compact/flux_data),
                 (0.33, 0.32), xycoords='figure fraction', fontsize=18)
-    ax.annotate(r"$S_\nu^{\rm ext}/S_\nu^{\rm total}\ \ \ =$"+'{:0.2f}'.format(flux_density_ext2/flux_data),
+    ax.annotate(r"$S_\nu^{\rm ext}/S_\nu^{\rm total}\ \ \ =$"+'{:0.2f}'.format(flux_density_ext/flux_data),
                 (0.33, 0.29), xycoords='figure fraction', fontsize=18)
     ax.annotate(r"$S_\nu^{\rm ext \ model}/S_\nu^{\rm total}\ \ \ =$"+'{:0.2f}'.format(flux_density_extended_model/flux_data),
                 (0.33, 0.26), xycoords='figure fraction', fontsize=18)
@@ -12657,22 +12705,76 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             vmax=None,
             vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
             cmap_cont='terrain',
-            rms=None, max_factor=None, plot_title=None, apply_mask=False,
+            rms=None, plot_title=None, apply_mask=False,
             add_contours=True, extent=None, projection='offset', add_beam=False,
             vmin_factor=3, plot_colorbar=True, figsize=(5, 5), aspect=None,
             show_axis='on',flux_units='Jy',
             source_distance=None, scalebar_length=250 * u.pc,
             ax=None, save_name=None, special_name=''):
     """
-    Plots an image with a colorbar and contours.
+    Customised imshow function for plotting images. It includes the option to
+    automatically add contour levels, custom projections, colorbars, scalebars, etc.
 
     Parameters
     ----------
-    imagename : str
-        Image file name of the fits image.
+    imagename : str, np.ndarray
+        Path to the image.
     crop : bool, optional
         Crop the image to the box_size. The default is False.
-    box_size : int, tuple optional
+    box_size : int, optional
+        Size of the box to crop the image. The default is 128.
+    center : tuple, optional
+        Center of the image. The default is None.
+    with_wcs : bool, optional
+        Use the wcs information of the image. The default is True.
+    vmax : float, optional
+        Maximum value of the colormap. The default is None.
+    vmax_factor : float, optional
+        Factor to multiply the maximum value of the image to set the
+        maximum value of the colormap. The default is 0.5.
+    neg_levels : np.ndarray, optional
+        Negative levels for the contours. The default is np.asarray([-3]).
+    CM : str, optional
+        Colormap. The default is 'magma_r'.
+    cmap_cont : str, optional
+        Colormap for the contours. The default is 'terrain'.
+    rms : float, optional
+        RMS of the image. The default is None.
+    plot_title : str, optional
+        Title of the plot. The default is None.
+    apply_mask : bool, optional
+        Apply a mask to the image. The default is False.
+    add_contours : bool, optional
+        Add contours to the image. The default is True.
+    extent : list, optional
+        Extent of the image. The default is None.
+    projection : str, optional
+        Projection of the image. The default is 'offset'.
+    add_beam : bool, optional
+        Add the beam to the image. The default is False.
+    vmin_factor : int, optional
+        Factor to multiply the standard deviation of the image to set the
+        minimum value of the colormap. The default is 3.
+    plot_colorbar : bool, optional
+        Plot the colorbar. The default is True.
+    figsize : tuple, optional
+        Size of the figure. The default is (5, 5).
+    aspect : str, optional
+        Aspect of the image. The default is None.
+    show_axis : str, optional
+        Show the axis. The default is 'on'.
+    flux_units : str, optional
+        Units of the flux. The default is 'Jy'.
+    source_distance : float, optional
+        Distance to the source. The default is None.
+    scalebar_length : float, optional
+        Length of the scalebar. The default is 250 * u.pc.
+    ax : matplotlib.pyplot.axis, optional
+        Axis of the plot. The default is None.
+    save_name : str, optional
+        Name of the output file. The default is None.
+    special_name : str, optional
+        Special name for the output file. The default is ''.
     """
     try:
         import cmasher as cmr

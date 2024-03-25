@@ -4,7 +4,7 @@
                                               _||||.           .*+;].,#_
                                          _|||*_                _    .@@@#@.
                                    _|||||_               .@##@#| _||_
-   Radio Morphen              |****_                   .@.,/\..@_.
+       Morphen                |****_                   .@.,/\..@_.
                              #///#+++*|    .       .@@@;#.,.\@.
                               .||__|**|||||*||*+@#];_.  ;,;_
  Geferson Lucatelli                            +\*_.__|**#
@@ -17,13 +17,13 @@
                                                   .. .       . .. .|.|_ ..
 
 """
-__version__ = '0.3.1b'
-__codiname__ = 'Pelicoto'
+__version__ = '0.3.1alpha-1'
+__codename__ = 'Pelicoto'
 __author__ = 'Geferson Lucatelli'
 __coauthors__ = ('Javier Moldon, Rob Beswick, '
                   'Fabricio Ferrari, Leonardo Ferreira')
 __email__ = 'geferson.lucatelli@postgrad.manchester.ac.uk'
-__date__ = '2023 08 31'
+__date__ = '2024 03 25'
 # print(__doc__)
 
 
@@ -33,16 +33,15 @@ import sys
 import matplotlib as mpl
 import logging
 from matplotlib import use as mpluse
-
 # sys.path.append("/mirror/scratch/lucatelli/app/miniconda3/envs/casa6/lib/python3.8/site-packages/")
 sys.path.append('libs/')
 sys.path.append('analysis_scripts/')
 # import sys
-
 import libs as mlibs
 import analysisUtils as au
 from analysisUtils import *
 import coloredlogs
+
 class config():
     """
     Configuration Class to specify basic parameters.
@@ -81,7 +80,6 @@ class config():
         pass
 
     reset_rc_params()
-    
     sigma=3
     mask_iterations = 1
     show_plots = True
@@ -569,7 +567,8 @@ class sersic_multifit_radio():
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
                  self_bkg = False, bkg_rms_map = None,
-                 method2='least_squares',z = 0.01):
+                 method2='least_squares',z = 0.01,
+                 verbose=0):
         """
         Parameters
         ----------
@@ -639,6 +638,7 @@ class sersic_multifit_radio():
         self.sigma = sigma
         self.self_bkg = self_bkg
         self.bkg_rms_map = bkg_rms_map
+        self.verbose = verbose
 
         
         if fix_n is None:
@@ -696,7 +696,7 @@ class sersic_multifit_radio():
                                     dr_fix=self.dr_fix,
                                     fix_x0_y0 = self.fix_x0_y0,
                                     sigma=self.sigma,
-                                    logger=_logging_.logger)
+                                    logger=_logging_.logger,verbose=self.verbose)
         # compute sizes
         try:
             self.pix_to_pc = \
@@ -738,6 +738,7 @@ class sersic_multifit_radio():
 
         # Rn main core-compact/unresolved component (ID1)
         self.Rn_comp = self.results_fit['f1_Rn'] * self.pix_to_pc
+        # self.Rn_comp_err = self.results_fit['f1_Rn'][0].stderr * self.pix_to_pc
 
         mlibs.print_logger_header(title="Core-Compact Component Sizes",
                             logger=_logging_.logger)
@@ -797,7 +798,7 @@ class sersic_multifit_general():
                  fix_n = None,
                  fix_value_n = None, dr_fix = None,
                  constrained=True, self_bkg=False,
-                 sigma=6.0, use_mask_for_fit=False,
+                 sigma=6.0, use_mask_for_fit=False,mask_for_fit=None,
                  bkg_rms_map = None,
                  loss='cauchy', tr_solver='exact',
                  regularize=True, f_scale=1.0, ftol=1e-10,
@@ -811,7 +812,10 @@ class sersic_multifit_general():
         self.input_data = input_data
         self.SE = SE
         if use_mask_for_fit == True:
-            self.mask_fit = self.SE.mask
+            if mask_for_fit is None:
+                self.mask_fit = self.SE.mask
+            else:
+                self.mask_fit = mask_for_fit
         else:
             self.mask_fit = None
         self.comp_ids = comp_ids
@@ -881,6 +885,7 @@ class sersic_multifit_general():
                            self_bkg=self.self_bkg,
                            rms_map = self.rms_map,
                            which_residual=self.which_residual,
+                           mask_region = self.mask_fit,
                            # rms_map=self.SE.bkg,
                            # rms_map=None,
                            fix_n=self.fix_n,
@@ -1047,9 +1052,9 @@ class radio_star_formation():
         """
 
         self.SFR_ext, self.SFR_ext_err = \
-            mlibs.compute_SFR_NT(flux=self.SMFR.results_fit['flux_density_extended_model'][0] /
+            mlibs.compute_SFR_NT(flux=self.SMFR.results_fit['flux_density_ext'][0] /
                                       1000,
-                                 flux_error=self.SMFR.results_fit['flux_res'][0] / 1000,
+                                 flux_error=self.SMFR.results_fit['flux_density_res'][0] / 1000,
                                  frequency=self.frequency, z=self.z,
                                  alpha=self.alpha, alpha_NT=self.alpha_NT,
                                  calibration_kind=self.calibration_kind,
