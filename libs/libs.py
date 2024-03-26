@@ -5184,9 +5184,26 @@ def T_B(theta_maj, theta_min, freq, I):
 
 def Tb_source(Snu,freq,theta1,theta2,z):
     """
-    Compute the brightness temperature, provided the deconvolved model having
-    semi-major and semi-minor axes theta1 and theta2.
-
+    Compute the brightness temperature, provided the deconvolved model parameters
+    having semi-major and semi-minor axes theta1 and theta2.
+    
+    Parameters
+    ----------
+    Snu : float
+        The flux density at the frequency nu.
+    freq : float
+        The frequency at which the flux density is measured.
+    theta1 : float
+        The deconvolved FWHM axis of the source.
+    theta2 : float
+        The deconvolved FWHM axis of the source.
+    z : float
+        The redshift of the source.
+    
+    Returns
+    -------
+    Tb : float
+        The brightness temperature of the source divided by 1e5.
     """
     const = 1.8e9 * (1+z)*1000
     return(((const * Snu)/(freq*freq*(theta1*1000)*(theta2*1000)))/1e5)
@@ -7267,8 +7284,8 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             deconvolved signal from a convolved signal with a Gaussian 
                             kernel.
                             """
-                            I50_max = I50 * 500
-                            I50_min = I50 * 0.1
+                            I50_max = I50 * 100
+                            I50_min = I50 * 0.2
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=I50, min=I50_min, max=I50_max)
@@ -7276,7 +7293,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             R50 = init_constraints['c' + jj + '_R50']
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
-                            R50_max = 1.5*init_constraints['c' + jj + '_R50']
+                            R50_max = R50 * 1.5
                             R50_min = R50 * 0.2 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -8109,21 +8126,16 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 background_map=rms_map
                 background = background_map.copy()
         else:
-            FlatSky_level = mad_std(data_2D)
             if self_bkg == True:
-                if rms_map is not None:
-                    if logger is not None:
-                        logger.debug(f" ==> Using provided RMS map. ")
-                    background = rms_map
-                else:
-                    if logger is not None:
-                        logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
-                    background_map = sep_background(imagename)
-                    background = shuffle_2D(background_map.back())
+                if logger is not None:
+                    logger.warning(f" ==> No residual/background provided. Using image bkg map... ")
+                background_map = sep_background(imagename)
+                background = shuffle_2D(background_map.back())
             else:
-                background = 0
                 if logger is not None:
                     logger.warning(f" ==> Using only flat sky for rms bkg.")
+                FlatSky_level = mad_std(data_2D)
+                background = FlatSky_level
 
     size = data_2D.shape
     if convolution_mode == 'GPU':
@@ -11619,7 +11631,8 @@ def plot_slices(data_2D, residual_2D, model_dict, image_results_conv=None,
 
 def plot_fit_results(imagename, model_dict, image_results_conv,
                      sources_photometies,bkg_image=None,vmax_factor=0.1,data_2D_=None,
-                     vmin_factor=3, show_figure=True,crop=False,box_size=100):
+                     vmin_factor=3, obs_type = 'radio',
+                     show_figure=True,crop=False,box_size=100):
     if data_2D_ is not None:
         data_2D = data_2D_
     else:
@@ -11630,7 +11643,7 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
                reference_image=imagename,
                NAME=image_results_conv[-2].replace('.fits',
                                                    '_data_model_res'),
-               crop=crop, vmin_factor=vmin_factor,
+               crop=crop, vmin_factor=vmin_factor,obs_type = obs_type,
                box_size=box_size)
 
 
@@ -11694,7 +11707,10 @@ def plot_fit_results(imagename, model_dict, image_results_conv,
              linewidth=4)
     plt.semilogy()
     plt.xlabel(r'Projected Radius $R$ [arcsec]')
-    plt.ylabel(r'Radial Intensity $I(R)$ [Jy/beam]')
+    if obs_type == 'radio':
+        plt.ylabel(r'Radial Intensity $I(R)$ [Jy/beam]')
+    else:
+        plt.ylabel(r'Radial Intensity $I(R)$')
     plt.legend(fontsize=11)
     plt.ylim(1e-7, -0.05 * np.log(ir[0]))
     # plt.xlim(0,3.0)
@@ -11752,6 +11768,7 @@ def total_flux_faster(data2D,mask):
 def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
                         vmax_factor=0.5,vmin_factor=3,rms=None,
                         figsize=(13,13),nfunctions=None,
+                        obs_type = 'radio',
                         special_name=''):
 
     decomp_results = {}
@@ -11863,27 +11880,31 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
         beam_area_px = beam_area2(imagename)
     except:
         beam_area_px = 1
+    if obs_type == 'radio':
+        flux_scale_factor = 1000
+    else:
+        flux_scale_factor = 1
     # print('Flux on compact (self rms) = ',
     #       1000*np.sum(compact*mask_model_rms_self_compact)/beam_area_px)
     # print('Flux on compact (data rms) = ',
     #       1000 * np.sum(compact * mask_model_rms_image_compact) / beam_area_px)
-    flux_density_compact = 1000*np.sum(
+    flux_density_compact = flux_scale_factor*np.sum(
         compact*mask_model_rms_image_compact)/beam_area_px
     if nfunctions == 1:
-        flux_density_extended_model = 1000 * np.sum(
+        flux_density_extended_model = flux_scale_factor * np.sum(
             residual_modeling * mask_data) / beam_area_px
     else:
-        flux_density_extended_model = 1000 * np.sum(
+        flux_density_extended_model = flux_scale_factor * np.sum(
             extended_model * mask_data) / beam_area_px
 
-    flux_density_ext_old = 1000*total_flux(extended,imagename,BA=beam_area_px,
+    flux_density_ext_old = flux_scale_factor*total_flux(extended,imagename,BA=beam_area_px,
                                        mask = mask_model_rms_image_extended)
-    flux_density_ext = 1000*np.sum(
+    flux_density_ext = flux_scale_factor*np.sum(
         extended*mask_data)/beam_area_px
 
-    flux_data = 1000*total_flux(data_2D,imagename,BA=beam_area_px,
+    flux_data = flux_scale_factor*total_flux(data_2D,imagename,BA=beam_area_px,
                                        mask = mask_data)
-    flux_density_ext_self_rms = 1000*total_flux(extended,imagename,BA=beam_area_px,
+    flux_density_ext_self_rms = flux_scale_factor*total_flux(extended,imagename,BA=beam_area_px,
                                        mask = mask_model_rms_self_extended)
 
     if nfunctions==1:
@@ -12358,6 +12379,7 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image,
                         crop=False,box_size=512, NAME=None, CM='magma_r',
                         vmin_factor=3.0,vmax_factor=0.1,
                         max_percent_lowlevel=99.0, max_percent_highlevel=99.9999,
+                        obs_type = 'radio',
                         ext='.pdf', show_figure=True):
     """
     Plots fitting results: image <> model <> residual images.
@@ -12488,12 +12510,23 @@ def plot_data_model_res(imagename, modelname, residualname, reference_image,
                alpha=1.0)  # cmap='Reds', linewidths=0.75)
     cb1 = plt.colorbar(mappable=plt.gca().images[0],
                        cax=fig.add_axes([0.91, 0.40, 0.02, 0.19]))
-    cb1.formatter = CustomFormatter(factor=int(1000/vmax_factor), useMathText=True)
-    cb1.update_ticks()
-    cb1.set_label(r'Flux Density [mJy/beam]', labelpad=1)
-    cb1.ax.xaxis.set_tick_params(pad=1)
-    cb1.ax.tick_params(labelsize=12)
-    cb1.outline.set_linewidth(1)
+    if obs_type == 'radio':
+        cb1.formatter = CustomFormatter(factor=int(1000/vmax_factor), 
+                                        useMathText=True)
+        cb1.update_ticks()
+        cb1.set_label(r'Flux Density [mJy/beam]', labelpad=1)
+        cb1.ax.xaxis.set_tick_params(pad=1)
+        cb1.ax.tick_params(labelsize=12)
+        cb1.outline.set_linewidth(1)
+    else:
+        cb1.formatter = CustomFormatter(factor=int(1/vmax_factor), 
+                                        useMathText=True)
+        cb1.update_ticks()
+        cb1.set_label(r'Pixel Intensity]', labelpad=1)
+        cb1.ax.xaxis.set_tick_params(pad=1)
+        cb1.ax.tick_params(labelsize=12)
+        cb1.outline.set_linewidth(1)
+        
     """
     # No need for this additional colorbar.
     cb = plt.colorbar(mappable=plt.gca().images[0], cax=fig.add_axes(

@@ -310,14 +310,14 @@ class source_extraction():
     def __init__(self, input_data,z=0.05,ids_to_add=[1],
                  crop=False, box_size=256,
                  apply_mask=False, mask=None, dilation_size = None,
-                 sigma_level=3, sigma_mask=6, vmin_factor=3, mask_component=None,
+                 sigma_level=6, sigma_mask=6, vmin_factor=3, mask_component=None,
                  bwf=1, bhf=1, fwf=1, fhf=1,
                  segmentation_map = True, filter_type='matched',
-                 deblend_nthresh=3, deblend_cont=1e-8,
+                 deblend_nthresh=25, deblend_cont=1e-8,
                  clean_param=0.5, clean=True,
                  minarea_factor = 1.0,
                  sort_by='flux',  # sort detected source by flux
-                 sigma=12,  # min rms to search for sources
+                 sigma=6,  # min rms to search for sources
                  ell_size_factor=2.0,  # unstable, please inspect!
                  obs_type = 'radio', algorithm='SEP',
                  show_detection=False,show_petro_plots=False,
@@ -340,7 +340,7 @@ class source_extraction():
         mask : array
             Mask to be applied to the image.
         dilation_size : int
-            Size of the dilation kernel.
+            Size of the binary dilation kernel.
         sigma_level : float
             Sigma level for detection.
         sigma_mask : float
@@ -848,12 +848,12 @@ class sersic_multifit_general():
                 self.rms_map = None
 
         if fix_n is None:
-            self.fix_n = [True] * self.SE.n_components
+            self.fix_n = [False] * self.SE.n_components
         else:
             self.fix_n = fix_n
 
         if fix_value_n is None:
-            self.fix_value_n = [0.5] * self.SE.n_components
+            self.fix_value_n = [1.5] * self.SE.n_components
         else:
             self.fix_value_n = fix_value_n
 
@@ -937,18 +937,21 @@ class sersic_multifit_general():
                                             self.model_dict['model_c' + le])
                 nfunctions = None
 
-        decomp_results = mlibs.plot_decomp_results(imagename=self.input_data.filename,
+        self.decomposition_results = mlibs.plot_decomp_results(imagename=self.input_data.filename,
                                                    compact=compact_model,
                                                    extended_model=extended_model,
                                                    rms=rms_std_res,
                                                    nfunctions=nfunctions,
+                                                   obs_type=self.SE.obs_type,
                                                    special_name=special_name)
+        
 
         mlibs.plot_fit_results(self.input_data.filename, self.model_dict,
                                self.image_results_conv,
                                self.SE.sources_photometries,
                                bkg_image=self.bkg_images[-1],
                                crop=False, box_size=200,
+                               obs_type=self.SE.obs_type,
                                vmax_factor=0.3, vmin_factor=1.0)
 
         mlibs.plot_slices(data_2D=self.input_data.image_data_2D,
@@ -956,7 +959,18 @@ class sersic_multifit_general():
                           image_results_conv=self.image_results_conv[-2],
                           Rp_props=self.SE.sources_photometries,
                           residual_2D=None)
-        # result_mini.params
+        
+        self.parameter_results = self.result_mini.params.valuesdict().copy()
+        try:
+            for param in self.result_mini.params.valuesdict().keys():
+                self.parameter_results[param+'_err'] = self.result_mini.params[param].stderr
+        except:
+            pass
+        
+        self.parameter_results['#imagename'] = os.path.basename(self.input_data.filename)
+        
+        self.results_fit = {**self.parameter_results, **self.decomposition_results}
+        # self.results_fit.append(all_results)
 
         pass
 
