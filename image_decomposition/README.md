@@ -1,4 +1,5 @@
 # Image Fitting Decomposition
+***DOCUMENTATION UNDER DEVELOPMENT***
 
 ## Introduction
 The `morphen` package provides a set of tools to perform image fitting decomposition, 
