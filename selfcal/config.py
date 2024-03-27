@@ -17,21 +17,21 @@ outlierfile = ''
 quiet = True
 run_mode = 'terminal'
 
+
 path = ('/path/to/vis/')
 vis_list = ['example_vis'] #do not use .ms extension
 
-
 #VLA
 receiver = 'C'
-instrument = 'EVLA' # 'EVLA' or 'eM'
+instrument = 'eM' # 'EVLA' or 'eM'
 
 
 steps = [
     'startup',  # create directory structure, start variables and clear visibilities.
     'save_init_flags',  # save (or restore) the initial flags and run statwt
     # 'fov_image', # create a FOV image
-    # 'run_rflag_init', # run rflag on the initial data (rarely used)
     'test_image',#create a test image
+    # 'run_rflag_init', # run rflag on the initial data (rarely used)
     'select_refant', #select reference antenna
     'p0',#initial test  of selfcal, phase only (p)
     'p1',#redo phase-only selfcal (if enough flux density); ignores p0
@@ -39,7 +39,7 @@ steps = [
     'ap1',#amp-selfcal (ap); uses p0 or (p1 and p2)
     'split_trial_1',#split the data after first trial (and run wsclean)
     'report_results',#report results of first trial
-    # # 'run_rflag_final',#run rflag on the final data
+    # 'run_rflag_final',#run rflag on the final data
 ]
 
 
@@ -112,9 +112,9 @@ with a total integrated flux density lower than 10 mJy.
 """
 params_very_faint = {'name': 'very_faint',
                      'p0': {'robust': 0.5,
-                            'solint' : '60s' if receiver in ('K', 'Ka', 'Ku') or instrument ==
-                                               'eM' else '96s',
-                            'sigma_mask': 6.0 if instrument == 'eM' else 6.0,
+                            'solint' : '96s' if receiver in ('K', 'Ka', 'Ku') or instrument ==
+                                               'eM' else '60s',
+                            'sigma_mask': 6.0 if instrument == 'eM' else 15.0,
                             'combine': 'spw',
                             'gaintype': 'G',
                             'calmode': 'p',
@@ -122,13 +122,13 @@ params_very_faint = {'name': 'very_faint',
                             'spwmap': [], #leavy empty here. It will be filled later if combine='spw'
                             'nsigma_automask' : '3.0',
                             'nsigma_autothreshold' : '1.5',
-                            'uvtaper' : ['0.05asec'],
+                            'uvtaper' : [''],
                             'with_multiscale' : False,
                             'scales': 'None',
                             'compare_solints' : False},
                      'ap1': {'robust': 1.0,
-                             'solint' : '60s' if receiver in ('K', 'Ka', 'Ku') or instrument ==
-                                               'eM' else '96s',
+                             'solint' : '96s' if receiver in ('K', 'Ka', 'Ku') or instrument ==
+                                               'eM' else '60s',
                              'sigma_mask': 6,
                              'combine': 'spw',
                              'gaintype': 'G',
@@ -137,7 +137,7 @@ params_very_faint = {'name': 'very_faint',
                              'spwmap': [], #leavy empty here. It will be filled later if combine='spw'
                              'nsigma_automask' : '3.0',
                              'nsigma_autothreshold' : '1.5',
-                             'uvtaper' : ['0.06asec'],
+                             'uvtaper' : [''],
                              'with_multiscale' : False,
                              'scales': 'None',
                              'compare_solints' : False},
