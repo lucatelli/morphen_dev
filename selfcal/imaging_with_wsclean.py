@@ -247,17 +247,6 @@ if __name__ == "__main__":
                 deconvolver_options = deconvolver_options + ' -multiscale-max-scales 6 '
             else:
                 deconvolver_options = (deconvolver_options + ' -multiscale-scales ' + args.scales + ' ')
-            # print('++++====>>>> Deconvolver Options:')
-            # print(deconvolver_options)
-            # deconvolver = ''
-            # deconvolver_options = opt_args_list
-            # print(' ++>> ', deconvolver_options)
-            # if deconvolver_options != '' or []:
-            #     if 'multiscale' in deconvolver_options:
-                    # print(' ++>> Using Multiscale deconvolver.')
-                # else:
-                #     print(' ++>> Using Hogbom deconvolver.')
-                #     deconvolver = 'multiscale'
         else:
             deconvolver = ' '
             deconvolver_options = (' ')
@@ -268,12 +257,14 @@ if __name__ == "__main__":
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
                             '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
-                            '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
+                            '-parallel-deconvolution 1024 '
+                            # '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
                             # '-save-weights -local-rms -local-rms-window 50 '
-                            '-gridder wgridder -wstack-nwlayers-factor 3 ' #-beam-fitting-size 0.7
-                            # ' -circular-beam  ' # -no-negative
+                            '-gridder wgridder -wstack-nwlayers-factor 3 -wgridder-accuracy 1e-7 '
+                            '' #-beam-fitting-size 0.7
+                            # ' -circular-beam -no-negative ' # 
                             # ' -circular-beam -beam-size 0.1arcsec -no-negative -beam-fitting-size = 0.7 ' 
-                            '-no-mf-weighting ' # -parallel-deconvolution 1024 
+                            # '-no-mf-weighting ' #  
                             # '-save-psf-pb -apply-primary-beam ' 
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
@@ -314,7 +305,7 @@ if __name__ == "__main__":
     if args.minuv_l is not None:
         uvselection = uvselection + ' -minuv-l ' + args.minuv_l + ' '
     # general arguments
-    gain_args = ' -mgain 0.4 -gain 0.05 -nmiter 500 -super-weight 9.0 '
+    gain_args = ' -mgain 0.4 -gain 0.05 -nmiter 500 ' # -super-weight 9.0
 
     if args.shift == 'None' or args.shift == None:
         # if args.shift != ' ':
