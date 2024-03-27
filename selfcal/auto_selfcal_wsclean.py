@@ -596,8 +596,8 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_data.jpg')
 
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
-               antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
-               ydatacolumn='data', avgchannel='', avgtime='360',
+               antenna=ANTENNAS, spw=SPWS, coloraxis='spw',avgscan=True,
+               ydatacolumn='data', avgchannel='16', avgtime='360',
                correlation='LL,RR',plotrange=[0,0,0,0],
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
@@ -631,8 +631,8 @@ def plot_visibilities(g_vis, name, with_DATA=False, with_MODEL=False,
                    g_vis) + '/selfcal/plots/' + name + '_uvwave_amp_corrected.jpg')
 
         plotms(vis=g_vis, xaxis='freq', yaxis='amp', avgantenna=True,
-               antenna=ANTENNAS, spw=SPWS, coloraxis='scan',
-               ydatacolumn='corrected', avgchannel='', avgtime='360',
+               antenna=ANTENNAS, spw=SPWS, coloraxis='spw',
+               ydatacolumn='corrected', avgchannel='16', avgtime='360',
                correlation='LL,RR',plotrange=[0,0,0,0],
                width=1000, height=440, showgui=False, overwrite=True,dpi=1200,highres=True,
                plotfile=os.path.dirname(
@@ -1515,7 +1515,7 @@ if run_mode == 'terminal':
             Run automatic rflag on the data before selfcalibration.
             """
             run_rflag(g_vis, display='report', action='apply',
-                      timedevscale=4.0, freqdevscale=4.0, winsize=7, datacolumn='data')
+                      timedevscale=3.0, freqdevscale=3.0, winsize=7, datacolumn='data')
             steps_performed.append('run_rflag_init')
 
 
