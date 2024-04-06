@@ -41,11 +41,15 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
     print(image_deepclean_name)
 
     if not os.path.exists(root_dir_sys + image_deepclean_name + ext) or continue_clean == 'True':
-
+        if nc < 6:
+            _nc = 6
+        else:
+            _nc = nc
         if running_container == 'native':
             # 'mpirun -np 4 wsclean-mp'
+
             command_exec = (
-                'mpirun -np '+str(nc)+' wsclean-mp -name ' + root_dir + image_deepclean_name +
+                'mpirun -np '+str(_nc)+' wsclean-mp -name ' + root_dir + image_deepclean_name +
                 ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
                 ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
                 ' ' + robust + ' ' + auto_mask + ' ' + auto_threshold + mask_file +
@@ -60,7 +64,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
             command_exec = (
             'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
             # ' ' + 'wsclean -name ' + root_dir +
-            ' ' + 'mpirun -np ' + str(nc) + ' wsclean-mp -name ' + root_dir +
+            ' ' + 'mpirun -np ' + str(_nc) + ' wsclean-mp -name ' + root_dir +
             image_deepclean_name +
             ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
             ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
@@ -258,7 +262,7 @@ if __name__ == "__main__":
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
                             '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
                             '-parallel-deconvolution 1024 '
-                            # '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
+                            '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
                             # '-save-weights -local-rms -local-rms-window 50 '
                             '-gridder wgridder -wstack-nwlayers-factor 3 -wgridder-accuracy 1e-7 '
                             '' #-beam-fitting-size 0.7
@@ -269,7 +273,7 @@ if __name__ == "__main__":
                             # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
                             '-save-source-list '
                             '-channels-out '+str(nc)+' -join-channels '
-                            '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(nc)+' '
+                            '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(16)+' '
                             )
     if args.deconvolution_mode == 'fast':
         deconvolver = ' '
@@ -320,6 +324,9 @@ if __name__ == "__main__":
         quiet = ' '
 
     if args.continue_clean == 'True':
+        """
+        Not HANDLED PROPERLY YET
+        """
         continue_clean = ' --continue '
     else:
         continue_clean = ' '

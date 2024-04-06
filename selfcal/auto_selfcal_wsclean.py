@@ -222,6 +222,7 @@ def compute_flux_density(imagename, residualname, mask=None):
     print('-----------------------------------------------------------------')
     # print(f"Flux Density = {total_flux_density*1000:.2f} mJy")
     return (total_flux_density, abs(res_error_rms))
+
 def compute_image_stats(path,
                         image_list,
                         image_statistics,
@@ -283,38 +284,59 @@ def compute_image_stats(path,
                                                show_figure=False)[-1]
     image_statistics[prefix] = img_props
 
-    sub_band_images = glob.glob(
-        image_list[prefix].replace('-MFS-image.fits', '') + '-????-image.fits')
-    sub_band_residuals = glob.glob(
-        image_list[prefix + '_residual'].replace('-MFS-residual.fits',
-                                                    '') + '-????-residual.fits')
+    try:
+        sub_band_images = glob.glob(
+            image_list[prefix].replace('-MFS-image.fits', '') + '-????-image.fits')
+        sub_band_residuals = glob.glob(
+            image_list[prefix + '_residual'].replace('-MFS-residual.fits',
+                                                        '') + '-????-residual.fits')
 
-    _FLUXES = []
-    _FLUXES_err = []
-    for i in range(len(sub_band_images)):
-        flux_density, flux_density_err = compute_flux_density(sub_band_images[i],
-                                                              sub_band_residuals[i],
-                                                              mask=None)
-        print('Flux density = ', flux_density)
-        _FLUXES.append(flux_density)
-        _FLUXES_err.append(flux_density_err)
-    FLUXES = mlibs.np.asarray(_FLUXES)
-    FLUXES_err = mlibs.np.asarray(_FLUXES_err)
-    freqlist = mlibs.getfreqs(sub_band_images)
+        _FLUXES = []
+        _FLUXES_err = []
+        for i in range(len(sub_band_images)):
+            # flux_density, flux_density_err = mlibs.compute_flux_density(sub_band_images[i],
+            #                                                       sub_band_residuals[i],
+            #                                                       mask=None)
+            img_props = mlibs.compute_image_properties(sub_band_images[i],
+                                                       sub_band_residuals[i],
+                                                       sigma_mask=sigma,
+                                                       last_level=1.5,
+                                                       mask=None, verbose=1,
+                                                       save_csv = True,
+                                                       show_figure=False)[-1]
 
-    plt.figure(figsize=(8, 6))
-    plt.errorbar(freqlist / 1e9, FLUXES * 1000,
-                 yerr=FLUXES_err * 1000,
-                 fmt='o',
-                 # label='Observed data',
-                 color='k', ecolor='gray', alpha=0.5)
-    plt.xlabel('Frequency [GHz]')
-    plt.ylabel('Flux Density [mJy]')
-    plt.ylim(0,)
-    plt.title('Sub-Band Images')
-    plt.savefig(image_list[prefix].replace('-MFS-image.fits', '_freq_flux.jpg'), dpi=300,
-                bbox_inches='tight')
+            # flux_density,flux_density_err = img_props['total_flux_levels'], img_props['flux_error_res_3']
+            flux_density, flux_density_err = img_props['total_flux_mask'], img_props['flux_error_res_3']
 
+            print('Flux density = ', flux_density)
+            _FLUXES.append(flux_density)
+            _FLUXES_err.append(flux_density_err)
+        FLUXES = mlibs.np.asarray(_FLUXES)
+        FLUXES_err = mlibs.np.asarray(_FLUXES_err)
+        freqlist = mlibs.getfreqs(sub_band_images)
+
+
+        mini, result_1 = mlibs.do_fit_spec_RC_linear(freqlist,FLUXES*1000,FLUXES_err*1000,
+                                                     basename_save=image_list[prefix],
+                                                     title_text=r'Sub-band Images',
+                                                     plot_errors_shade = True,do_mcmc_fit=True,
+                                                     verbose=2)
+
+        # plt.figure(figsize=(8, 6))
+        # plt.errorbar(freqlist / 1e9, FLUXES * 1000,
+        #              yerr=FLUXES_err * 1000,
+        #              fmt='o',
+        #              # label='Observed data',
+        #              color='k', ecolor='gray', alpha=0.5)
+        # plt.xlabel('Frequency [GHz]')
+        # plt.ylabel('Flux Density [mJy]')
+        # plt.ylim(0,)
+        # plt.title('Sub-Band Images')
+        # plt.savefig(image_list[prefix].replace('-MFS-image.fits', '_freq_flux.jpg'), dpi=300,
+        #             bbox_inches='tight')
+    except:
+        print('--==>> Some error found in the sub-bands images.')
+        pass
     return(image_statistics,image_list)
 
 def create_mask(imagename,rms_mask,sigma_mask,mask_grow_iterations,PLOT=False):
@@ -1621,6 +1643,7 @@ if run_mode == 'terminal':
 
         if params_trial_2 is not None:
             p0_params = params_trial_2['p0']
+            parameter_selection['test_image'] = params_trial_2
         else:
             try:
                 # current_total_flux = image_statistics['test_image']['total_flux_mask'] * 1000
