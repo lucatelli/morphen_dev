@@ -562,7 +562,7 @@ class sersic_multifit_radio():
                  comp_ids = [],
                  fix_n = None, 
                  fix_value_n = None, dr_fix = None,fix_x0_y0=None,
-                 sigma=6.0, use_mask_for_fit=False,mask_fit=None,
+                 sigma=6.0, use_mask_for_fit=False,mask_for_fit=None,
                  mask=None,
                  tr_solver = "exact",
                  convolution_mode='GPU',method1='least_squares',
@@ -610,18 +610,19 @@ class sersic_multifit_radio():
         """
         self.input_data = input_data
         self.SE = SE
-        if use_mask_for_fit == True:
-            if mask_fit is None:
+        self.use_mask_for_fit = use_mask_for_fit
+        if self.use_mask_for_fit == True:
+            if mask_for_fit is None:
                 _logging_.logger.info(f" ++>> Using a mask for fitting was requested, "
                                       f"but no mask was provided. Using the mask from the source "
                                       f"extraction object (SE.mask).")
-                self.mask_fit = self.SE.mask
+                self.mask_for_fit = self.SE.mask
             else:
-                _logging_.logger.info(f" ++>> Using a mask for fitting.")
-                self.mask_fit = mask_fit
+                _logging_.logger.info(f" ++>> Using the provided  mask for fitting.")
+                self.mask_for_fit = mask_for_fit
         else:
             _logging_.logger.info(f" ++>> Fitting without a mask.")
-            self.mask_fit = None
+            self.mask_for_fit = None
         if mask is None:
             self.mask = self.SE.mask
         else:
@@ -666,8 +667,10 @@ class sersic_multifit_radio():
         self.__sersic_radio()
 
     def __sersic_radio(self):
-        (self.results_fit, self.result_mini, self.lmfit_results, self.lmfit_results_1st_pass,
-         self.errors_fit, self.models, self.results_compact_conv_morpho,
+        (self.results_fit, self.result_mini, self.mini, self.lmfit_results,
+         self.lmfit_results_1st_pass,
+         self.errors_fit, self.models, self.data_properties,
+         self.results_compact_conv_morpho,
          self.results_compact_deconv_morpho, self.results_ext_conv_morpho,
          self.results_ext_deconv_morpho,
          self.components_deconv_props, self.components_conv_props,
@@ -685,7 +688,8 @@ class sersic_multifit_radio():
                                     method1=self.method1,
                                     method2=self.method2,
                                     mask=self.mask,
-                                    mask_for_fit=self.mask_fit,
+                                    use_mask_for_fit=self.use_mask_for_fit,
+                                    mask_for_fit=self.mask_for_fit,
                                     bkg_rms_map=self.bkg_rms_map,
                                     self_bkg=self.self_bkg,
                                     save_name_append='',
@@ -813,11 +817,11 @@ class sersic_multifit_general():
         self.SE = SE
         if use_mask_for_fit == True:
             if mask_for_fit is None:
-                self.mask_fit = self.SE.mask
+                self.mask_for_fit = self.SE.mask
             else:
-                self.mask_fit = mask_for_fit
+                self.mask_for_fit = mask_for_fit
         else:
-            self.mask_fit = None
+            self.mask_for_fit = None
         self.comp_ids = comp_ids
         self.fix_geometry = fix_geometry
         self.convolution_mode = convolution_mode
@@ -885,7 +889,7 @@ class sersic_multifit_general():
                            self_bkg=self.self_bkg,
                            rms_map = self.rms_map,
                            which_residual=self.which_residual,
-                           mask_region = self.mask_fit,
+                           mask_region = self.mask_for_fit,
                            # rms_map=self.SE.bkg,
                            # rms_map=None,
                            fix_n=self.fix_n,
@@ -944,9 +948,9 @@ class sersic_multifit_general():
                                                    nfunctions=nfunctions,
                                                    obs_type=self.SE.obs_type,
                                                    special_name=special_name)
-        
 
-        mlibs.plot_fit_results(self.input_data.filename, self.model_dict,
+        mlibs.plot_fit_results(self.input_data.filename, 
+                               self.model_dict,
                                self.image_results_conv,
                                self.SE.sources_photometries,
                                bkg_image=self.bkg_images[-1],
@@ -959,19 +963,15 @@ class sersic_multifit_general():
                           image_results_conv=self.image_results_conv[-2],
                           Rp_props=self.SE.sources_photometries,
                           residual_2D=None)
-        
         self.parameter_results = self.result_mini.params.valuesdict().copy()
         try:
             for param in self.result_mini.params.valuesdict().keys():
                 self.parameter_results[param+'_err'] = self.result_mini.params[param].stderr
         except:
             pass
-        
         self.parameter_results['#imagename'] = os.path.basename(self.input_data.filename)
-        
         self.results_fit = {**self.parameter_results, **self.decomposition_results}
         # self.results_fit.append(all_results)
-
         pass
 
 class morphometry():

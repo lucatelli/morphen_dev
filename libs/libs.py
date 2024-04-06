@@ -73,6 +73,7 @@ from astropy.convolution import Gaussian2DKernel
 from skimage.measure import perimeter_crofton
 from scipy import ndimage
 from scipy.ndimage import morphology
+from scipy.ndimage import shift
 from skimage.morphology import disk, square
 from skimage.morphology import dilation
 
@@ -869,6 +870,57 @@ def sort_list_by_beam_size(imagelist, residuallist=None,return_df=False):
         return(imagelist_sort,residuallist_sort,df_beam_sizes_sorted)
     if return_df==False:
         return (imagelist_sort, residuallist_sort)
+
+
+def sort_list_by_freq(imagelist, return_df=False):
+    """
+    Sort a list of images files by frequency.
+
+    If no residual list is provided, it will assume that the residual files are in the same
+    directory as the image files, and that the residual files have the same name prefix as the
+    image files.
+
+    Parameters
+    ----------
+    imagelist : list
+        List of image files.
+    residuallist : list, optional
+        List of associated residual files.
+    return_df : bool, optional
+        Return a pandas dataframe with the beam sizes.
+
+    Returns
+    -------
+    imagelist_sort : list
+        Sorted list of image files.
+    residuallist_sort : list
+        Sorted list of residual files.
+    df_beam_sizes_sorted : pandas dataframe
+        Dataframe with the beam sizes.
+    """
+    freqs = getfreqs(imagelist)
+
+    # Get indices that would sort the frequency array
+    sorted_indices = np.argsort(freqs)
+    # Sort the frequency array and image list using the sorted indices
+    sorted_freq_array = freqs[sorted_indices]
+    sorted_image_list = [imagelist[i] for i in sorted_indices]
+
+    residuallist = []
+    for i in range(len(sorted_image_list)):
+        residuallist_i = \
+            sorted_image_list[i].replace('/MFS_images/', '/MFS_residuals/') \
+                .replace('-image.', '-residual.')
+        residuallist.append(residuallist_i)
+
+    imagelist_sort = np.asarray(sorted_image_list)
+    residuallist_sort = np.asarray(residuallist)
+    i = 0
+    for image in imagelist_sort:
+        print(i, '>>', os.path.basename(image))
+        i = i + 1
+    return (imagelist_sort, residuallist_sort, sorted_freq_array)
+
 
 def get_beam_size_px(imagename):
     aO,bO,_,_,_ = beam_shape(imagename)
@@ -1963,9 +2015,15 @@ def conver_str_coords(ra, dec):
     print(ra_deg, dec_deg)
     return (ra_deg, dec_deg)
 
+def find_offsets(reference_coords, target_coords):
+    # Compute the pixel offsets between target and reference coordinates
+    offset_x = reference_coords[0] - target_coords[0]
+    offset_y = reference_coords[1] - target_coords[1]
+    return offset_x, offset_y
+
 
 def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_size=1024,
-                    special_name=''):
+                    special_name='',correct_shift=False,ref_cutout_image=None):
     from astropy.io import fits
     import os
     from astropy.wcs import WCS
@@ -2002,8 +2060,27 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
         # print(center)
         # create a Cutout2D object
         cutout = Cutout2D(image_data[0][0], center, cutout_size, wcs=wcs)
-        new_hdul = fits.HDUList(
-            [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+        # apply shift
+        if correct_shift == True:
+            if ref_cutout_image is not None:
+                ref_image_cutout_data = ctn(ref_cutout_image)
+                x_ref, y_ref = nd.maximum_position(ref_image_cutout_data)[::-1]
+                reference_source_coords = (x_ref, y_ref)
+                offset_x, offset_y = find_offsets(reference_source_coords,
+                                                  nd.maximum_position(cutout.data)[::-1])
+                print(f" !!!! Offsets of peak position are: {offset_x, offset_y}.")
+                aligned_target_image = shift(cutout.data, (offset_y, offset_x),
+                                             mode='constant')
+                new_hdul = fits.HDUList(
+                    [fits.PrimaryHDU(header=hdul[0].header, data=aligned_target_image)])
+            else:
+                #the code must stop
+                print('No reference image was provided. '
+                      'No shift correction will be applied.')
+        else:
+            new_hdul = fits.HDUList(
+                [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+
         new_hdul[0].header.update(cutout.wcs.to_header())
         savename_img = os.path.dirname(imagename) + '/' + os.path.basename(imagename).replace(
             '.fits', '.cutout' + special_name + '.fits')
@@ -2028,8 +2105,28 @@ def cutout_2D_radec(imagename, residualname=None, ra_f=None, dec_f=None, cutout_
 
             # create a Cutout2D object
             cutout = Cutout2D(image_data[0][0], center, cutout_size, wcs=wcs)
-            new_hdul = fits.HDUList(
-                [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+            if correct_shift == True:
+                if ref_cutout_image is not None:
+                    # ref_image_cutout_data = ctn(ref_cutout_image)
+                    # x_ref, y_ref = nd.maximum_position(ref_image_cutout_data)[::-1]
+                    # reference_source_coords = (x_ref, y_ref)
+                    # offset_x, offset_y = find_offsets(reference_source_coords,
+                    #                                   nd.maximum_position(cutout.data)[::-1])
+                    # print(f" !!!! Offsets of peak position are: {offset_x, offset_y}.")
+                    aligned_target_image = shift(cutout.data, (offset_y, offset_x),
+                                                 mode='constant')
+                    new_hdul = fits.HDUList(
+                        [fits.PrimaryHDU(header=hdul[0].header, data=aligned_target_image)])
+                else:
+                    # the code must stop
+                    print('No reference image was provided. '
+                          'No shift correction will be applied.')
+            else:
+                new_hdul = fits.HDUList(
+                    [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
+
+            # new_hdul = fits.HDUList(
+            #     [fits.PrimaryHDU(header=hdul[0].header, data=cutout.data)])
             new_hdul[0].header.update(cutout.wcs.to_header())
             savename_res = os.path.dirname(residualname) + '/' + os.path.basename(
                 residualname).replace('.fits', '.cutout' + special_name + '.fits')
@@ -3184,12 +3281,14 @@ def shape_measures(imagename, residualname, z, mask_component=None, sigma_mask=6
     return (results_final, mask)
 
 
-def compute_flux_density(imagename, residualname, mask=None, systematic_error_fraction=0.05):
+def compute_flux_density(imagename, residualname, mask=None, sigma=6,
+                         systematic_error_fraction=0.05):
     beam_area = beam_area2(imagename)
     image_data = ctn(imagename)
     rms = mad_std(ctn(residualname))
     if mask is None:
-        _, mask = mask_dilation(imagename, show_figure=True, PLOT=True, rms=rms, sigma=6,
+        _, mask = mask_dilation(imagename, show_figure=False,
+                                PLOT=False, rms=rms, sigma=sigma,
                                       iterations=2)
     total_flux_density = np.nansum(image_data * mask) / beam_area
 
@@ -3486,6 +3585,7 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
                              apply_mask=True, vmin_factor=3, vmax_factor=0.5,
                              crop=False, box_size=256,
                              SAVE=True, add_save_name='', show_figure=True,
+                             save_csv = False,
                              ext='.jpg',logger=None,verbose=0):
     """
     Params
@@ -4262,6 +4362,18 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
         plt.show()
     else:
         plt.close()
+
+    if save_csv == True:
+        import csv
+        # df_temp = pd.DataFrame(results).T
+        # df_temp.to_csv(img.replace('.fits', '_image_properties')+add_save_name + '.csv',
+        #                header=True,index=False)
+
+        with open(img.replace('.fits', '_image_properties')+add_save_name + '.csv',
+                  'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=results.keys())
+            writer.writeheader()
+            writer.writerow(results)
     return (levels, fluxes, agrow, omask, mask, results)
 
 
@@ -7284,8 +7396,8 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             deconvolved signal from a convolved signal with a Gaussian 
                             kernel.
                             """
-                            I50_max = I50 * 100
-                            I50_min = I50 * 0.2
+                            I50_max = I50 * 250
+                            I50_min = I50 * 0.1
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=I50, min=I50_min, max=I50_max)
@@ -7294,7 +7406,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             # R50_max = R50 * 4.0
                             # R50_max = init_constraints['c' + jj + '_Rp']
                             R50_max = R50 * 1.5
-                            R50_min = R50 * 0.2 #should be small.
+                            R50_min = R50 * 0.05 #should be small.
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=R50, min=R50_min, max=R50_max)
@@ -8039,7 +8151,13 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         """
         logger.debug(f" ==> Using provided mask region to constrain fit. ")
         logger.warning(f" !!==> Fitting with a mask is experimental! ")
-        data_2D = data_2D * mask_region
+        # data_2D = data_2D * mask_region
+        if convolution_mode == 'GPU':
+            mask_for_fit = jnp.array(mask_region)
+        else:
+            mask_for_fit = mask_region
+    else:
+        mask_for_fit = None
 
     if convolution_mode == 'GPU':
         data_2D_gpu = jnp.array(data_2D)
@@ -8137,6 +8255,11 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                 FlatSky_level = mad_std(data_2D)
                 background = FlatSky_level
 
+    if residualdata_2D_ is not None:
+        residual_2D = residualdata_2D_
+    else:
+        residual_2D = pf.getdata(residualname)
+
     size = data_2D.shape
     if convolution_mode == 'GPU':
         x,y = jnp.meshgrid(jnp.arange((size[1])), jnp.arange((size[0])))
@@ -8165,9 +8288,12 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     # if convolution_mode == 'GPU':
 
     # FlatSky_level = mad_std(data_2D)
+    if convolution_mode == 'GPU':
+        residual_2D = jnp.array(residual_2D)
+
     nfunctions = ncomponents
 
-    def residual_2D(params):
+    def min_residual_2D(params):
         dict_model = {}
         model = 0
         for i in range(1, nfunctions + 1):
@@ -8249,7 +8375,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     #     # Sum the models to get the final model
     #     total_model = models.sum(axis=0)
     #     return total_model
-    def residual_2D_GPU(params):
+    def min_min_residual_2D_GPU(params):
         model = 0
         for i in range(1, nfunctions + 1):
             model = model + sersic2D_GPU(xy,
@@ -8309,7 +8435,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                                          model_params[7])
         return model
         
-    def residual_2D_GPU(params):
+    def min_residual_2D_GPU(params):
         model = 0
         for i in range(1, nfunctions + 1):
             model = model + sersic2D_GPU(xy,
@@ -8321,13 +8447,17 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
                                          params['f' + str(i) + '_In'].value,
                                          params['f' + str(i) + '_Rn'].value,
                                          params['f' + str(i) + '_cg'].value)
+
         # # param_matrix = extract_params(params)
         # param_matrix = func(jnp.array(list(params.valuesdict().values()))[:-1])
         # model = build_model(xy,param_matrix)
+
         MODEL_2D_conv = _fftconvolve_jax(model+
                                          FlatSky(background,params['s_a'].value),
                                          PSF_BEAM)
-        residual = data_2D_gpu - MODEL_2D_conv
+        # residual = ((data_2D_gpu[mask_for_fit] - MODEL_2D_conv[mask_for_fit])/
+        #             (1000*(abs(residual_2D[mask_for_fit])+1.0e-6)))
+        residual = (data_2D_gpu[mask_for_fit] - MODEL_2D_conv[mask_for_fit])
         return np.asarray(residual).copy()
 
     if convolution_mode == 'GPU':
@@ -8372,10 +8502,10 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         constrained=constrained)
 
     if convolution_mode == 'CPU':
-        mini = lmfit.Minimizer(residual_2D, params, max_nfev=200000,
+        mini = lmfit.Minimizer(min_residual_2D, params, max_nfev=200000,
                                nan_policy='omit', reduce_fcn=reduce_fcn)
     if convolution_mode == 'GPU':
-        mini = lmfit.Minimizer(residual_2D_GPU, params, max_nfev=200000,
+        mini = lmfit.Minimizer(min_residual_2D_GPU, params, max_nfev=200000,
                                nan_policy='omit', reduce_fcn=reduce_fcn)
 
     # initial minimization.
@@ -9510,7 +9640,8 @@ def run_mcmc_mini(imagename, psf_name, mini_results, residualname=None, rms_map=
     return (samples, sampler, backend)
 
 def run_image_fitting(imagelist, residuallist, sources_photometries,
-                      n_components, comp_ids=[], mask= None, mask_for_fit=None,
+                      n_components, comp_ids=[], mask=None, mask_for_fit=None,
+                      use_mask_for_fit=False,
                       which_residual='shuffled',
                       save_name_append='', z=None, aspect=None,
                       convolution_mode='GPU', workers=6,
@@ -9577,10 +9708,49 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # omaj, omin, _, _, _ = beam_shape(crop_image)
         # dilation_size = int(
         # np.sqrt(omaj * omin) / (2 * get_cell_size(crop_image)))
+
+
+        if verbose >= 1:
+            do_PLOT = True
+            PLOT = True
+            SAVE = True
+            show_figure = True
+        else:
+            do_PLOT = False
+            PLOT = False
+            SAVE = False
+            show_figure = False
+
+
         _, mask_region = mask_dilation(crop_image,
                                         rms=rms_std_res,
                                         sigma=sigma, dilation_size=None,
                                         iterations=2, PLOT=True)
+
+        if use_mask_for_fit == True:
+            print('++==>> USING MASK FOR FITTTTTTTTTTTTTTTT ')
+            _, mask_for_fit = mask_dilation(crop_image,
+                                            rms=rms_std_res,
+                                            sigma=sigma, dilation_size=None,
+                                            iterations=6, PLOT=True)
+
+        data_properties, _, _ = \
+            measures(imagename=crop_image,
+                     residualname=crop_residual, z=z,
+                     sigma_mask=6.0,
+                     last_level=1.5, vmin_factor=1.0,
+                     dilation_size=None,
+                     results_final={},
+                     rms=rms_std_res,
+                     apply_mask=False,
+                     mask=mask_region,
+                     do_PLOT=do_PLOT, SAVE=SAVE,
+                     do_petro = True,
+                     show_figure=show_figure,
+                     do_measurements='partial',
+                     add_save_name='_data',
+                     verbose=verbose)
+
         # psf_size = dilation_size*6
         # psf_size = (2 * psf_size) // 2 +1
 
@@ -9794,16 +9964,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # else:
         #     rms_model = _rms_model
 
-        if verbose >= 1:
-            do_PLOT = True
-            PLOT = True
-            SAVE = True
-            show_figure = True
-        else:
-            do_PLOT = False
-            PLOT = False
-            SAVE = False
-            show_figure = False
+
 
         rms_model = mad_std(compact_model)
         rms_compact_conv = rms_bkg_conv # * len(comp_ids)
@@ -10006,8 +10167,9 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             # print('Error on fitting', os.path.basename(crop_image))
             # errors_fit.append(crop_image)
 
-    return (pd.DataFrame(results_fit),result_mini,
+    return (pd.DataFrame(results_fit),result_mini,mini,
             lmfit_results, lmfit_results_1st_pass, errors_fit, models,
+            data_properties,
             pd.DataFrame(list_results_compact_conv_morpho),
             pd.DataFrame(list_results_compact_deconv_morpho),
             pd.DataFrame(list_results_ext_conv_morpho),
@@ -10913,8 +11075,6 @@ def RC_function_linear(nu, A1l, alpha):
     return A1l * ((nu) ** (alpha))
 
 
-
-
 def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
     from scipy.stats import t
     x = freqs / 1e9
@@ -10951,8 +11111,8 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
 
     def prior_transform_linear(utheta):
         ua1l, ualpha = utheta  # nu0 is not a parameter to be estimated, so it's removed from here
-        a1l = -1.0 + ua1l * (15)  # Transforming ua1l to be in the range -5 to 50
-        alpha = -2.0 + ualpha * (2.0)  # Transforming ualpha_nt to be in the range -2 to 1.5
+        a1l = -1.0 + ua1l * (5.0)  # Transforming ua1l to be in the range -5 to 50
+        alpha = -3.0 + ualpha * (3.0)  # Transforming ualpha_nt to be in the range -2 to 1.5
         return a1l, alpha
 
     ndim = 2
@@ -10996,7 +11156,8 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
                                       labels=[r'$A_1$', r'$\alpha$'],  # Label axes
                                       label_kwargs=dict(fontsize=16),
                                       # Adjust label font size
-                                      # quantiles = [0.16, 0.5, 0.84],title_quantiles = [0.16, 0.5, 0.84],
+                                      # quantiles = [0.1, 0.5, 0.9],
+                                      # title_quantiles = [0.1, 0.5, 0.9],
                                       max_n_ticks=4, use_math_text=True, verbose=True,
                                       title_fmt='.3f',
                                       fig=plt.subplots(2, 2, figsize=(5, 5)))
@@ -11009,7 +11170,7 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
     A1l_best, alpha_nt_best = best_fit_params
 
     # Calculate the best-fit model
-    x_resample = np.linspace(x[0], x[-1], 100)
+    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
     best_fit_model = RC_function_linear(x_resample, A1l_best, alpha_nt_best)
 
     # Plotting the data
@@ -11102,7 +11263,7 @@ def calc_specidx_region_S2(freqs, fluxes, fluxes_err, ndim=3):
                                       title_kwargs={'y': 1.03},  # Adjust title position
                                       labels=[r'$A_1$',r'$A_2$', r'$\alpha$'],  # Label axes
                                       label_kwargs=dict(fontsize=16),
-                                      # Adjust label font size
+                                      # Adjust label font sibze
                                       # quantiles = [0.16, 0.5, 0.84],title_quantiles = [0.16, 0.5, 0.84],
                                       max_n_ticks=4, use_math_text=True, verbose=True,
                                       title_fmt='.3f',
@@ -11116,7 +11277,7 @@ def calc_specidx_region_S2(freqs, fluxes, fluxes_err, ndim=3):
     A1l_best, A2_best, alpha_nt_best = best_fit_params
 
     # Calculate the best-fit model
-    x_resample = np.linspace(x[0], x[-1], 100)
+    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
     best_fit_model = RC_function(x_resample, A1l_best, A2_best, alpha_nt_best, nu0)
 
     # Plotting the data
@@ -11146,33 +11307,167 @@ def calc_specidx_region_S2(freqs, fluxes, fluxes_err, ndim=3):
         pass
     return (results, dsampler)
 
+def RC_function_Sq(nu,S0,alpha,q):
+    return S0*(nu**(alpha))*np.exp(q * (np.log(nu))**2.0)
+
+def calc_specidx_region_Sq(freqs, fluxes, fluxes_err, ndim=3):
+    x = freqs / 1e9
+    nu0 = np.mean(x)
+    y = fluxes
+    yerr = fluxes_err
+    S0_init = 2*np.max(y)
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y,
+                 yerr=yerr,
+                 fmt='o', label='Observed data', color='k', ecolor='gray', alpha=0.5)
+    plt.xlabel('Frequency [GHz]')
+    plt.ylabel('Flux Density [mJy]')
+    plt.legend()
+    plt.semilogy()
+    plt.semilogx()
+    plt.show()
+
+    def log_likelihood(theta, nu, y):
+        S0, alpha, q = theta
+        model = RC_function_Sq(nu, S0, alpha, q)
+        sigma2 = yerr ** 2
+        return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+
+    def prior_transform(utheta):
+        us0, ualpha, uq = utheta
+        # from here
+        s0 = 0 + us0 * (S0_init)
+        alpha = -2.0 + ualpha * (2.0)
+        q = -0.9 + uq * (0.9)
+        return s0, alpha, q
 
 
+    dsampler = dynesty.DynamicNestedSampler(log_likelihood, prior_transform, bound='balls',
+                                            ndim=ndim, nlive=30000, sample='rwalk',  # hslice, rwalk
+                                            logl_args=(x, y))
 
-def do_fit_spec_RC_linear(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
+    # dsampler.run_nested(dlogz_init=0.05, nlive_init=1500, nlive_batch=500,
+    #                     # use_stop=False,
+    #                 # maxiter_init=10000, maxiter_batch=1000, maxbatch=10
+    #                    )
+    dsampler.run_nested(nlive_init=5000, nlive_batch=1000)
+    # dsampler.run_nested()
+    results = dsampler.results
+
+    results.summary()
+
+    try:
+        lnz_truth = ndim * -np.log(2 * 10.)  # analytic evidence solution
+        fig, axes = dyplot.runplot(results, lnz_truth=lnz_truth)
+
+        fig, axes = dyplot.traceplot(results, truths=np.zeros(ndim),
+                                     truth_color='black', show_titles=True,
+                                     trace_cmap='magma', connect=True,
+                                     connect_highlight=range(5))
+    except:
+        pass
+
+    try:
+        # initialize figure
+        fig, axes = dyplot.cornerplot(results,
+                                      show_titles=True,  # Show titles with parameter values
+                                      title_kwargs={'y': 1.03},  # Adjust title position
+                                      labels=[r'$S_{0}$',r'$\alpha$', r'$q$'],  # Label axes
+                                      label_kwargs=dict(fontsize=16),
+                                      # Adjust label font size
+                                      # quantiles = [0.16, 0.5, 0.84],title_quantiles = [0.16, 0.5, 0.84],
+                                      max_n_ticks=4, use_math_text=True, verbose=True,
+                                      title_fmt='.3f',
+                                      fig=plt.subplots(3, 3, figsize=(7, 7)))
+    except:
+        pass
+
+    # Extract the best-fit parametershttps://dynesty.readthedocs.io/en/latest/examples.html
+    best_fit_indices = np.argmax(results.logl)
+    best_fit_params = results.samples[best_fit_indices]
+    S0_best, alpha_best, q_best = best_fit_params
+
+    # Calculate the best-fit model
+    x_resample = np.linspace(x[0], x[-1], 100)
+    best_fit_model = RC_function_Sq(x_resample, S0_best, alpha_best, q_best)
+
+    # Plotting the data
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(x, y, yerr=yerr, fmt='o', label='Observed data', color='k', ecolor='gray',
+                 alpha=0.5)
+    plt.plot(x_resample, best_fit_model, label='Best-fit model', color='red')
+    plt.xlabel('Frequency (GHz)')
+    plt.ylabel('Flux Density')
+    plt.semilogx()
+    plt.semilogy()
+    plt.legend()
+    plt.show()
+
+    try:
+        # Extracting samples for the corner plot
+        samples = results.samples
+
+        # Creating a corner plot
+        fig = corner.corner(samples,
+                            labels=[r'$S_{0}$',r'$\alpha$', r'$q$'],
+                            truths=[S0_best, alpha_best, q_best],
+                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            title_kwargs={"fontsize": 12})
+        plt.show()
+    except:
+        pass
+    return (results, dsampler)
+
+
+def do_fit_spec_RC_linear(freqs,
+                          fluxes,
+                          fluxes_err,
+                          basename_save=None,log_plot=True,
+                          save_name_append = None,
+                          plot_errors_shade = False,
+                          do_mcmc_fit = False,
+                          title_text = None,
+                          verbose=0):
+    """
+    Peform a fit to the radio spectrum using a linear model.
+
+    Parameters
+    ----------
+    freqs : array
+        Frequency array in Hz.
+    fluxes : array
+        Flux density array in mJy.
+    fluxes_err : array
+        Flux density error array in mJy.
+    basename_save : str
+        Basename to save the output files.
+    verbose : int
+        Verbosity level.
+
+    """
     x = freqs / 1e9
     y = fluxes
     yerr = fluxes_err
-    if nu0 is None:
-        nu0 = np.mean(x)
-
+    weights = 1.0 / yerr
     def min_func(params):
         A1 = params['A1']
-        alpha_nt = params['alpha_nt']
-        res = y - RC_function_linear(x, A1, alpha_nt)
-        # res = data - RC_function(nu, A1l, alpha_nt)
+        alpha = params['alpha']
+        res = (y - RC_function_linear(x, A1, alpha))/yerr
+        # res = data - RC_function(nu, A1l, alpha)
         return res.copy()
 
+
     fit_params = lmfit.Parameters()
-    fit_params.add("A1", value=0.5, min=-5, max=15)
-    fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=2.5)
+    fit_params.add("A1", value=10.0, min=-5, max=5000)
+    fit_params.add("alpha", value=-0.9, min=-5.0, max=5.0)
 
     mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
                            nan_policy='omit', reduce_fcn='neglogcauchy')
 
     result_1 = mini.minimize(method='least_squares',
                              max_nfev=200000,  # f_scale = 1.0,
-                             loss="cauchy", tr_solver="lsmr",
+                             loss="cauchy", tr_solver="exact",
                              ftol=1e-15, xtol=1e-15, gtol=1e-15,
                              verbose=verbose
                              )
@@ -11181,7 +11476,7 @@ def do_fit_spec_RC_linear(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
     result = mini.minimize(method='least_squares',
                            params=second_run_params,
                            max_nfev=200000,  # f_scale = 1.0,
-                           loss="cauchy", tr_solver="lsmr",
+                           loss="cauchy", tr_solver="exact",
                            ftol=1e-12, xtol=1e-12, gtol=1e-12,
                            verbose=verbose
                            )
@@ -11200,12 +11495,118 @@ def do_fit_spec_RC_linear(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
     #                                 'return_all': True,'adaptive': True,
     #                                 'disp': True}
     #                  )
+    fig = plt.figure(figsize=(8, 4))
+    # fig, ax = plt.subplots()
+    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
+    plt.errorbar(x, y, yerr=yerr, fmt='o',
+                 label='Data', color='k', ecolor='gray',
+                 alpha=0.5)
+
+    if do_mcmc_fit == True:
+        burn_in = 500
+        results_emcee = mini.emcee(burn=burn_in, steps=5000,
+                                     thin=3, nwalkers=200,
+                                   params=result.params, workers=6)
+
+        samples_emcee = results_emcee.flatchain[burn_in:]
+        _A1 = np.asarray(samples_emcee['A1'])
+        _alpha = np.asarray(samples_emcee['alpha'])
+
+        model_samples = np.array(
+            [RC_function_linear(x_resample, _A1[i], _alpha[i]) for i in
+             range(samples_emcee.shape[0])])
+
+        model_mean = np.mean(model_samples, axis=0)
+        model_std = np.std(model_samples, axis=0)
+
+    model_resample = RC_function_linear(x_resample,
+                                    result.params['A1'].value,
+                                    result.params['alpha'].value)
+
+
+    plt.plot(x_resample, (RC_function_linear(x_resample,
+                             result.params['A1'].value,
+                             result.params['alpha'].value)),
+             color='red', ls='-.', label='Best-fit model')
+    if do_mcmc_fit == True:
+        plt.plot(x_resample, model_mean,
+                 color='purple', linestyle=(0, (5, 10)), label='MCMC Mean')
+
+    # plt.fill_between(x_resample, lower_bound, upper_bound, color='lightgray', alpha=0.5,
+    #                  label='Parameter uncertainty')
+    if plot_errors_shade:
+        if do_mcmc_fit == True:
+            plt.fill_between(x_resample,
+                             model_mean - 3*model_std,
+                             model_mean + 3*model_std, color='lightgray',
+                            alpha=0.5)
+        else:
+            # Define the number of Monte Carlo samples
+            num_samples = 1000
+
+            # Generate random samples from parameter distributions
+            A1_samples = np.random.normal(result.params['A1'].value, result.params['A1'].stderr,
+                                          num_samples)
+            alpha_samples = np.random.normal(result.params['alpha'].value,
+                                             result.params['alpha'].stderr,
+                                             num_samples)
+
+            # Compute model predictions for each sample
+            model_predictions = np.zeros((num_samples, len(x_resample)))
+            for i in range(num_samples):
+                model_predictions[i] = RC_function_linear(x_resample, A1_samples[i],
+                                                          alpha_samples[i])
+
+            median_prediction = np.median(model_predictions, axis=0)
+            std_prediction = np.std(model_predictions, axis=0)
+
+            # upper_bound = RC_function_linear(x_resample,
+            #                                  result.params['A1'].value + result.params['A1'].stderr,
+            #                                  result.params['alpha'].value + result.params['alpha'].stderr)
+            # lower_bound = RC_function_linear(x_resample,
+            #                                  result.params['A1'].value - result.params['A1'].stderr,
+            #                                  result.params['alpha'].value - result.params['alpha'].stderr)
+            plt.fill_between(x_resample, median_prediction - 1*std_prediction, median_prediction + 1*std_prediction,
+                             color='lightgray', alpha=0.5,
+                             # label='Uncertainty (1-sigma)'
+                             )
+    # plt.ylim(1e-3,1.2*np.max(y))
+    plt.ylim(0.1*np.min(y),3.0*np.max(y))
+    plt.xlabel(r'$\nu$ [GHz]')
+    # plt.ylabel('Integrated Flux Density [mJy]')
+    plt.ylabel(r'$S_{\nu}$ [mJy]')
+    # fig_width, fig_height = fig.get_size_inches()
+    # fig.text(0.2, 0.3, 'Figure Annotation', ha='center', fontsize=12, color='red',
+    #          transform=fig.transFigure)
+    # fig.text(0.2, 0.3, 'Figure Annotation',
+    #          # ha='center',
+    #          fontsize=12, color='red',
+    #          transform=fig.transFigure)
+    # Add a box around the text
+    text_x, text_y = 0.15, 0.15
+    text = (rf"$\alpha = {(result.params['alpha'].value):.2f}\pm "
+            rf"{(result.params['alpha'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+    if title_text is not None:
+        plt.title(title_text)
+
+    if log_plot == True:
+        plt.semilogx()
+        plt.semilogy()
+
+    """
     x_resample = np.linspace(x[0], x[-1], 100)
     plt.plot(x, y, 'o')
     plt.plot(x_resample, (RC_function_linear(x_resample,
                              result.params['A1'].value,
-                             result.params['alpha_nt'].value)),
+                             result.params['alpha'].value)),
              '-', label='best fit')
+    plt.ylim(0,1.2*np.max(y))
+    """
     # plt.plot(x, (RC_function(x,
     #                         result_mini.params['A1l'].value,
     #                         result_mini.params['A2'].value*0,
@@ -11217,11 +11618,225 @@ def do_fit_spec_RC_linear(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
     #                         result_mini.params['alpha_nt'].value)),
     #          '-', label='A2 term')
     plt.legend()
+    if basename_save is not None:
+        if save_name_append is None:
+            save_name_append = '_RC_alpha_fit_linear'
+        else:
+            save_name_append = save_name_append + '_RC_alpha_fit_linear'
+        plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
+                    bbox_inches='tight')
+    # plt.show()
+
+    if do_mcmc_fit == True:
+        plt.figure()
+        _ = corner.corner(samples_emcee,
+                                labels=[r'$A_1$',
+                                        r'$\alpha$'],
+                                truths=[result.params['A1'].value,
+                                        result.params['alpha'].value],
+                                show_titles=True,
+                                quantiles=[0.16, 0.5, 0.84])
+        # plt.show()
+        print('++==>> Parameter Results (MCMC sampling).')
+        print(lmfit.fit_report(results_emcee.params))
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
+    return(mini,result)
+
+
+def do_fit_spec_RC_curv(freqs,
+                          fluxes,
+                          fluxes_err,
+                          basename_save=None,log_plot=True,
+                          save_name_append = None,
+                          plot_errors_shade = False,
+                          do_mcmc_fit = False,
+                          title_text = None,
+                          verbose=0):
+    """
+    Peform a fit to the radio spectrum using a curved model.
+
+    Parameters
+    ----------
+    freqs : array
+        Frequency array in Hz.
+    fluxes : array
+        Flux density array in mJy.
+    fluxes_err : array
+        Flux density error array in mJy.
+    basename_save : str
+        Basename to save the output files.
+    verbose : int
+        Verbosity level.
+
+    """
+    x = freqs / 1e9
+    nu0 = np.mean(x)
+    y = fluxes
+    yerr = fluxes_err
+    S0_init = 2*np.max(y)
+
+    def min_func(params):
+        S0 = params['S0']
+        alpha = params['alpha']
+        q = params['q']
+        res = (y - RC_function_Sq(x, S0, alpha,q))/yerr
+        return res.copy()
+
+    fit_params = lmfit.Parameters()
+    fit_params.add("S0", value=10.0, min=-5, max=5000)
+    fit_params.add("alpha", value=-0.9, min=-5.0, max=5.0)
+    fit_params.add("q", value=0.0, min=-0.9, max=0.9)
+
+    mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
+                           nan_policy='omit', reduce_fcn='neglogcauchy')
+
+    result_1 = mini.minimize(method='least_squares',
+                             max_nfev=200000,  # f_scale = 1.0,
+                             loss="cauchy", tr_solver="exact",
+                             ftol=1e-15, xtol=1e-15, gtol=1e-15,
+                             verbose=verbose
+                             )
+    second_run_params = result_1.params
+
+    result = mini.minimize(method='least_squares',
+                           params=second_run_params,
+                           max_nfev=200000,  # f_scale = 1.0,
+                           loss="cauchy", tr_solver="exact",
+                           ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                           verbose=verbose
+                           )
+
+    fig = plt.figure(figsize=(8, 4))
+    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
+    plt.errorbar(x, y, yerr=yerr, fmt='o',
+                 label='Data', color='k', ecolor='gray',
+                 alpha=0.5)
+
+
+    if do_mcmc_fit == True:
+        burn_in = 500
+        results_emcee = mini.emcee(burn=burn_in, steps=5000,
+                                     thin=3, nwalkers=300,
+                                   params=result.params, workers=6)
+
+        samples_emcee = results_emcee.flatchain[burn_in:]
+        _S0 = np.asarray(samples_emcee['S0'])
+        _alpha = np.asarray(samples_emcee['alpha'])
+        _q = np.asarray(samples_emcee['q'])
+
+        model_samples = np.array(
+            [RC_function_Sq(x_resample, _S0[i], _alpha[i], _q[i]) for i in
+             range(samples_emcee.shape[0])])
+
+        model_mean = np.mean(model_samples, axis=0)
+        model_std = np.std(model_samples, axis=0)
+
+    model_resample = RC_function_Sq(x_resample,
+                                    result.params['S0'].value,
+                                    result.params['alpha'].value,
+                                    result.params['q'].value)
+
+    plt.plot(x_resample, model_resample,
+             color='red', ls='-.', label='Best-fit model')
+
+    # plt.fill_between(x_resample, lower_bound, upper_bound, color='lightgray', alpha=0.5,
+    #                  label='Parameter uncertainty')
+    if plot_errors_shade:
+        if do_mcmc_fit == True:
+            plt.plot(x_resample, model_mean,
+                     color='purple', linestyle=(0, (5, 10)), label='MCMC Mean')
+            plt.fill_between(x_resample,
+                             model_mean - 3*model_std,
+                             model_mean + 3*model_std, color='lightgray',
+                            alpha=0.5)
+        else:
+            # Define the number of Monte Carlo samples
+            num_samples = 1000
+
+            # Generate random samples from parameter distributions
+            S0_samples = np.random.normal(result.params['S0'].value, result.params['S0'].stderr,
+                                          num_samples)
+            alpha_samples = np.random.normal(result.params['alpha'].value,
+                                             result.params['alpha'].stderr,
+                                             num_samples)
+            q_samples = np.random.normal(result.params['q'].value, result.params['q'].stderr,
+                                         num_samples)
+
+            # Compute model predictions for each sample
+            model_predictions = np.zeros((num_samples, len(x_resample)))
+            for i in range(num_samples):
+                model_predictions[i] = RC_function_Sq(x_resample, S0_samples[i],
+                                                      alpha_samples[i],
+                                                      q_samples[i])
+
+            median_prediction = np.median(model_predictions, axis=0)
+            std_prediction = np.std(model_predictions, axis=0)
+
+            plt.fill_between(x_resample,
+                             median_prediction - 1*std_prediction,
+                             median_prediction + 1*std_prediction,
+                             color='lightgray', alpha=0.5,
+                             # label='Uncertainty (1-sigma)'
+                             )
+    # plt.ylim(1e-3,1.2*np.max(y))
+    plt.ylim(0.1*np.min(y),3.0*np.max(y))
+    plt.xlabel(r'$\nu$ [GHz]')
+    # plt.ylabel('Integrated Flux Density [mJy]')
+    plt.ylabel(r'$S_{\nu}$ [mJy]')
+    text_x, text_y = 0.15, 0.15
+    text = (rf"$\alpha = {(result.params['alpha'].value):.2f}\pm "
+            rf"{(result.params['alpha'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+    if title_text is not None:
+        plt.title(title_text)
+
+    if log_plot == True:
+        plt.semilogx()
+        plt.semilogy()
+    plt.legend()
+    if basename_save is not None:
+        if save_name_append is None:
+            save_name_append = '_RC_alpha_fit_curved'
+        else:
+            save_name_append = save_name_append + '_RC_alpha_fit_curved'
+        plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
+                    bbox_inches='tight')
     plt.show()
-    return result
+
+    plt.figure()
+
+    if do_mcmc_fit == True:
+        _ = corner.corner(samples_emcee,
+                                labels=[r'$S_{0}$',
+                                        r'$\alpha$',
+                                        r'$q$'],
+                                truths=[result.params['S0'].value,
+                                        result.params['alpha'].value,
+                                        result.params['q'].value],
+                                show_titles=True,
+                                quantiles=[0.16, 0.5, 0.86])
+        plt.show()
+        print('++==>> Parameter Results (MCMC sampling).')
+        print(lmfit.fit_report(results_emcee.params))
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
 
 
-def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
+    return mini,result
+
+
+def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
+                      basename_save=None, log_plot=True,
+                      save_name_append=None,
+                      plot_errors_shade=False,
+                      do_mcmc_fit=False,
+                      title_text=None,
+                      verbose=0):
     x = freqs / 1e9
     y = fluxes
     yerr = fluxes_err
@@ -11233,13 +11848,13 @@ def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
         A1 = params['A1']
         A2 = params['A2']
         alpha_nt = params['alpha_nt']
-        res = y - RC_function(x, A1, A2, alpha_nt,nu0)
+        res = (y - RC_function(x, A1, A2, alpha_nt,nu0))/yerr
         # res = data - RC_function(nu, A1l, alpha_nt)
         return res.copy()
 
     fit_params = lmfit.Parameters()
-    fit_params.add("A1", value=0.5, min=0, max=15)
-    fit_params.add("A2", value=0.5, min=-5, max=15)
+    fit_params.add("A1", value=0.5, min=0, max=5000)
+    fit_params.add("A2", value=0.5, min=-5, max=5000)
     fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=2.5)
 
     mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
@@ -11247,7 +11862,7 @@ def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
 
     result_1 = mini.minimize(method='least_squares',
                              max_nfev=200000,  # f_scale = 1.0,
-                             loss="cauchy", tr_solver="lsmr",
+                             loss="cauchy", tr_solver="exact",
                              ftol=1e-15, xtol=1e-15, gtol=1e-15,
                              verbose=verbose
                              )
@@ -11256,7 +11871,7 @@ def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
     result = mini.minimize(method='least_squares',
                            params=second_run_params,
                            max_nfev=200000,  # f_scale = 1.0,
-                           loss="cauchy", tr_solver="lsmr",
+                           loss="cauchy", tr_solver="exact",
                            ftol=1e-12, xtol=1e-12, gtol=1e-12,
                            verbose=verbose
                            )
@@ -11275,30 +11890,138 @@ def do_fit_spec_RC_S2(fluxes,freqs,fluxes_err,nu0=None, verbose=2):
     #                                 'return_all': True,'adaptive': True,
     #                                 'disp': True}
     #                  )
-    x_resample = np.linspace(x[0], x[-1], 100)
-    plt.plot(x, y, 'o')
-    # plt.plot(x, result.init_fit, '--', label='initial fit')
-    plt.plot(x_resample,
-             RC_function(x_resample,
-                         result.params['A1'].value,
-                         result.params['A2'].value,
-                         result.params['alpha_nt'].value,
-                         nu0),
-             '-', label='best fit')
-    # plt.plot(x, (RC_function(x,
-    #                         result_mini.params['A1l'].value,
-    #                         result_mini.params['A2'].value*0,
-    #                         result_mini.params['alpha_nt'].value)),
-    #          '-', label='A1 term')
-    # plt.plot(x, (RC_function(x,
-    #                         result_mini.params['A1l'].value*0,
-    #                         result_mini.params['A2'].value,
-    #                         result_mini.params['alpha_nt'].value)),
-    #          '-', label='A2 term')
-    plt.legend()
-    plt.show()
+    fig = plt.figure(figsize=(8, 4))
+    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
+    plt.errorbar(x, y, yerr=yerr, fmt='o',
+                 label='Data', color='k', ecolor='gray',
+                 alpha=0.5)
 
-    return result
+
+    if do_mcmc_fit == True:
+        burn_in = 500
+        results_emcee = mini.emcee(burn=burn_in, steps=5000,
+                                     thin=3, nwalkers=300,
+                                   params=result.params, workers=6)
+
+        samples_emcee = results_emcee.flatchain[burn_in:]
+        _A1 = np.asarray(samples_emcee['A1'])
+        _A2 = np.asarray(samples_emcee['A2'])
+        _alpha_nt = np.asarray(samples_emcee['alpha_nt'])
+
+        model_samples = np.array(
+            [RC_function(x_resample, _A1[i], _A2[i], _alpha_nt[i], nu0) for i in
+             range(samples_emcee.shape[0])])
+
+        model_mean = np.mean(model_samples, axis=0)
+        model_std = np.std(model_samples, axis=0)
+
+    model_resample = RC_function(x_resample,
+                                 result.params['A1'].value,
+                                 result.params['A2'].value,
+                                 result.params['alpha_nt'].value,
+                                 nu0)
+
+    plt.plot(x_resample, model_resample,
+             color='red', ls='-.', label='Best-fit model')
+
+    plt.plot(x_resample, RC_function(x_resample,
+                            result.params['A1'].value,
+                            result.params['A2'].value*0,
+                            result.params['alpha_nt'].value,nu0),
+             '-', label='A1 term')
+    plt.plot(x_resample, RC_function(x_resample,
+                            result.params['A1'].value*0,
+                            result.params['A2'].value,
+                            result.params['alpha_nt'].value,nu0),
+             '-', label='A2 term')
+
+    if plot_errors_shade:
+        if do_mcmc_fit == True:
+            plt.plot(x_resample, model_mean,
+                     color='purple', linestyle=(0, (5, 10)), label='MCMC Mean')
+            plt.fill_between(x_resample,
+                             model_mean - 3*model_std,
+                             model_mean + 3*model_std, color='lightgray',
+                            alpha=0.5)
+        else:
+            # Define the number of Monte Carlo samples
+            num_samples = 1000
+
+            # Generate random samples from parameter distributions
+            A1_samples = np.random.normal(result.params['A1'].value, result.params['A1'].stderr,
+                                          num_samples)
+            A2_samples = np.random.normal(result.params['A2'].value,
+                                          result.params['A2'].stderr,
+                                          num_samples)
+            alpha_samples = np.random.normal(result.params['alpha_nt'].value,
+                                             result.params['alpha_nt'].stderr,
+                                             num_samples)
+
+            # Compute model predictions for each sample
+            model_predictions = np.zeros((num_samples, len(x_resample)))
+            for i in range(num_samples):
+                model_predictions[i] = RC_function(x_resample,
+                                                      A1_samples[i],
+                                                      A2_samples[i],
+                                                      alpha_samples[i],
+                                                      nu0)
+
+            median_prediction = np.median(model_predictions, axis=0)
+            std_prediction = np.std(model_predictions, axis=0)
+
+            plt.fill_between(x_resample,
+                             median_prediction - 1*std_prediction,
+                             median_prediction + 1*std_prediction,
+                             color='lightgray', alpha=0.5,
+                             # label='Uncertainty (1-sigma)'
+                             )
+    plt.ylim(0.1*np.min(y),3.0*np.max(y))
+    plt.xlabel(r'$\nu$ [GHz]')
+    # plt.ylabel('Integrated Flux Density [mJy]')
+    plt.ylabel(r'$S_{\nu}$ [mJy]')
+    text_x, text_y = 0.15, 0.15
+    text = (rf"$\alpha = {(result.params['alpha_nt'].value):.2f}\pm "
+            rf"{(result.params['alpha_nt'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+    if title_text is not None:
+        plt.title(title_text)
+
+    if log_plot == True:
+        plt.semilogx()
+        plt.semilogy()
+    plt.legend()
+    if basename_save is not None:
+        if save_name_append is None:
+            save_name_append = '_RC_alpha_fit_S2'
+        else:
+            save_name_append = save_name_append + '_RC_alpha_fit_S2'
+        plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
+                    bbox_inches='tight')
+    plt.show()
+    plt.figure()
+
+    if do_mcmc_fit == True:
+        _ = corner.corner(samples_emcee,
+                                labels=[r'$A_1$',
+                                        r'$A_2$',
+                                        r'$\alpha_{\rm nt}$'],
+                                truths=[result.params['A1'].value,
+                                        result.params['A2'].value,
+                                        result.params['alpha_nt'].value],
+                                show_titles=True,
+                                quantiles=[0.16, 0.5, 0.86])
+        plt.show()
+        print('++==>> Parameter Results (MCMC sampling).')
+        print(lmfit.fit_report(results_emcee.params))
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
+
+
+    return mini,result
 
 
 """
@@ -11346,7 +12069,7 @@ def make_scalebar(ax, left_side, length, color='w', linestyle='-', label='',
 
 def plot_radial_profile(imagedatas, refimage=None,
                         ax=None, centre=None, labels=None,
-                        figsize=(4, 6)):
+                        figsize=(5, 5)):
     if ax is None:
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(1, 1, 1)
@@ -11355,6 +12078,8 @@ def plot_radial_profile(imagedatas, refimage=None,
 
     if labels is None:
         _labels = [''] * len(imagedatas)
+    else:
+        _labels = labels
 
     if refimage != None:
         cell_size = get_cell_size(refimage)
@@ -11365,11 +12090,11 @@ def plot_radial_profile(imagedatas, refimage=None,
 
     for i in range(len(imagedatas)):
         radius, intensity = get_profile(imagedatas[i], center=centre)
-        ax.plot(radius * cell_size, intensity, label=_labels[i])
+        ax.plot(radius * cell_size, abs(intensity), label=_labels[i])
 
-    plt.semilogy()
+#     mlibs.plt.semilogy()
     plt.xlabel(f"Radius {xaxis_units}")
-    plt.ylabel(f"Rdial Intensity [mJy/beam]")
+    plt.ylabel(f"Radial Intensity [mJy/beam]")
     # mlibs.plt.xlim(0,cell_size*radius[int(len(radius)/2)])
     # mlibs.plt.semilogx()
     if labels != None:
@@ -14102,6 +14827,29 @@ def adjust_arrays(a, b):
 
     return a, b
 
+
+def get_phase_centre(vis):
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+
+    msmd.open(vis)
+    ra_radians = msmd.phasecenter()['m0']['value']
+    dec_radians = msmd.phasecenter()['m1']['value']
+    msmd.close()
+    # Convert to SkyCoord object
+    coord = SkyCoord(ra=ra_radians * u.radian, dec=dec_radians * u.radian, frame='icrs')
+
+    # Format the output using 'hmsdms'
+    formatted_coord = coord.to_string('hmsdms')
+    formatted_ra, formatted_dec = formatted_coord.split()
+
+    formatted_ra_hms = formatted_ra.replace('h', ':').replace('m', ':').replace('s', '')
+    formatted_dec_dms = formatted_dec.replace('d', '.').replace('m', '.').replace('s', '')
+
+    formatted_output = "J2000 {} {}".format(formatted_ra_hms, formatted_dec_dms)
+
+    print(formatted_output)
+    return (formatted_output)
 
 """
 EXPERIMENTAL
