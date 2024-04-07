@@ -189,6 +189,43 @@ def print_logger_header(title, logger):
     logger.info(top_bottom_border)
 
 """
+#Config
+"""
+
+
+def reset_rc_params():
+    """
+    Global configuration for matplotlib.pyplot
+    """
+    mpl.rcParams.update({'font.size': 16,
+                         "text.usetex": False,  #
+                         "font.family": "sans-serif",
+                         'mathtext.fontset': 'stix',
+                         "font.family": "sans",
+                         'font.weight': 'medium',
+                         'font.family': 'STIXGeneral',
+                         'xtick.labelsize': 16,
+                         'figure.figsize': (6, 4),
+                         'ytick.labelsize': 16,
+                         'axes.labelsize': 16,
+                         'xtick.major.width': 1,
+                         'ytick.major.width': 1,
+                         'axes.linewidth': 1.5,
+                         'axes.edgecolor': 'orange',
+                         'lines.linewidth': 2,
+                         'legend.fontsize': 14,
+                         'grid.linestyle': '--',
+                         # 'grid.color':'black',
+                         'axes.grid.which': 'major',
+                         'axes.grid.axis': 'both',
+                         'axes.spines.right': True,
+                         'axes.grid': True,
+                         'axes.titlesize': 16,
+                         'legend.framealpha': 1.0
+                         })
+    pass
+
+"""
  __  __       _   _
 |  \/  | __ _| |_| |__
 | |\/| |/ _` | __| '_ \
@@ -13460,7 +13497,7 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
 
 
 def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
-            vmax=None,
+            vmax=None,fig=None,
             vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
             cmap_cont='terrain',
             rms=None, plot_title=None, apply_mask=False,
@@ -13557,6 +13594,11 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
         else:
             scale_fig_x = box_size[0]/box_size[1]
             fig = plt.figure(figsize=(figsize[0]*scale_fig_x,figsize[1]))
+    else:
+        if fig is None:
+            fig = plt.figure(figsize=figsize)
+        else:
+            pass
     if isinstance(imagename, str) == True:
 
         if with_wcs == True:
@@ -13664,6 +13706,13 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             ax.set_xlabel(axis_units_label, fontsize=14)
             ax.set_ylabel(axis_units_label, fontsize=14)
 
+    else:
+        projection = 'offset'
+        if projection == 'offset':
+            # ax = fig.add_subplot()
+            # dx = g.shape[0] / 2
+            axis_units_label = r'Offset [arcsec]'
+            ax.set_xlabel(axis_units_label, fontsize=14)
 
     xticks = np.linspace(-dx, dx, 5)
     yticks = np.linspace(-dy, dy, 5)
@@ -13888,7 +13937,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
     if save_name != None:
     #         if not os.path.exists(save_name+special_name+'.jpg'):
-        plt.savefig(save_name + special_name + '.jpg', dpi=300,
+        plt.savefig(save_name + special_name + '.jpg', dpi=600,
                     bbox_inches='tight')
         plt.savefig(save_name + special_name + '.pdf', dpi=600,
                     bbox_inches='tight')

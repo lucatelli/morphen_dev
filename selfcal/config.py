@@ -17,13 +17,12 @@ outlierfile = ''
 quiet = True
 run_mode = 'terminal'
 
-
 path = ('/path/to/vis/')
 vis_list = ['example_vis'] #do not use .ms extension
 
 #VLA
-receiver = 'C'
-instrument = 'eM' # 'EVLA' or 'eM'
+receiver = 'K'
+instrument = 'EVLA' # 'EVLA' or 'eM'
 
 
 steps = [
@@ -45,7 +44,7 @@ steps = [
 
 cell_sizes_JVLA = {'L':'0.2arcsec',
                    'S':'0.1arcsec',
-                   'C':'0.04arcsec',
+                   'C':'0.06arcsec',
                    'X':'0.04arcsec',
                    'Ku':'0.02arcsec',
                    'K':'0.01arcsec',
@@ -80,8 +79,8 @@ init_parameters = {'fov_image': {'imsize': 1024*8,
                                 'basename': 'FOV_phasecal_image',
                                 'niter': 100,
                                 'robust': 0.5},
-                  'test_image': {'imsize': int(1024*2),
-                                 'imsizey': int(1024*2),
+                  'test_image': {'imsize': int(1024*1),
+                                 'imsizey': int(1024*1),
                                  'FIELD_SHIFT':None,
                                  'cell': cell_size,
                                  'prefix': 'test_image',
@@ -317,7 +316,7 @@ params_standard_2 = {'name': 'standard_2',
                           'spwmap': [],
                           'nsigma_automask' : '3.0',
                           'nsigma_autothreshold' : '1.5',
-                          'uvtaper' : ['0.04asec'],
+                          'uvtaper' : [''],
                           'with_multiscale' : True,
                           # 'scales': '0,5,10,20',
                           'scales': 'None',
@@ -347,7 +346,7 @@ params_standard_2 = {'name': 'standard_2',
                            'spwmap': [],
                            'nsigma_automask' : '3.0',
                            'nsigma_autothreshold' : '1.5',
-                           'uvtaper' : ['0.04asec'],
+                           'uvtaper' : [''],
                            'with_multiscale' : True,
                            # 'scales': '0,5,10,20,40',
                            'scales': 'None',

@@ -167,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--mask", nargs='?', default=None,
                         const=True, help="A fits-file mask to be used.")
 
-    parser.add_argument("--nc", type=int, nargs='?', default=4,
+    parser.add_argument("--nc", type=int, nargs='?', default=8,
                         help="Number of channels division to be used in "
                              "the MFS deconvolution.")
 

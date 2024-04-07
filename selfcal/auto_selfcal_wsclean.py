@@ -74,6 +74,8 @@ tb = casatools.table()
 import config as cf
 from importlib import reload
 reload(cf)
+mlibs.reset_rc_params()
+
 
 FIELD = cf.FIELD
 ANTENNAS = cf.ANTENNAS
@@ -284,6 +286,36 @@ def compute_image_stats(path,
                                                show_figure=False)[-1]
     image_statistics[prefix] = img_props
 
+    try:
+        centre = mlibs.nd.maximum_position(mlibs.ctn(image_list[prefix]))[::-1]
+        # centre = (int(image_statistics[prefix]['y0']),int(image_statistics[prefix]['x0']))
+        fig = mlibs.plt.figure(figsize=(16, 8))
+        ax0 = fig.add_subplot(1, 2, 2)
+        ax0 = mlibs.eimshow(imagename = image_list[prefix],
+                            center=centre,
+                            projection = 'offset',
+                            rms=mlibs.mad_std(mlibs.ctn(image_list[prefix + '_residual'])),
+                            # crop=True,box_size=300,
+                            figsize=(8, 8), ax=ax0,fig=fig,
+                            crop=True, box_size=int(4 * image_statistics[prefix]['C95radii']),
+                            # save_name=image_list[prefix].replace('.fits', '_map'),
+                            add_beam=True)
+        ax0.set_title(f'Radio Map')
+        ax1 = fig.add_subplot(1, 2, 1)
+        ax1 = mlibs.eimshow(imagename = image_list[prefix + '_residual'],
+                            center=centre,
+                            projection='offset',
+                            vmin_factor=-3.0, vmax_factor=0.99,
+                            add_contours=False,
+                            figsize=(8, 8), ax=ax1,fig=fig,
+                            crop=True, box_size=int(4 * image_statistics[prefix]['C95radii']),
+                            save_name=image_list[prefix].replace('.fits', '_map'),
+                            plot_title = f'Residual Map', plot_colorbar=False,
+                            add_beam=False)
+
+    except:
+        print('--==>> Error on plotting radio map.')
+        pass
     try:
         sub_band_images = glob.glob(
             image_list[prefix].replace('-MFS-image.fits', '') + '-????-image.fits')
@@ -1705,6 +1737,7 @@ if run_mode == 'terminal':
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
                                                                    prefix=prefix,
+                                                                   sigma=p0_params['sigma_mask'],
                                                                    selfcal_step='p0')
 
                 mask_name = create_mask(image_list['test_image_0'],
@@ -1731,6 +1764,7 @@ if run_mode == 'terminal':
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
                                                                    prefix='start_image',
+                                                                   sigma=p0_params['sigma_mask'],
                                                                    selfcal_step='test_image')
 
                 if 'start_image' not in steps_performed:
@@ -1797,6 +1831,7 @@ if run_mode == 'terminal':
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
                                                                    prefix='selfcal_test_0',
+                                                                   sigma=p0_params['sigma_mask'],
                                                                    selfcal_step='p0')
 
                 if params_trial_2 is None:
@@ -1880,6 +1915,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=p1_params['sigma_mask'],
                                                                    prefix='selfcal_test_0')
 
                 mask_name = create_mask(image_list['selfcal_test_0'],
@@ -1903,6 +1939,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=p1_params['sigma_mask'],
                                                                    prefix='1_update_model_image')
 
                 steps_performed.append('update_model_1')
@@ -1962,6 +1999,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=p1_params['sigma_mask'],
                                                                    prefix='selfcal_test_1')
 
                 trial_gain_tables.append(gain_tables_selfcal_p1)
@@ -2006,6 +2044,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=p2_params['sigma_mask'],
                                                                    prefix='selfcal_test_1')
                 mask_name = create_mask(image_list['selfcal_test_1'],
                                         rms_mask=rms_mask,
@@ -2028,6 +2067,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=p2_params['sigma_mask'],
                                                                    prefix='2_update_model_image')
 
                 steps_performed.append('update_model_2')
@@ -2136,6 +2176,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=ap1_params['sigma_mask'],
                                                                    prefix='selfcal_test_2')
                 mask_name = create_mask(image_list['selfcal_test_2'],
                                         rms_mask=rms_mask,
@@ -2164,6 +2205,7 @@ if run_mode == 'terminal':
                 image_statistics, image_list = compute_image_stats(path=path,
                                                                    image_list=image_list,
                                                                    image_statistics=image_statistics,
+                                                                   sigma=ap1_params['sigma_mask'],
                                                                    prefix='3_update_model_image')
 
                 steps_performed.append('update_model_3')
@@ -2342,7 +2384,8 @@ if run_mode == 'terminal':
                 # phase = 'AP'
                 ax_image = mlibs.eimshow(image,
                                          rms=None, add_contours=True, center=centre,
-                                         ax=ax_image, crop=crop, box_size=400)
+                                         ax=ax_image, fig=fig,
+                                         crop=crop, box_size=400)
                 ax_image = ax_image
                 # ax_image.imshow(image_placeholder)
                 ax_image.set_title(f'{phase}_IMAGE')
