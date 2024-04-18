@@ -12013,16 +12013,37 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
 
     ax1.plot(x_resample, model_resample,
              color='red', ls='-.', label='Best-fit model')
-
-    ax1.plot(x_resample, RC_function_S2(x_resample,
+    
+    
+    A1term = RC_function_S2(x_resample,
                             result.params['A1'].value,
                             result.params['A2'].value*0,
-                            result.params['alpha_nt'].value,nu0),
-             '-', label='A1 term')
-    ax1.plot(x_resample, RC_function_S2(x_resample,
+                            result.params['alpha_nt'].value,nu0)
+    
+    
+    A2term = RC_function_S2(x_resample,
                             result.params['A1'].value*0,
                             result.params['A2'].value,
-                            result.params['alpha_nt'].value,nu0),
+                            result.params['alpha_nt'].value,nu0)
+    
+    Snu0_14 = RC_function_S2(1.4,
+                            result.params['A1'].value,
+                            result.params['A2'].value,
+                            result.params['alpha_nt'].value,1.4)
+    
+    Snu0_6 = RC_function_S2(6.0,
+                            result.params['A1'].value,
+                            result.params['A2'].value,
+                            result.params['alpha_nt'].value,6.0)
+    
+    thermal_fraction_14 = result.params['A1'].value/Snu0_14
+    
+    thermal_fraction_6 = result.params['A1'].value/Snu0_6
+    
+    ax1.plot(x_resample, A1term,
+             '-', label='A1 term')
+    
+    ax1.plot(x_resample, A2term,
              '-', label='A2 term')
 
     ax2.plot(x, (y-model_best)/model_best,
@@ -12069,6 +12090,7 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
                              # label='Uncertainty (1-sigma)'
                              )
     # plt.ylim(1e-3,1.2*np.max(y))
+    
     ax1.legend()
     ax1.set_ylim(0.1*np.min(y),3.0*np.max(y))
     ax1.set_xlabel(r'$\nu$ [GHz]')
@@ -12082,6 +12104,28 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
                         # ha='center', va='center',
                         fontsize=12, color='black',
                         bbox=text_bbox_props, transform=fig.transFigure)
+    
+    
+    text_x, text_y = 0.5, 0.40
+    text = (rf"$fth(1.4) = {(thermal_fraction_14):.2f}\pm "
+            rf"{(result.params['A1'].stderr/Snu0_14):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        # bbox=text_bbox_props, 
+                        transform=fig.transFigure)
+    
+    text_x, text_y = 0.5, 0.35
+    text = (rf"$fth(6.0) = {(thermal_fraction_6):.2f}\pm "
+            rf"{(result.params['A1'].stderr/Snu0_6):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        # bbox=text_bbox_props, 
+                        transform=fig.transFigure)
+    
     if title_text is not None:
         ax1.set_title(title_text)
 
@@ -14098,7 +14142,7 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
 def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             vmax=None,fig=None,
             vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
-            cmap_cont='terrain',
+            cmap_cont='magma_r',
             rms=None, plot_title=None, apply_mask=False,
             add_contours=True, extent=None, projection='offset', add_beam=False,
             vmin_factor=3, plot_colorbar=False, figsize=(5, 5), aspect=None,
@@ -14544,17 +14588,26 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
 def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
                    vmin_factor = 3,neg_levels=np.asarray([-3]),
+                   vmin=None,vmax=None,rms=None,
                    extent = None,crop=False,centre=None,
-                   plot_title='',cmap='magma_r',
+                   plot_title='',cmap='magma_r',n_contours = 8,
                    box_size=None,plot_alpha_error_points=False):
 
     from matplotlib.colors import ListedColormap
     
     plt.figure(figsize=(6, 6))
 
-    g = ctn(radio_map)
+    if isinstance(alphaimage, str) == True:
+        g = ctn(radio_map)
+    else:
+        g = radio_map
 
     if crop:
+        if centre is None:
+            centre = (int(alphaimage.shape[0]/2),int(alphaimage.shape[1]/2))
+        else:
+            centre = centre
+            
         _alphaimage = do_cutout_2D(alphaimage, box_size=box_size, 
                                           center=centre, return_='data')
 
@@ -14580,17 +14633,29 @@ def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
     # custom_cmap = 'magma_r'
 
 
+    if vmin is None:
+        vmin = np.nanmin(_alphaimage) - 1*abs(np.nanmedian(_alphaimage))
+    else:
+        vmin = vmin
+    if vmax is None:
+        vmax = np.nanmax(_alphaimage) + 1*abs(np.nanmedian(_alphaimage))
+    else:
+        vmax = vmax
+        
+    
     img = plt.imshow(_alphaimage, origin='lower', 
-                     vmin=-1.5, 
+                     vmin=vmin, 
     #                  vmax=0.0,
-                     vmax=np.nanmax(_alphaimage), 
+                     vmax=vmax, 
                      cmap=custom_cmap,
     #                  cmap='plasma'
                     )
+    if rms is None:
+        std = mad_std(_g)
+    else:
+        std = rms 
 
-    std = mad_std(_g) 
-
-    levels_g = np.geomspace(2.0 * _g.max(), 3 * std, 8)
+    levels_g = np.geomspace(3.0 * _g.max(), 3 * std, n_contours)
     levels_low = np.asarray([4 * std, 3 * std])
     levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * _g.max(), 6)
     levels_neg = neg_levels * std
@@ -14601,18 +14666,12 @@ def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
 
 
     contour = plt.contour(_g, levels=levels_g[::-1],
-    #                      colors=contour_palette,
-                          cmap='magma',
+                         colors=contour_palette,
+                        #   cmap='Greys',
                          # aspect=aspect,
                          linewidths=1.2, extent=extent,
                          alpha=1.0)
 
-    # contour = plt.contour(_g, levels=levels_low[::-1],
-    #                      colors='cyan',
-    #                      # aspect=aspect,
-    #                      # linestyles=['dashed', 'dashdot'],
-    #                      linewidths=1.0, extent=extent,
-    #                      alpha=1.0)
     if plot_alpha_error_points:
         # Downsample the data for scatter plot
         downscale_factor = 10  # Adjust this factor as needed
