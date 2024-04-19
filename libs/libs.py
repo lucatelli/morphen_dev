@@ -442,64 +442,119 @@ def deconvolve_fft(image, psf):
  \____|_|    \___/       |_____|_| |_|\__,_|_.__/|_|\___|\__,_|
 
 """
+try:
+    @jit
+    def bn(n):
+        """
+        bn function from Cioti .... (1997);
+        Used to define the relation between Rn (half-light radii) and total
+        luminosity
 
-@jit
-def bn(n):
-    """
-    bn function from Cioti .... (1997);
-    Used to define the relation between Rn (half-light radii) and total
-    luminosity
+        Parameters:
+            n: sersic index
+        """
+        return 2. * n - 1. / 3. + 0 * ((4. / 405.) * n) + ((46. / 25515.) * n ** 2.0)
+except:
+    def bn(n):
+        """
+        bn function from Cioti .... (1997);
+        Used to define the relation between Rn (half-light radii) and total
+        luminosity
 
-    Parameters:
-        n: sersic index
-    """
-    return 2. * n - 1. / 3. + 0 * ((4. / 405.) * n) + ((46. / 25515.) * n ** 2.0)
+        Parameters:
+            n: sersic index
+        """
+        return 2. * n - 1. / 3. + 0 * ((4. / 405.) * n) + ((46. / 25515.) * n ** 2.0)
 
+try:
+    @jit
+    def sersic2D_GPU(xy, x0=256, y0=256, PA=10, ell=0.9,
+                    n=1.0, In=0.1, Rn=10.0, cg=0.0):
+        """
+        Using Jax >> 10x to 100x faster.
 
-@jit
-def sersic2D_GPU(xy, x0=256, y0=256, PA=10, ell=0.9,
-                 n=1.0, In=0.1, Rn=10.0, cg=0.0):
-    """
-    Using Jax >> 10x to 100x faster.
+        Parameters
+        ----------
+        xy : tuple float
+            meshgrid arrays
+        x0,y0 : float float
+            center position in pixels
+        PA : float
+            position angle in degrees of the meshgrid
+            [-180, +180]
+        ell : float
+            ellipticity, e = 1 - q
+            ell in [0,1]
+        n : float
+            sersic index
+            n in [0, inf]
+        Rn : float
+            half-light radius
+            Rn in [0, inf]
+        In : float
+            intensity at Rn
+            In in [0, inf]
+        cg : float
+            geometric parameter that controls how boxy the ellipse is
+            c in [-2, 2]
+        Returns
+        -------
+        model : 2D Jax array
+            2D sersic function image
+        """
 
-    Parameters
-    ----------
-    xy : tuple float
-        meshgrid arrays
-    x0,y0 : float float
-        center position in pixels
-    PA : float
-        position angle in degrees of the meshgrid
-        [-180, +180]
-    ell : float
-        ellipticity, e = 1 - q
-        ell in [0,1]
-    n : float
-        sersic index
-        n in [0, inf]
-    Rn : float
-        half-light radius
-        Rn in [0, inf]
-    In : float
-        intensity at Rn
-        In in [0, inf]
-    cg : float
-        geometric parameter that controls how boxy the ellipse is
-        c in [-2, 2]
-    Returns
-    -------
-    model : 2D Jax array
-        2D sersic function image
-    """
+        q = 1 - ell
+        x, y = xy
 
-    q = 1 - ell
-    x, y = xy
+        xx, yy = rotation_GPU(PA, x0, y0, x, y)
+        # r     = (abs(xx)**(c+2.0)+((abs(yy))/(q))**(c+2.0))**(1.0/(c+2.0))
+        r = jnp.sqrt((abs(xx) ** (cg + 2.0) + ((abs(yy)) / (q)) ** (cg + 2.0)))
+        model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
+        return (model)
+except:
+    def sersic2D_GPU(xy, x0=256, y0=256, PA=10, ell=0.9,
+                    n=1.0, In=0.1, Rn=10.0, cg=0.0):
+        """
+        Using Jax >> 10x to 100x faster.
 
-    xx, yy = rotation_GPU(PA, x0, y0, x, y)
-    # r     = (abs(xx)**(c+2.0)+((abs(yy))/(q))**(c+2.0))**(1.0/(c+2.0))
-    r = jnp.sqrt((abs(xx) ** (cg + 2.0) + ((abs(yy)) / (q)) ** (cg + 2.0)))
-    model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
-    return (model)
+        Parameters
+        ----------
+        xy : tuple float
+            meshgrid arrays
+        x0,y0 : float float
+            center position in pixels
+        PA : float
+            position angle in degrees of the meshgrid
+            [-180, +180]
+        ell : float
+            ellipticity, e = 1 - q
+            ell in [0,1]
+        n : float
+            sersic index
+            n in [0, inf]
+        Rn : float
+            half-light radius
+            Rn in [0, inf]
+        In : float
+            intensity at Rn
+            In in [0, inf]
+        cg : float
+            geometric parameter that controls how boxy the ellipse is
+            c in [-2, 2]
+        Returns
+        -------
+        model : 2D Jax array
+            2D sersic function image
+        """
+
+        q = 1 - ell
+        x, y = xy
+
+        xx, yy = rotation_GPU(PA, x0, y0, x, y)
+        # r     = (abs(xx)**(c+2.0)+((abs(yy))/(q))**(c+2.0))**(1.0/(c+2.0))
+        r = jnp.sqrt((abs(xx) ** (cg + 2.0) + ((abs(yy)) / (q)) ** (cg + 2.0)))
+        model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
+        return (model)
 
 def sersic2D_GPU_new(xy, params):
     """
@@ -546,48 +601,89 @@ def sersic2D_GPU_new(xy, params):
     model = In * jnp.exp(-bn(n) * ((r / (Rn)) ** (1.0 / n) - 1.))
     return (model)
 
-@jit
-def rotation_GPU(PA, x0, y0, x, y):
-    """
-    Rotate an input image array. It can be used to modify
-    the position angle (PA).
+try:
+    @jit
+    def rotation_GPU(PA, x0, y0, x, y):
+        """
+        Rotate an input image array. It can be used to modify
+        the position angle (PA).
 
-    Using Jax >> 10-100x faster.
+        Using Jax >> 10-100x faster.
 
-    Params:
-        x0,y0: center position
-        PA: position angle of the meshgrid
-        x,y: meshgrid arrays
-    """
-    # gal_center = (x0+0.01,y0+0.01)
-    x0 = x0 + 0.25
-    y0 = y0 + 0.25
-    # convert to radians
-    t = (PA * jnp.pi) / 180.0
-    return ((x - x0) * jnp.cos(t) + (y - y0) * jnp.sin(t),
-            -(x - x0) * jnp.sin(t) + (y - y0) * jnp.cos(t))
+        Params:
+            x0,y0: center position
+            PA: position angle of the meshgrid
+            x,y: meshgrid arrays
+        """
+        # gal_center = (x0+0.01,y0+0.01)
+        x0 = x0 + 0.25
+        y0 = y0 + 0.25
+        # convert to radians
+        t = (PA * jnp.pi) / 180.0
+        return ((x - x0) * jnp.cos(t) + (y - y0) * jnp.sin(t),
+                -(x - x0) * jnp.sin(t) + (y - y0) * jnp.cos(t))
 
-@jit
-def FlatSky(background_data, a):
-    """
-    A simple model for the background.
+    @jit
+    def FlatSky(background_data, a):
+        """
+        A simple model for the background.
 
-    Parameters
-    ----------
-    background_data : 2D array
-        Input background array.
-    a : float
-        flat sky level factor, to multiply the background_data.
-    """
-    return (a * background_data)
+        Parameters
+        ----------
+        background_data : 2D array
+            Input background array.
+        a : float
+            flat sky level factor, to multiply the background_data.
+        """
+        return (a * background_data)
 
-@jit
-def _fftconvolve_jax(image, psf):
-    """
-    2D Image convolution using the analogue of scipy.signal.fftconvolve,
-    but with Jax. This function is decorated to speed up things.
-    """
-    return jax.scipy.signal.fftconvolve(image, psf, mode='same')
+    @jit
+    def _fftconvolve_jax(image, psf):
+        """
+        2D Image convolution using the analogue of scipy.signal.fftconvolve,
+        but with Jax. This function is decorated to speed up things.
+        """
+    
+except:
+    def rotation_GPU(PA, x0, y0, x, y):
+        """
+        Rotate an input image array. It can be used to modify
+        the position angle (PA).
+
+        Using Jax >> 10-100x faster.
+
+        Params:
+            x0,y0: center position
+            PA: position angle of the meshgrid
+            x,y: meshgrid arrays
+        """
+        # gal_center = (x0+0.01,y0+0.01)
+        x0 = x0 + 0.25
+        y0 = y0 + 0.25
+        # convert to radians
+        t = (PA * jnp.pi) / 180.0
+        return ((x - x0) * jnp.cos(t) + (y - y0) * jnp.sin(t),
+                -(x - x0) * jnp.sin(t) + (y - y0) * jnp.cos(t))
+
+    def FlatSky(background_data, a):
+        """
+        A simple model for the background.
+
+        Parameters
+        ----------
+        background_data : 2D array
+            Input background array.
+        a : float
+            flat sky level factor, to multiply the background_data.
+        """
+        return (a * background_data)
+
+    def _fftconvolve_jax(image, psf):
+        """
+        2D Image convolution using the analogue of scipy.signal.fftconvolve,
+        but with Jax. This function is decorated to speed up things.
+        """
+        return jax.scipy.signal.fftconvolve(image, psf, mode='same')
 
 """
  ____  _     _
@@ -8184,7 +8280,11 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
 
 
     """
-
+    try:
+        from jax import jit
+    except:
+        convolution_mode = 'CPU'
+        
     if de_options is None:
         de_options = {'disp': True, 'workers': 6,
                       'max_nfev': 20000, 'vectorized': True,
@@ -8474,25 +8574,46 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     def convert_params_to_numpy(_params):
         return list(_params)
 
-    # @partial(jit, static_argnums=1)
-    @jit
-    def func(x):
-        return jnp.split(x, nfunctions)
+    try:
+        # @partial(jit, static_argnums=1)
+        @jit
+        def func(x):
+            return jnp.split(x, nfunctions)
 
-    @jit
-    def build_model(xy,param_matrix):
-        model = 0
-        for model_params in param_matrix:
-            model = model + sersic2D_GPU(xy, model_params[0],
-                                         model_params[1],
-                                         model_params[2],
-                                         model_params[3],
-                                         model_params[4],
-                                         model_params[5],
-                                         model_params[6],
-                                         model_params[7])
-        return model
+        @jit
+        def build_model(xy,param_matrix):
+            model = 0
+            for model_params in param_matrix:
+                model = model + sersic2D_GPU(xy, model_params[0],
+                                            model_params[1],
+                                            model_params[2],
+                                            model_params[3],
+                                            model_params[4],
+                                            model_params[5],
+                                            model_params[6],
+                                            model_params[7])
+            return model
+    
+    except:
+        # @partial(jit, static_argnums=1)
         
+        def func(x):
+            return jnp.split(x, nfunctions)
+
+        
+        def build_model(xy,param_matrix):
+            model = 0
+            for model_params in param_matrix:
+                model = model + sersic2D_GPU(xy, model_params[0],
+                                            model_params[1],
+                                            model_params[2],
+                                            model_params[3],
+                                            model_params[4],
+                                            model_params[5],
+                                            model_params[6],
+                                            model_params[7])
+            return model
+    
     def min_residual_2D_GPU(params):
         model = 0
         for i in range(1, nfunctions + 1):
@@ -8517,7 +8638,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         #             (1000*(abs(residual_2D[mask_for_fit])+1.0e-6)))
         residual = (data_2D_gpu[mask_for_fit] - MODEL_2D_conv[mask_for_fit])
         return np.asarray(residual).copy()
-
+    
     if convolution_mode == 'GPU':
         @jit
         def convolve_on_gpu(image, psf):
@@ -9393,7 +9514,8 @@ def run_mcmc_mini(imagename, psf_name, mini_results, residualname=None, rms_map=
         n_components = int((stderr.shape[0] - 1) / 8)
 
     nfunctions = n_components
-
+    
+    
     @jit
     def convolve_on_gpu(image, psf):
         image_fft = fft2(image)
@@ -14655,7 +14777,7 @@ def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
     else:
         std = rms 
 
-    levels_g = np.geomspace(3.0 * _g.max(), 3 * std, n_contours)
+    levels_g = np.geomspace(3.0 * _g.max(), 5 * std, n_contours)
     levels_low = np.asarray([4 * std, 3 * std])
     levels_black = np.geomspace(vmin_factor * std + 0.00001, 2.5 * _g.max(), 6)
     levels_neg = neg_levels * std
