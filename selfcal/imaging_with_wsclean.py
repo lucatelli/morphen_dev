@@ -41,10 +41,10 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
     print(image_deepclean_name)
 
     if not os.path.exists(root_dir_sys + image_deepclean_name + ext) or continue_clean == 'True':
-        if nc < 6:
-            _nc = 6
+        if nc < 4:
+            _nc = 4
         else:
-            _nc = nc
+            _nc = 4
         if running_container == 'native':
             # 'mpirun -np 4 wsclean-mp'
 
@@ -65,6 +65,7 @@ def imaging(g_name, field, uvtaper, robust, base_name='clean_image',
             'singularity exec --nv --bind ' + mount_dir + ' ' + wsclean_dir +
             # ' ' + 'wsclean -name ' + root_dir +
             ' ' + 'mpirun -np ' + str(_nc) + ' wsclean-mp -name ' + root_dir +
+            # ' ' + 'mpirun --use-hwthread-cpus wsclean-mp -name ' + root_dir +
             image_deepclean_name +
             ' -size ' + imsizex + ' ' + imsizey + ' -scale ' + cell +
             ' ' + gain_args + ' -niter ' + niter + ' -weight ' + weighting +
@@ -149,7 +150,7 @@ if __name__ == "__main__":
                         help="Image Size y-axis")
     parser.add_argument("--cellsize", type=str, nargs='?', default='0.05asec',
                         help="Cell size")
-    parser.add_argument("--niter", type=str, nargs='?', default='5000',
+    parser.add_argument("--niter", type=str, nargs='?', default='50000',
                         help="Number of iterations during cleaning.")
 
     parser.add_argument("--maxuv_l", type=str, nargs='?', default=None,
@@ -167,12 +168,16 @@ if __name__ == "__main__":
     parser.add_argument("--mask", nargs='?', default=None,
                         const=True, help="A fits-file mask to be used.")
 
-    parser.add_argument("--nc", type=int, nargs='?', default=8,
+    parser.add_argument("--nc", type=int, nargs='?', default=4,
                         help="Number of channels division to be used in "
                              "the MFS deconvolution.")
 
+    parser.add_argument("--negative_arg", type=str, nargs='?', default='negative',
+                        help="Print wsclean output?")
+
     parser.add_argument("--quiet", type=str, nargs='?', default='False',
                         help="Print wsclean output?")
+
 
     parser.add_argument("--continue_clean", type=str, nargs='?', default='False',
                         help="Continue cleaning?")
@@ -212,11 +217,13 @@ if __name__ == "__main__":
         # wsclean_dir = '/home/sagauga/apps/wsclean_wg_eb.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_cpu_v2.simg'
+        # wsclean_dir = '/media/sagauga/xfs_evo/wsclean3.4-idg-everybeam-eMERLIN_portable.sif'
         # wsclean_dir = '/mnt/scratch/lucatelli/apps/morphen_test.simg/morphen_test.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_stable_v1.simg'
         # wsclean_dir = '/media/sagauga/xfs_evo/morphen_gpu_v2.simg'
         # wsclean_dir = '/home/sagauga/apps/wsclean_nvidia470_gpu.simg'
         # wsclean_dir = '/raid1/scratch/lucatelli/apps/wsclean_wg_eb.simg'
+        # wsclean_dir = '/raid1/scratch/lucatelli/apps/morphen_test.simg'
     if running_container == 'native':
         mount_dir = ''
         root_dir = root_dir_sys
@@ -257,30 +264,36 @@ if __name__ == "__main__":
 
             # deconvolver_options = ('-multiscale-max-scales 5 -multiscale-scale-bias 0.5 ')
         nc = args.nc
+        negative_arg = '-'+args.negative_arg
         deconvolver_args = (' '
                             # '-channel-division-frequencies 4.0e9,4.5e9,5.0e9,5.5e9,'
                             # '29e9,31e9,33e9,35e9 ' #-gap-channel-division
                             '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
                             '-parallel-deconvolution 1024 '
-                            '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
+                            # '-weighting-rank-filter 3 -weighting-rank-filter-size 128 '
                             # '-save-weights -local-rms -local-rms-window 50 '
                             '-gridder wgridder -wstack-nwlayers-factor 3 -wgridder-accuracy 1e-7 '
-                            '' #-beam-fitting-size 0.7
-                            # ' -circular-beam -no-negative ' # 
+                            '' #-beam-fitting-size 0.7 -no-negative
+                            # '-no-negative ' #
+                            '-circular-beam ' #
                             # ' -circular-beam -beam-size 0.1arcsec -no-negative -beam-fitting-size = 0.7 ' 
                             # '-no-mf-weighting ' #  
-                            # '-save-psf-pb -apply-primary-beam ' 
-                            # '-gridder idg -idg-mode hybrid -apply-primary-beam ' 
+                            # '-save-psf-pb -apply-primary-beam '
+                            # '-facet-beam-update 60 -save-aterms -diagonal-solutions '
+                            # '-apply-facet-solutions ' 
+                            # '-gridder idg -idg-mode hybrid -apply-primary-beam 
+                            # -apply-facet-beam -facet-beam-update 120 -save-aterms 
+                            # -diagonal-solutions ' 
                             '-save-source-list '
-                            '-channels-out '+str(nc)+' -join-channels '
+                            '-channels-out '+str(nc)+' -join-channels ' + negative_arg + ' '
                             '-fit-spectral-pol  ' +str(nc)+' -deconvolution-channels ' +str(16)+' '
                             )
     if args.deconvolution_mode == 'fast':
         deconvolver = ' '
         deconvolver_options = (' ')
         deconvolver_args = (' -save-source-list '
-                            ' -deconvolution-threads 16 -j 16 -parallel-reordering 16 '
-                            ' -parallel-deconvolution 2048') #-parallel-gridding 24
+                            '-deconvolution-threads 16 -j 16 -parallel-reordering 16 '
+                            '-parallel-deconvolution 2048') #-parallel-gridding 24
 
     # image parameters
     weighting = 'briggs'

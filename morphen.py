@@ -316,12 +316,12 @@ class source_extraction():
                  deblend_nthresh=25, deblend_cont=1e-8,
                  clean_param=0.5, clean=True,
                  minarea_factor = 1.0,
-                 sort_by='flux',  # sort detected source by flux
+                 sort_by='distance',  # sort detected source by flux
                  sigma=6,  # min rms to search for sources
                  ell_size_factor=2.0,  # unstable, please inspect!
                  obs_type = 'radio', algorithm='SEP',
                  show_detection=False,show_petro_plots=False,
-                 SAVE=True, show_figure=True,dry_run = False):
+                 SAVE=True, show_figure=True,dry_run = False,SE_ref=None):
         """
         Parameters
         ----------
@@ -414,6 +414,7 @@ class source_extraction():
         self.vmin_factor = vmin_factor
         self.mask_component = mask_component
         self.algorithm = algorithm
+        self.SE_ref = SE_ref
         # self.bw = bw
         # self.bh = bh
         # self.fw = fw
@@ -478,7 +479,8 @@ class source_extraction():
                                apply_mask=self.apply_mask,
                                show_detection=self.show_detection)
         if self.algorithm == 'PF':
-            self.masks, self.indices, self.bkg, self.seg_maps, self.objects = \
+            (self.masks, self.indices, self.bkg,
+             self.seg_maps, self.objects) = \
                 mlibs.phot_source_ext(self.input_data.filename,
                                bw=self.bw, bh=self.bh, fw=self.fw, fh=self.fh,
                                # filtering options for source detection
@@ -495,10 +497,12 @@ class source_extraction():
                                minarea_factor = self.minarea_factor,
                                ell_size_factor=self.ell_size_factor,
                                apply_mask=self.apply_mask,
-                               show_detection=self.show_detection)
+                               show_detection=self.show_detection,
+                               SE_ref=self.SE_ref)
 
     def contruct_source_properties(self):
-        (self.sources_photometries, self.n_components,self.n_IDs,
+        (self.sources_photometries, self.n_components, self.n_IDs, 
+         self.masks, self.indices, self.objects,
          self.psf_name, self.mask, self.bkg) = \
             mlibs.prepare_fit(self.input_data.filename,
                               self.input_data.residualname,
@@ -564,10 +568,12 @@ class sersic_multifit_radio():
                  fix_value_n = None, dr_fix = None,fix_x0_y0=None,
                  sigma=6.0, use_mask_for_fit=False,mask_for_fit=None,
                  mask=None,
-                 tr_solver = "exact",
+                 tr_solver = "exact",loss = 'cauchy',
                  convolution_mode='GPU',method1='least_squares',
                  self_bkg = False, bkg_rms_map = None,
-                 method2='least_squares',z = 0.01,
+                 method2='least_squares',
+                 parameters_mini_init = None,
+                 z = 0.01,
                  verbose=0):
         """
         Parameters
@@ -634,6 +640,8 @@ class sersic_multifit_radio():
         self.method1 = method1
         self.method2 = method2
         self.tr_solver = tr_solver
+        self.loss = loss
+        self.parameters_mini_init = parameters_mini_init
         self.z = z
         self.which_residual = which_residual
         self.sigma = sigma
@@ -694,11 +702,13 @@ class sersic_multifit_radio():
                                     self_bkg=self.self_bkg,
                                     save_name_append='',
                                     fix_n=self.fix_n,
+                                    loss=self.loss,
                                     tr_solver = self.tr_solver,
                                     fix_value_n=self.fix_value_n,
                                     fix_geometry=self.fix_geometry,  # unstable if  False
                                     dr_fix=self.dr_fix,
                                     fix_x0_y0 = self.fix_x0_y0,
+                                    parameters_mini_init = self.parameters_mini_init,
                                     sigma=self.sigma,
                                     logger=_logging_.logger,verbose=self.verbose)
         # compute sizes
@@ -1085,41 +1095,41 @@ class radio_star_formation():
         These will be used to determine the surface density star formation rates.
 
         """
-        def get_areas(df,region,pix_to_pc):
+        def get_area_in_kpc(df,region,pix_to_pc):
             area_region = (df[region] * df['beam_area'] *
                            (pix_to_pc**2.0)/(1000**2.0))
             return(area_region)
 
         # The 50% deconvolved area for core-compact/unresolved components
-        self.A50_kpc_comp_deconv = get_areas(self.SMFR.results_compact_deconv_morpho,
+        self.A50_kpc_comp_deconv = get_area_in_kpc(self.SMFR.results_compact_deconv_morpho,
                                              region='A50',
                                              pix_to_pc = self.pix_to_pc)
         # The 50% convolved area for core-compact/unresolved components
-        self.A50_kpc_comp_conv = get_areas(self.SMFR.results_compact_conv_morpho,
+        self.A50_kpc_comp_conv = get_area_in_kpc(self.SMFR.results_compact_conv_morpho,
                                            region='A50',
                                            pix_to_pc = self.pix_to_pc)
         # The 50% deconvolved area for diffuse components
-        self.A50_kpc_ext_deconv = get_areas(self.SMFR.results_ext_deconv_morpho,
+        self.A50_kpc_ext_deconv = get_area_in_kpc(self.SMFR.results_ext_deconv_morpho,
                                             region='A50',
                                             pix_to_pc = self.pix_to_pc)
         # The 50% convolved area for diffuse components
-        self.A50_kpc_ext_conv = get_areas(self.SMFR.results_ext_conv_morpho,
+        self.A50_kpc_ext_conv = get_area_in_kpc(self.SMFR.results_ext_conv_morpho,
                                           region='A50',
                                           pix_to_pc = self.pix_to_pc)
         # The 95% deconvolved area for core-compact/unresolved components
-        self.A95_kpc_comp_deconv = get_areas(self.SMFR.results_compact_deconv_morpho,
+        self.A95_kpc_comp_deconv = get_area_in_kpc(self.SMFR.results_compact_deconv_morpho,
                                              region='A95',
                                              pix_to_pc = self.pix_to_pc)
         # The 95% convolved area for core-compact/unresolved components
-        self.A95_kpc_comp_conv = get_areas(self.SMFR.results_compact_conv_morpho,
+        self.A95_kpc_comp_conv = get_area_in_kpc(self.SMFR.results_compact_conv_morpho,
                                            region='A95',
                                            pix_to_pc = self.pix_to_pc)
         # The 95% deconvolved area for diffuse components
-        self.A95_kpc_ext_deconv = get_areas(self.SMFR.results_ext_deconv_morpho,
+        self.A95_kpc_ext_deconv = get_area_in_kpc(self.SMFR.results_ext_deconv_morpho,
                                             region='A95',
                                             pix_to_pc = self.pix_to_pc)
         # The 95% convolved area for diffuse components
-        self.A95_kpc_ext_conv = get_areas(self.SMFR.results_ext_conv_morpho,
+        self.A95_kpc_ext_conv = get_area_in_kpc(self.SMFR.results_ext_conv_morpho,
                                           region='A95',
                                           pix_to_pc = self.pix_to_pc)
 

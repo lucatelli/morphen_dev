@@ -53,6 +53,7 @@ from casatools import image as IA
 import lmfit
 from lmfit import Model
 from lmfit import Parameters, fit_report, minimize
+import emcee
 
 import string
 from matplotlib.gridspec import GridSpec
@@ -160,6 +161,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 # sys.path.append('../../scripts/analysis_scripts/')
 sys.path.append('../analysis_scripts/')
+# import analysisUtils as au
 """
 # from astroquery.ipac.ned import Ned
 # result_table = Ned.query_object("MCG12-02-001")
@@ -191,8 +193,6 @@ def print_logger_header(title, logger):
 """
 #Config
 """
-
-
 def reset_rc_params():
     """
     Global configuration for matplotlib.pyplot
@@ -643,7 +643,8 @@ try:
         2D Image convolution using the analogue of scipy.signal.fftconvolve,
         but with Jax. This function is decorated to speed up things.
         """
-    
+        return jax.scipy.signal.fftconvolve(image, psf, mode='same')
+
 except:
     def rotation_GPU(PA, x0, y0, x, y):
         """
@@ -793,7 +794,20 @@ def find_z_NED(source_name):
 """
 
 
-def arrea(r):
+def circle_area(r):
+    """
+    Return the pixel area of a circle given the radius.
+
+    Parameters
+    ----------
+    r : float, ndarray
+        Radius of the circle.
+
+    Returns
+    -------
+    float, ndarray
+        Area of the circle.
+    """
     return (np.pi * r * r)
 
 
@@ -1516,11 +1530,54 @@ def get_dilation_size(image):
     dilation_size = int(
         np.sqrt(omaj * omin) / (2 * get_cell_size(image)))
     return(dilation_size)
+
+
 def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                   dilation_size=None,iterations=2, dilation_type='disk',
                   PLOT=False,show_figure=True,logger=None,
                   fig_size_factor = 1,
                   special_name=''):
+    """
+    Mask dilation function.
+
+    Apply a binary dilation to a mask originated from the emission of a source.
+    This was originally designed for radio images, where the dilation factor is
+    proportional to the beam size. The dilation factor is computed as the geometric
+    mean of the major and minor axis of the beam. The dilation factor is then
+    converted to pixels using the cell size of the image. Note that the expansion
+    occurs in two opposite directions, so the dilation size should be half of the
+    size of the beam for one iteration, so that the final dilation will be a unit of
+    the beam size. However, the exact size of the dilation will also be determinet by
+    the number of iterations.
+
+
+    Parameters
+    ----------
+    image : str
+        Image name.
+    cell_size : float
+        Cell size of the image in arcsec.
+    sigma : float
+        Sigma level for the mask.
+    rms : float
+        RMS level for the mask.
+    dilation_size : int
+        Size of the dilation.
+    iterations : int
+        Number of iterations for the dilation.
+    dilation_type : str
+        Type of dilation. Options are 'disk' or 'square'.
+    PLOT : bool
+        Plot the mask dilation.
+    show_figure : bool
+        Show the figure.
+    logger : logger
+        Logger object.
+    fig_size_factor : float
+        Figure size factor.
+    special_name : str
+        Special name for the mask dilation.
+    """
 
     if isinstance(image, str) == True:
         data = ctn(image)
@@ -1544,8 +1601,7 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
                       f"{dilation_size} [px]")
         except:
             if dilation_size is None:
-                dilation_size = 7
-                # dilation_size = 5
+                dilation_size = 5
 
     mask = (data >= sigma * std)
     mask3 = (data >= 3 * std)
@@ -1602,6 +1658,9 @@ def mask_dilation(image, cell_size=None, sigma=6,rms=None,
 def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
                   dilation_size=3,iterations=5, dilation_type='disk',
                   PLOT=True,show_figure=True):
+    """
+    Apply a dilation to an existing mask.
+    """
     from scipy import ndimage
     from scipy.ndimage import morphology
     from skimage.morphology import disk, square
@@ -1623,8 +1682,7 @@ def mask_dilation_from_mask(image, mask_init, cell_size=None, sigma=3,rms=None,
                 np.sqrt(omaj * omin) / (2 * get_cell_size(image)))
         except:
             if dilation_size is None:
-                dilation_size = 7
-                # dilation_size = 5
+                dilation_size = 5
 
     data_init = data * mask_init
     mask3 = (data >= 3 * std)
@@ -2566,10 +2624,10 @@ def get_profile(imagename, center=None,binsize=1):
         data_2D = imagename
 
     if center is None:
-        nr, radius, profile = azimuthalAverage(data_2D,return_nr = True,
+        nr, radius, profile = azimuthalAverage(data_2D,return_nr = True,interpnan=True,
                                                binsize=binsize)
     else:
-        nr, radius, profile = azimuthalAverage(data_2D, return_nr=True,
+        nr, radius, profile = azimuthalAverage(data_2D, return_nr=True,interpnan=True,
                                                binsize=binsize,center=center)
     return (radius, profile)
 
@@ -2626,7 +2684,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
 
     # the 'bins' as initially defined are lower/upper bounds for each bin
     # so that values will be in [lower,upper)
-    nbins = int(np.round(r.max() / binsize) + 1)
+    nbins = int(np.round(np.nanmax(r) / binsize) + 1)
     maxbin = nbins * binsize
     bins = np.linspace(0, maxbin, nbins + 1)
     # but we're probably more interested in the bin centers than their left or right sides...
@@ -2643,7 +2701,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         # Find out which radial bin each point in the map belongs to
         whichbin = np.digitize(r.flat, bins)
         # This method is still very slow; is there a trick to do this with histograms?
-        radial_prof = np.array([image.flat[mask.flat * (whichbin == b)].std() for b in range(1, nbins + 1)])
+        radial_prof = np.array([np.nanstd(image.flat[mask.flat * (whichbin == b)]) for b in range(1, nbins + 1)])
     else:
         radial_prof = np.histogram(r, bins, weights=(image * weights * mask))[0] / \
                       np.histogram(r, bins, weights=(mask * weights))[0]
@@ -2940,14 +2998,14 @@ def get_image_statistics(imagename,cell_size=None,
     of the background rms and therefore SNR
     Each window has a fraction frac_image of the image size.
     '''
-    for frac in tqdm(frac_):
+    for frac in frac_:
         box, _ = create_box(imagename, fracX=frac, fracY=frac_image)
         st = imstat(imagename, box=box)
         snr_tmp = flux_peak_im / st['rms'][0]
         dr_e.append(snr_tmp)
 
     dr_e2 = []
-    for frac in tqdm(frac_):
+    for frac in frac_:
         box, _ = create_box(imagename, fracX=frac_image, fracY=frac)
         st = imstat(imagename, box=box)
         snr_tmp = flux_peak_im / st['rms'][0]
@@ -3461,7 +3519,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
              fracX=0.10, fracY=0.10, deblend=False, bkg_sub=False,
              bkg_to_sub=None, rms=None,do_petro=True,
              crop=False, box_size=256,
-             apply_mask=True, do_PLOT=False, SAVE=True, show_figure=True,
+             apply_mask=True, do_PLOT=False, SAVE=False, show_figure=True,
              mask=None,do_measurements='',compute_A=False,
              add_save_name='',logger=None,verbose=0):
     """
@@ -3490,11 +3548,11 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
             logger.info(f"  CALC >> Performing mask dilation.")
         else:
             print('     >> CALC: Performing mask dilation.')
-        # original_mask, mask_dilated = mask_dilation(imagename, cell_size=cell_size,
-        #                                 sigma=sigma_mask,
-        #                                 dilation_size=dilation_size,
-        #                                 iterations=iterations, rms=rms,
-        #                                 PLOT=True)
+        original_mask, mask_dilated = mask_dilation(imagename, cell_size=cell_size,
+                                        sigma=sigma_mask,
+                                        dilation_size=dilation_size,
+                                        iterations=iterations, rms=rms,
+                                        PLOT=do_PLOT)
         mask = mask_dilated
         omask = original_mask
     # else:
@@ -3514,22 +3572,22 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
     else:
         data_2D = ctn(imagename)
 
-    if verbose >= 1:
-        if logger is not None:
-            logger.info(f"  CALC >> Performing level statistics.")
-        else:
-            print('     >> CALC: Performing level statistics.')
+    # if verbose >= 1:
+    #     if logger is not None:
+    #         logger.info(f"  CALC >> Performing level statistics.")
+    #     else:
+    #         print('     >> CALC: Performing level statistics.')
 
-    results_final = level_statistics(img=imagename, cell_size=cell_size,
-                                    mask_component=mask_component,
-                                    mask=mask, apply_mask=False,
-                                    data_2D=data_2D,
-                                    sigma=sigma_mask, do_PLOT=do_PLOT,
-                                    results=results_final, bkg_to_sub=bkg_to_sub,
-                                    show_figure=False,
-                                    rms=rms,
-                                    add_save_name=add_save_name,
-                                    SAVE=SAVE, ext='.jpg')
+    # results_final = level_statistics(img=imagename, cell_size=cell_size,
+    #                                 mask_component=mask_component,
+    #                                 mask=mask, apply_mask=False,
+    #                                 data_2D=data_2D,
+    #                                 sigma=sigma_mask, do_PLOT=do_PLOT,
+    #                                 results=results_final, bkg_to_sub=bkg_to_sub,
+    #                                 show_figure=False,
+    #                                 rms=rms,
+    #                                 add_save_name=add_save_name,
+    #                                 SAVE=SAVE, ext='.jpg')
     if verbose >=1:
         if logger is not None:
             logger.info(f"  CALC >> Computing image properties.")
@@ -3550,9 +3608,10 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                                         data_2D=data_2D,
                                                         data_res=data_res,
                                                         vmin_factor=vmin_factor,
-                                                        results=results_final,
+                                                        # results=results_final,
                                                         show_figure=show_figure,
                                                         bkg_to_sub=bkg_to_sub,
+                                                        verbose=verbose,
                                                         add_save_name=add_save_name,
                                                         SAVE=SAVE,logger=logger)
     # r_list, area_arr, area_beam, p, \
@@ -3588,6 +3647,7 @@ def measures(imagename, residualname, z, mask_component=None, sigma_mask=6,
                                              deblend=deblend,
                                              fwhm=fwhm, kernel_size=kernel_size,
                                              show_figure=show_figure,
+                                             verbose = verbose,
                                              add_save_name=add_save_name,
                                              npixels=npixels,logger=logger)
             error_petro = False
@@ -3834,7 +3894,10 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
     if rms is not None:
         std = rms
     else:
-        std = mad_std(g_)
+        if residual is not None:
+            std = mad_std(ctn(residual))
+        else:
+            std = mad_std(g_)
     if mask is not None:
         mask = mask
         omask = mask
@@ -4534,8 +4597,10 @@ def compute_image_properties(img, residual, cell_size=None, mask_component=None,
 def structural_morphology(imagelist, residuallist,
                           indices, masks_deblended,
                           zd, big_mask=None, data_2D=None,sigma_mask=6.0,
-                          iterations = 1,
-                          sigma_loop_init=6.0, do_measurements='all'):
+                          iterations = 2,
+                          do_PLOT=False, show_figure=False,
+                          sigma_loop_init=6.0, do_measurements='all',
+                          verbose=1):
     """
     From the emission  of a given source and its deblended components,
     run in each component the morphometry analysis.
@@ -4578,8 +4643,6 @@ def structural_morphology(imagelist, residuallist,
             processing_results_source = {}  # store calculations only for source
             processing_results_source['#imagename'] = os.path.basename(
                 crop_image)
-            processing_results_source['comp_ID'] = str(0)
-
             # first, run the analysis for the entire source structure
             processing_results_source, mask, _ = measures(imagename=crop_image,
                                                           residualname=crop_residual,
@@ -4598,9 +4661,11 @@ def structural_morphology(imagelist, residuallist,
                                                           iterations=iterations,
                                                           dilation_size=None,
                                                           do_measurements=do_measurements,
-                                                          do_PLOT=True,
-                                                          show_figure=True,
+                                                          do_PLOT=do_PLOT,
+                                                          show_figure=show_figure,
                                                           add_save_name='')
+            processing_results_source['freq'] = getfreqs([crop_image])[0]
+            processing_results_source['comp_ID'] = str(0)
             mask = mask*big_mask
             results_conc.append(processing_results_source)
             # bkg_ = sep_background(crop_image, apply_mask=True, mask=None, bw=11,
@@ -4615,23 +4680,22 @@ def structural_morphology(imagelist, residuallist,
                     # ii = str(i+1)
                     sigma_loop = sigma_loop_init  # reset the loop
                     processing_results_components = {}  # store calculation only for individual components of the soruce
-                    processing_results_components[
-                        '#imagename'] = os.path.basename(crop_image)
+                    processing_results_components['#imagename'] = os.path.basename(crop_image)
+                    
 
                     mask_component = masks_deblended[j]
                     data_component = mask_component*data_2D.copy()
-                    add_save_name = 'comp_' + str(j + 1)
-                    processing_results_components['comp_ID'] = str(j + 1)
-
+                    add_save_name = 'comp_' + str(j+1)
+                    # print('Component id ', processing_results_components['comp_ID'])
                     try:
                         # mask_new = mask_component.copy()
                         _, mask_new = \
                             mask_dilation_from_mask(data_2D,
                                                     mask_component,
                                                     sigma=sigma_loop,
-                                                    PLOT=True,iterations=iterations,
+                                                    PLOT=False,iterations=iterations,
                                                     dilation_size=dilation_size,
-                                                    show_figure=True)
+                                                    show_figure=False)
 
                         # dilated masks must not overlap >> non conservation of flux
                         for l in range(len(indices)):
@@ -4651,11 +4715,13 @@ def structural_morphology(imagelist, residuallist,
                                      dilation_size=dilation_size,
                                      add_save_name=add_save_name,
                                      do_measurements=do_measurements,
-                                     do_PLOT=True, show_figure=True,
+                                     do_PLOT=do_PLOT, show_figure=show_figure,
                                      results_final=processing_results_components)
                         flag_subcomponent = 0
-                        processing_results_components[
-                            'flag_subcomponent'] = flag_subcomponent
+                        # print('Component id ', processing_results_components['comp_ID'])
+                        processing_results_components['freq'] = getfreqs([crop_image])[0]
+                        processing_results_components['comp_ID'] = str(j+1)
+                        processing_results_components['flag_subcomponent'] = flag_subcomponent
                     except:
                         try:
                             error_mask = True
@@ -4668,9 +4734,9 @@ def structural_morphology(imagelist, residuallist,
                                                                 rms=std,
                                                                 sigma=sigma_loop,
                                                                 iterations=3,
-                                                                PLOT=True,
+                                                                PLOT=False,
                                                                 dilation_size=dilation_size,
-                                                                show_figure=True)
+                                                                show_figure=False)
 
                                     if sigma_loop >= 3.0:
                                         last_level = 1.5
@@ -4692,16 +4758,16 @@ def structural_morphology(imagelist, residuallist,
                                                    add_save_name=add_save_name,
                                                    dilation_size=dilation_size,
                                                    do_measurements=do_measurements,
-                                                   do_PLOT=True,
-                                                   show_figure=True,
+                                                    do_PLOT=do_PLOT, 
+                                                    show_figure=show_figure,
                                                    results_final=processing_results_components)
-
-                                    processing_results_components[
-                                        'subreg_sigma'] = sigma_loop
+                                    # print('Component id ', processing_results_components['comp_ID'])
+                                    processing_results_components['subreg_sigma'] = sigma_loop
                                     error_mask = False
                                     flag_subcomponent = 1
-                                    processing_results_components[
-                                        'flag_subcomponent'] = flag_subcomponent
+                                    processing_results_components['freq'] = getfreqs([crop_image])[0]
+                                    processing_results_components['comp_ID'] = str(j+1)
+                                    processing_results_components['flag_subcomponent'] = flag_subcomponent
                                 except Exception as e:
                                     # Handle the error, and decrease p by 0.5
                                     print(
@@ -4715,7 +4781,6 @@ def structural_morphology(imagelist, residuallist,
                             else:
                                 print(
                                     "Unable to call function with any value of p.")
-
                         except:
                             print(
                                 'Last attempt to perform morphometry, '
@@ -4732,12 +4797,13 @@ def structural_morphology(imagelist, residuallist,
                                 last_level=0.5,
                                 add_save_name=add_save_name,
                                 do_measurements=do_measurements,
-                                do_PLOT=True, show_figure=True,
+                                do_PLOT=do_PLOT, show_figure=show_figure,
                                 results_final=processing_results_components)
                             processing_results_components['subreg_sigma'] = 1.0
+                            processing_results_components['comp_ID'] = str(j+1)
+                            processing_results_components['freq'] = getfreqs([crop_image])[0]
                             flag_subcomponent = 1
-                            processing_results_components[
-                                'flag_subcomponent'] = flag_subcomponent
+                            processing_results_components['flag_subcomponent'] = flag_subcomponent
 
                     results_conc.append(processing_results_components)
                 processing_results_source['ncomps'] = len(indices)
@@ -4748,7 +4814,7 @@ def structural_morphology(imagelist, residuallist,
             missing_data_im.append(os.path.basename(crop_image))
             missing_data_re.append(os.path.basename(crop_residual))
             pass
-    return (results_conc, processing_results_source, missing_data_im)
+    return (pd.DataFrame(results_conc), processing_results_source, missing_data_im)
 
 
 
@@ -5451,7 +5517,7 @@ def T_B(theta_maj, theta_min, freq, I):
 def Tb_source(Snu,freq,theta1,theta2,z):
     """
     Compute the brightness temperature, provided the deconvolved model parameters
-    having semi-major and semi-minor axes theta1 and theta2.
+    having semi-major and semi-minor FWHM's theta1 and theta2.
     
     Parameters
     ----------
@@ -5981,6 +6047,7 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
                                  show_figure = True,plot_catalog=False,
                                  segm_reg= 'mask',vmax=0.1,bkg_to_sub=None,
                                  fwhm=121, kernel_size=81, npixels=128,
+                                 verbose=0,
                                  add_save_name='',logger=None):
     # if mask:
     if source_props is None:
@@ -6108,8 +6175,9 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
 
     if (source_props['rlast'] < 2 * source_props['Rp']) or \
             (p.r_total_flux is np.nan):
-        print('WARNING: Number of pixels for petro region is to small. Finding '
-              'a good condition...')
+        if verbose>0:
+            print('WARNING: Number of pixels for petro region is to small. '
+                  'Looping over until good condition is satisfied.')
         # print('Rlast     >> ', source_props['rlast'])
         # print('Rp        >> ', source_props['Rp'])
         # print('Rtotal    >> ', p.r_total_flux)
@@ -6137,8 +6205,9 @@ def compute_petrosian_properties(data_2D, imagename, mask_component=None,
 
     if (source_props['rlast'] < 2 * source_props['Rp']) or \
             (np.isnan(p.r_total_flux)):
-        print('WARNING: Number of pixels for petro region is to small. Finding '
-              'a good condition...')
+        if verbose>0:
+            print('WARNING: Number of pixels for petro region is to small. '
+                  'Looping over until good condition is satisfied.')
         # print('Rlast     >> ', source_props['rlast'])
         # print('Rp        >> ', source_props['Rp'])
         # print('Rtotal    >> ', p.r_total_flux)
@@ -6281,7 +6350,7 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
     deblend: bool
         If True, deblend the sources.
     """
-
+    verbose = 0
     # if mask:
     if imagename is not None:
         beam_area_ = beam_area2(imagename, cellsize=None)
@@ -6326,8 +6395,9 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
     """
     if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
             or (np.isnan(p.r_total_flux)):
-        print('WARNING: Number of pixels for petro region is to small. '
-              'Looping over until good condition is satisfied.')
+        if verbose>0:
+            print('WARNING: Number of pixels for petro region is to small. '
+                  'Looping over until good condition is satisfied.')
         # Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
 
         _, area_convex_mask = convex_shape(mask_component)
@@ -6342,8 +6412,9 @@ def compute_petro_source(data_2D, mask_component=None, global_mask=None,
 
         if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
                 or (np.isnan(p.r_total_flux)):
-            print('WARNING: Number of pixels for petro region is to small. '
-                  'Looping over until good condition is satisfied.')
+            if verbose>0:
+                print('WARNING: Number of pixels for petro region is to small. '
+                    'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['Rp'] + 3
             Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
             source_props, p = petro_params(source=source, data_2D=data_2D,
@@ -6480,6 +6551,7 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
     From a 2D image array, perform simple source extraction, and calculate basic petrosian
     properties.
     '''
+    verbose = 0
     if apply_mask:
         _, mask = mask_dilation(data_2D, PLOT=False,
                                 sigma=sigma_mask, iterations=2, dilation_size=10)
@@ -6518,8 +6590,9 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
         #         print(Rp_props['rlast'],2*Rp_props['Rp'])
         if ((source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp'])) \
                 or (np.isnan(p.r_total_flux)):
-            print('WARNING: Number of pixels for petro region is to small. '
-                  'Looping over until good condition is satisfied.')
+            if verbose>0:
+                print('WARNING: Number of pixels for petro region is to small. '
+                    'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
 
             _, area_convex_mask = convex_shape(mask_source)
@@ -6535,8 +6608,9 @@ def source_props(data_2D, source_props={},sigma_mask = 5,
 
         if (source_props['c' + ii + '_rlast'] < 2 * source_props['c' + ii + '_Rp']) \
                 or (np.isnan(p.r_total_flux)):
-            print('WARNING: Number of pixels for petro region is to small. '
-                  'Looping over until good condition is satisfied.')
+            if verbose>0:
+                print('WARNING: Number of pixels for petro region is to small. '
+                    'Looping over until good condition is satisfied.')
             # Rlast_new = 2 * source_props['Rp'] + 3
             Rlast_new = 2 * source_props['c' + ii + '_Rp'] + 3
             source_props, p = petro_params(source=source, data_2D=data_2D,
@@ -6649,11 +6723,24 @@ def sep_background(imagename,mask=None,apply_mask=False,show_map=False,
         # plt.close()
     return(bkg)
 
+def distances_from_reference(x_positions, y_positions, reference_coordinate):
+    # Reference coordinate
+    x_ref, y_ref = reference_coordinate
+
+    # Calculate distances to the reference coordinate
+    distances = np.sqrt((x_positions - x_ref)**2 + (y_positions - y_ref)**2)
+
+    # Return the distances sorted
+#     sorted_distances = np.sort(distances)
+
+    return distances
+
 def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
                    deblend_nthresh=100, deblend_cont=0.005, maskthresh=0.0,
                    gain=1, filter_kernel=None, mask=None,
                    segmentation_map=False, clean_param=1.0, clean=True,
-                   minarea=20, filter_type='matched', sort_by='flux',
+                   minarea=20, filter_type='matched', 
+                   sort_by='distance',
                    bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
                    apply_mask=False, sigma_mask=6, minarea_factor=1.0,
                    show_bkg_map=False, show_detection=False):
@@ -6823,8 +6910,11 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     # for i in range(len(objects)):
     #     print("object {:d}: flux = {:f} +/- {:f}".format(i, flux[i], fluxerr[i]))
     # objects['b'] / objects['a'], np.rad2deg(objects['theta'])
-
+    # print(objects)
     # sort regions from largest size to smallest size.
+    # print(objects['x'], objects['y'])
+    _masks_regions = [mask == 1.0 for mask in masks_regions]
+    masks_regions = _masks_regions
     mask_areas = []
     mask_fluxes = []
     for mask_comp in masks_regions:
@@ -6840,7 +6930,17 @@ def sep_source_ext(imagename, sigma=10.0, iterations=2, dilation_size=None,
     if sort_by == 'flux':
         sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
         sorted_arr_desc = mask_fluxes[sorted_indices_desc]
-
+    if sort_by == 'distance':
+        ref_centre = data_2D.shape[0] / 2, data_2D.shape[1] / 2
+        distances = distances_from_reference(objects['x'],
+                                             objects['y'],
+                                             ref_centre
+                                             )
+        sorted_indices_desc = np.argsort(distances)
+        sorted_arr_desc = distances[sorted_indices_desc]
+        
+    
+    
     objects_sorted = {}
     objects_sorted['xc'] = np.asarray([1] * len(objects))
     objects_sorted['yc'] = np.asarray([1] * len(objects))
@@ -7512,17 +7612,22 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             ell = 1 - init_constraints['c' + jj + '_q']
                             ell_min = ell * 0.2
                             #                         if ell + dell <= 1.0:
-                            if ell * 2.0 <= 0.6:
-                                ell_max = ell * 2.0
+                            if ell * 1.0 <= 0.5:
+                                ell_max = ell * 1.0
                                 # if ell_max <= 0.5:
                                 #     ell_max = 0.5
                             else:
                                 ell_max = 0.75
-
-
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
                                 value=ell, min=ell_min, max=ell_max)
+                            print(f" -- Init value for ell: {ell}")
+                            print(f" -- min value for ell: {ell_min}")
+                            print(f" -- max value for ell: {ell_max}")
+                            # smodel2D.set_param_hint(
+                            #     'f' + str(j + 1) + '_' + param,
+                            #     value=ell, min=0.01, max=0.9)
+
 
                         if param == 'cg':
                             if fix_geometry_j == True:
@@ -7550,7 +7655,7 @@ def construct_model_parameters(n_components, params_values_init_IMFIT=None,
                             deconvolved signal from a convolved signal with a Gaussian 
                             kernel.
                             """
-                            I50_max = I50 * 250
+                            I50_max = I50 * 100
                             I50_min = I50 * 0.1
                             smodel2D.set_param_hint(
                                 'f' + str(j + 1) + '_' + param,
@@ -7727,7 +7832,7 @@ def constrain_nelder_mead_params(params,
     return(params_copy)
 
 
-def generate_random_params_uniform(params, param_errors):
+def generate_random_params_uniform_old(params, param_errors):
     # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
     # try:
     #     # Scale the random numbers by the standard errors of the parameters
@@ -7737,8 +7842,16 @@ def generate_random_params_uniform(params, param_errors):
     random_params = params + scaled_random_nums
     return random_params
 
+def generate_random_params_uniform(params, param_errors, sigma_errors=5.0):
+    # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
 
-def generate_random_params_normal(params, param_errors):
+    random_params = np.random.uniform(params-sigma_errors*param_errors, 
+                                    params+sigma_errors*param_errors, 
+                                    size=len(params))
+    return random_params
+
+
+def generate_random_params_normal(params, param_errors, sigma_errors=3.0):
     # Generate a set of random numbers from a normal distribution with mean 0 and standard deviation 1
     param_errors_corr = param_errors.copy()
 
@@ -7753,11 +7866,13 @@ def generate_random_params_normal(params, param_errors):
     #     random_noise = np.random.uniform(low=-1, high=1, size=len(weights_f))
     # #     random_noise = np.random.random(len(weights_f)) * weights_f
 
-    random_nums = np.random.normal(1.0, 0.25, size=len(params))
+    random_params = np.random.normal(params, 
+                                     sigma_errors*param_errors, 
+                                     size=len(params))
     # scaled_random_nums = random_nums * param_errors  # + random_noise
     #     random_nums = np.random.normal(0.0, 0.1, size=len(params))
-    scaled_random_nums = random_nums * params
-    random_params = scaled_random_nums
+    # scaled_random_nums = random_nums * params
+    # random_params = scaled_random_nums
     # random_params = params + scaled_random_nums
     return random_params
 
@@ -7831,7 +7946,7 @@ def add_extra_component(petro_properties, copy_from_id):
                 'c' + str(copy_from_id) + '_' + unique_list[k]] * factor
         if unique_list[k] == 'I50':
             # multiply the I50 value by a factor, e.g., 0.2
-            factor = 0.1
+            factor = 0.05
             petro_properties_copy[
                 'c' + str(new_comp_id) + '_' + unique_list[k]] = \
             petro_properties_copy[
@@ -7841,14 +7956,89 @@ def add_extra_component(petro_properties, copy_from_id):
     return (petro_properties_copy)
 
 
+
+def sorted_detected_coordinates(reference_x, 
+                                reference_y, 
+                                detected_x, 
+                                detected_y, 
+                                reference_coordinate, 
+                                tolerance=2):
+    """
+    This function will sort a new set of detected coordinates 
+    by distance to a reference position in the same order as a reference set 
+    of coordinates. 
+    
+    Consider for example, that in a high-resolution image, we have a set of
+    detected structures such as ID1, ID2, ID3. 
+    
+    If in a new image (e.g. a low-resolution image) we detect the same structures
+    in addition to other structures, we will have for example: 
+        ID1_new, ID2_new, ID3_new, ID4_new, ID5_new.
+    However, the order of the detected structures can be any. For example,
+    ID1_new may be the same as ID1, but not for the others. 
+    
+    This function will sort the new coordinates in the same order they appear 
+    in the reference coordinates, in addition to the extra detected coordinates.
+    
+    A typical use case is: 
+    - Perform a source detection in a VLA image (reference image), at 33 GHz.
+    - Perform a source detection in an e-MERLIN image, at 6 GHz.
+    The number of Structures may differ, but some of them are the same.
+    This allow us to connect the labels of the structures in both images.
+    
+    """
+    print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+    print('+++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+    # Reference coordinate
+    # Reference coordinate
+    x_ref, y_ref = reference_coordinate
+
+    # Calculate distances to the reference coordinate for both sets of coordinates
+    reference_distances = np.sqrt((reference_x - x_ref)**2 + (reference_y - y_ref)**2)
+    detected_distances = np.sqrt((detected_x - x_ref)**2 + (detected_y - y_ref)**2)
+
+    # Sort the reference and detected indices by distance
+    sorted_reference_indices = np.argsort(reference_distances)
+    sorted_detected_indices = np.argsort(detected_distances)
+
+    # Initialize lists to store the sorted detected coordinates, distances, and indices
+    sorted_detected_coordinates = []
+    sorted_detected_distances = []
+    sorted_detected_original_indices = []
+
+    # Match reference coordinates to detected coordinates by closest distance
+    for ref_idx in sorted_reference_indices:
+        if len(sorted_detected_indices) > 0:
+            closest_idx = sorted_detected_indices[0]
+            sorted_detected_coordinates.append([detected_x[closest_idx], detected_y[closest_idx]])
+            sorted_detected_distances.append(detected_distances[closest_idx])
+            sorted_detected_original_indices.append(closest_idx)
+            # Remove the matched index to avoid duplicate matching
+            # sorted_detected_indices = np.delete(sorted_detected_indices, 0)
+
+    # Add any remaining detected coordinates that were not matched
+    for det_idx in sorted_detected_indices:
+        sorted_detected_coordinates.append([detected_x[det_idx], detected_y[det_idx]])
+        sorted_detected_distances.append(detected_distances[det_idx])
+        sorted_detected_original_indices.append(det_idx)
+
+    return (np.array(sorted_detected_coordinates), 
+            np.array(sorted_detected_distances), 
+            np.array(sorted_detected_indices))
+    
+
+ 
+
 def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
                     deblend_nthresh=5, deblend_cont=1e-6, maskthresh=0.0,
                     gain=1, filter_kernel=None, mask=None,
                     segmentation_map=False, clean_param=1.0, clean=True,
-                    minarea=100, minarea_factor=1, filter_type='matched', sort_by='flux',
+                    minarea=100, minarea_factor=1, filter_type='matched', 
+                    sort_by='distance',
                     bw=64, bh=64, fw=3, fh=3, ell_size_factor=2,
                     apply_mask=False, sigma_mask=6,
-                    show_bkg_map=False, show_detection=False):
+                    show_bkg_map=False, show_detection=False,
+                    SE_ref=None):
     """
     Simple source extraction algorithm (using SEP https://sep.readthedocs.io/en/v1.1.x/).
 
@@ -7900,8 +8090,29 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
                                        deblend=True, contrast=deblend_cont,
                                        nlevels=deblend_nthresh,
                                        npixels=npixels,
+                                       figsize=(20, 20),
                                        plot=show_detection, vmin=1.0 * s)
-    indices = order_cat(cat, key='segment_flux', reverse=True)
+    if sort_by == 'flux':
+        indices = list(order_cat(cat, key='segment_flux', reverse=True))
+    if sort_by == 'area':
+        indices = list(order_cat(cat, key='area', reverse=True))
+    if sort_by == 'distance':
+        ref_centre = data_2D.shape[0] / 2, data_2D.shape[1] / 2
+        if SE_ref is not None:
+            coords, distances, indices = \
+                sorted_detected_coordinates(SE_ref.objects['xc'],
+                                            SE_ref.objects['yc'],
+                                            cat.xcentroid, 
+                                            cat.ycentroid, 
+                                            ref_centre)
+            print(indices)
+        else:
+            
+            distances = distances_from_reference(cat.xcentroid, 
+                                            cat.ycentroid,
+                                            ref_centre)
+            indices = np.argsort(distances)
+        
     masks_deblended = []
     for k in range(len(indices)):
         # print(k)
@@ -7914,7 +8125,7 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
 
     m, s = np.mean(data_sub), np.std(data_sub)
     if show_detection == True:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 10))
         im = ax.imshow(data_sub, interpolation='nearest', cmap='gray',
                        vmin=m - s, vmax=m + s, origin='lower')
 
@@ -7974,6 +8185,24 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
     if sort_by == 'flux':
         sorted_indices_desc = np.argsort(mask_fluxes)[::-1]
         sorted_arr_desc = mask_fluxes[sorted_indices_desc]
+    if sort_by == 'distance':
+        ref_centre = data_2D.shape[0] / 2, data_2D.shape[1] / 2
+        if SE_ref is not None:
+            coords, distances, sorted_indices_desc = \
+                sorted_detected_coordinates(SE_ref.objects['xc'],
+                                            SE_ref.objects['yc'],
+                                            cat.xcentroid, 
+                                            cat.ycentroid, 
+                                            ref_centre)
+            # sorted_indices_desc = np.argsort(distances)
+            # sorted_arr_desc = distances[sorted_indices_desc]
+                
+        else:
+            distances = distances_from_reference(cat.xcentroid, 
+                                                cat.ycentroid,
+                                                ref_centre)
+            sorted_indices_desc = np.argsort(distances)
+            # sorted_arr_desc = distances[sorted_indices_desc]
 
     objects_sorted = {}
     objects_sorted['xc'] = np.asarray([1] * len(cat))
@@ -7999,9 +8228,11 @@ def phot_source_ext(imagename, sigma=1.0, iterations=2, dilation_size=None,
         plt.show()
 
     if segmentation_map == True:
-        return (masks_regions, sorted_indices_desc, bkg, seg_maps, objects_sorted)
+        return (masks_deblended, sorted_indices_desc, bkg,
+                seg_maps, objects_sorted)
     else:
-        return (masks_regions, sorted_indices_desc, bkg, objects_sorted)
+        return (masks_deblended, sorted_indices_desc, bkg,
+                objects_sorted)
 
 def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 bw=51, bh=51, fw=15, fh=15, sigma=15, ell_size_factor=2.0,
@@ -8009,7 +8240,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
                 minarea=None,minarea_factor=1.0,
                 sigma_mask=6,
                 show_detection=True,use_extraction_positions=False,
-                clean_param=0.9,clean=True,sort_by='flux',apply_mask=False,
+                clean_param=0.9,clean=True,sort_by='distance',apply_mask=False,
                 obs_type = 'radio',algorithm='SEP',
                 show_petro_plots=False):
     """
@@ -8106,7 +8337,7 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     # else:
     for i in range(len(indices)):
         # ii = str(i+1)
-        mask_component = masks[indices[i]]
+        mask_component = masks[i]
         data_component = data_2D * mask_component
         sources_photometries = compute_petro_source(data_component,
                                                     mask_component=mask_component,
@@ -8151,7 +8382,8 @@ def prepare_fit(ref_image, ref_res, z, ids_to_add=[1],
     # update variable `n_components`.
     n_components = sources_photometries['ncomps']
     print("# of model components (COMPS) to be fitted =", n_components)
-    return (sources_photometries, n_components, n_IDs, psf_name, mask, bkg)
+    return (sources_photometries, n_components, n_IDs, masks, indices, objects,
+            psf_name, mask, bkg)
 
 def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
              init_constraints=None, data_2D_=None, residualdata_2D_=None,
@@ -8167,7 +8399,7 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
              regularize  = True, f_scale = 1.0,
              maxiter = 30000, maxfev = 30000, xatol = 1e-12,
              fatol = 1e-12, return_all = True, disp = True,
-             de_options=None,
+             de_options=None,parameters_mini_init=None,
              save_name_append='',logger=None):
     """
     Perform a Robust and Fast Multi-Sersic Decomposition with GPU acceleration.
@@ -8712,16 +8944,29 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
         # if results_previous_run is not None:
         print(' >> Using',tr_solver,'for tr solver, with regularize set to',regularize,
               ' Loss is',loss,'.')
-        result_1 = mini.minimize(method='least_squares',
-                                 max_nfev=max_nfev, x_scale=x_scale, f_scale=f_scale,
-                                 tr_solver=tr_solver,
-                                 tr_options={'regularize': regularize,
-#                                              'min_delta':1e-14, 'eta':0.05,
-#                                              'xtol':1e-14, 'gtol':1e-14,
-#                                              'ftol':1e-14
-                                            },
-                                 ftol=ftol, xtol=xtol, gtol=gtol, verbose=verbose,
-                                 loss=loss)  # ,f_scale=0.5, max_nfev=5000, verbose=2)
+        
+        if parameters_mini_init is not None:
+            print(f'  ++==>> Using initial mini parameters from a previous run.')
+            # try:
+            result_1 = mini.minimize(method='least_squares',
+                                     params=parameters_mini_init,
+                                    max_nfev=max_nfev, x_scale=x_scale, f_scale=f_scale,
+                                    tr_solver=tr_solver,
+                                    tr_options={'regularize': regularize,
+                                                },
+                                    ftol=ftol, xtol=xtol, gtol=gtol, verbose=verbose,
+                                    loss=loss)  # ,f_scale=0.5, max_nfev=5000, verbose=2) 
+        else:
+            result_1 = mini.minimize(method='least_squares',
+                                    max_nfev=max_nfev, x_scale=x_scale, f_scale=f_scale,
+                                    tr_solver=tr_solver,
+                                    tr_options={'regularize': regularize,
+    #                                              'min_delta':1e-14, 'eta':0.05,
+    #                                              'xtol':1e-14, 'gtol':1e-14,
+    #                                              'ftol':1e-14
+                                                },
+                                    ftol=ftol, xtol=xtol, gtol=gtol, verbose=verbose,
+                                    loss=loss)  # ,f_scale=0.5, max_nfev=5000, verbose=2)
 
     if method1 == 'differential_evolution':
         # de is giving some issues, I do not know why.
@@ -8777,7 +9022,8 @@ def do_fit2D(imagename, params_values_init_IMFIT=None, ncomponents=None,
     if method2 == 'least_squares':
         # faster, usually converges and provide errors.
         # Very robust if used in second opt from first opt parameters.
-        result = mini.minimize(method='least_squares', params=second_run_params,
+        result = mini.minimize(method='least_squares', 
+                               params=second_run_params,
                                max_nfev=max_nfev,
                                tr_solver=tr_solver,
                                tr_options={'regularize': regularize,
@@ -9756,7 +10002,7 @@ def run_mcmc_mini(imagename, psf_name, mini_results, residualname=None, rms_map=
     print('    >> Main-Phase Steps:   ', production_steps)
     p0 = []
     for i in range(nwalkers):
-        walker_params = []
+        # walker_params = []
         random_params = jnp.array(
             generate_random_params_uniform(np.asarray(list(params.valuesdict().values())), stderr))
         p0.append(random_params)
@@ -9832,6 +10078,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                       fix_x0_y0 = [True, True, True, True, True, True, True, True],
                       fix_value_n=[0.5, 0.5, 0.5, 1.0], fix_geometry=True,
                       dr_fix=[10, 10, 10, 10, 10, 10, 10, 10],logger=None,
+                      parameters_mini_init = None,
                       self_bkg=False, bkg_rms_map=None,verbose=0):
     """
     Support function to run the image fitting to a image or to a list of images.
@@ -9982,6 +10229,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                             method1=method1, method2=method2,
                             loss=loss, tr_solver=tr_solver,
                             init_params=init_params, final_params=final_params,
+                            parameters_mini_init = parameters_mini_init,
                             save_name_append=save_name_append,logger=logger)
 
         # print(result_mini.params)
@@ -10018,7 +10266,12 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
 
         deconv_props = pd.DataFrame(deconv_model_properties).T
         conv_props = pd.DataFrame(conv_model_properties).T
-        class_results = evaluate_compactness(deconv_props, conv_props)
+        try:
+            class_results = evaluate_compactness(deconv_props, conv_props)
+        except:
+            #NEED-A-FIX
+            class_results = {}
+            pass
         # for l in class_results.keys():
         #     ID = 1
         #     deconv_props.loc[l, 'comp_ID'] = ID
@@ -10032,14 +10285,18 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # comp_ids = []
         # print('*************************************')
         # print(class_results)
-        if comp_ids == []:
-            ID = 1
-            for key in class_results.keys():
-                if class_results[key]['final_class'] == 'C':
-                    comp_ids.append(str(ID))
-                ID = ID + 1
-        if comp_ids == []:
-            comp_ids = ['1']
+        try:
+            if comp_ids == []:
+                ID = 1
+                for key in class_results.keys():
+                    if class_results[key]['final_class'] == 'C':
+                        comp_ids.append(str(ID))
+                    ID = ID + 1
+            if comp_ids == []:
+                comp_ids = ['1']
+        except:
+            #NEED-A-FIX
+            pass
 
         all_comps_ids = np.arange(1, n_components + 1).astype('str')
         mask_compact_ids = np.isin(all_comps_ids, np.asarray(comp_ids))
@@ -10176,6 +10433,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         # else:
         #     _mask = mask
 
+
         results_compact_conv_morpho, _, _ = \
             measures(imagename=crop_image,
                      residualname=crop_residual, z=z,
@@ -10194,6 +10452,7 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
                      add_save_name='_compact_conv',verbose=verbose)
 
         list_results_compact_conv_morpho.append(results_compact_conv_morpho)
+
 
 
         # _rms_model = mad_std(compact_model_deconv)
@@ -10222,24 +10481,28 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
         #     _mask = mask
 
         # print('++++ Computing properties of deconvolved compact model.')
-        results_compact_deconv_morpho, _, _ = \
-            measures(imagename=crop_image,
-                     residualname=crop_residual, z=z,
-                     sigma_mask=7.0,
-                     last_level=1.5, vmin_factor=1.0,
-                     data_2D=compact_model_deconv,
-                     dilation_size=None,
-                     results_final={},
-                     # rms=rms_model,
-                     rms=rms_compact_deconv,
-                     apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
-                     do_petro = True,
-                     show_figure=show_figure,
-                     mask_component=mask_region_deconv_comp,
-                     mask=mask_region, do_measurements='partial',
-                     add_save_name='_compact_deconv')
+        try:
+            results_compact_deconv_morpho, _, _ = \
+                measures(imagename=crop_image,
+                         residualname=crop_residual, z=z,
+                         sigma_mask=7.0,
+                         last_level=1.5, vmin_factor=1.0,
+                         data_2D=compact_model_deconv,
+                         dilation_size=None,
+                         results_final={},
+                         # rms=rms_model,
+                         rms=rms_compact_deconv,
+                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
+                         do_petro = True,
+                         show_figure=show_figure,
+                         mask_component=mask_region_deconv_comp,
+                         mask=mask_region, do_measurements='partial',
+                         add_save_name='_compact_deconv')
 
-        list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
+            list_results_compact_deconv_morpho.append(results_compact_deconv_morpho)
+        except:
+            empty_results = {key: np.nan for key in results_compact_conv_morpho.keys()}
+            list_results_compact_deconv_morpho.append(empty_results)
 
         if nfunctions == 1:
             """
@@ -10247,25 +10510,32 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             compact component. Hence, extended emission is considered
             to be only the residual after removing that component. 
             """
-            results_ext_conv_morpho, _, _ = \
-                measures(imagename=crop_image,
-                         residualname=crop_residual, z=z,
-                         sigma_mask=6.0,
-                         last_level=1.5, vmin_factor=1.0,
-                         data_2D=(ctn(crop_image) - compact_model) * mask_region,
-                         dilation_size=None,
-                         results_final={},
-                         rms=rms_std_res,
-                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
-                         do_petro=False,
-                         show_figure=show_figure,
-                         # mask_component=mask_region_deconv_comp,
-                         mask=mask, do_measurements='partial',
-                         add_save_name='_extended_conv')
+            try:
+                results_ext_conv_morpho, _, _ = \
+                    measures(imagename=crop_image,
+                             residualname=crop_residual, z=z,
+                             sigma_mask=6.0,
+                             last_level=1.5, vmin_factor=1.0,
+                             data_2D=(ctn(crop_image) - compact_model) * mask_region,
+                             dilation_size=None,
+                             results_final={},
+                             rms=rms_std_res,
+                             apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
+                             do_petro=False,
+                             show_figure=show_figure,
+                             # mask_component=mask_region_deconv_comp,
+                             mask=mask, do_measurements='partial',
+                             add_save_name='_extended_conv')
 
-            list_results_ext_conv_morpho.append(results_ext_conv_morpho)
-            results_ext_deconv_morpho = results_ext_conv_morpho
-            list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+                results_ext_deconv_morpho = results_ext_conv_morpho
+                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+            except:
+                empty_results = {key: np.nan for key in results_compact_conv_morpho.keys()}
+                list_results_ext_conv_morpho.append(empty_results)
+                list_results_ext_deconv_morpho.append(empty_results)
+
+
         else:
             rms_model = mad_std(extended_model)
             rms_ext_conv = rms_bkg_conv # * len(ext_ids)
@@ -10287,24 +10557,27 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             #     _mask = mask_dilated_new * mask_region_conv_ext
             # else:
             #     _mask = mask
-
-            results_ext_conv_morpho, _,_ = \
-                measures(imagename=crop_image,
-                         residualname=crop_residual, z=z,
-                         sigma_mask=7.0,
-                         last_level=1.5, vmin_factor=1.0,
-                         data_2D=extended_model,
-                         dilation_size=None,
-                         results_final={},
-                         # rms=rms_model,
-                         rms=rms_ext_conv,
-                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
-                         do_petro=True,
-                         show_figure=show_figure,
-                         mask_component=mask_region_conv_ext,
-                         mask=mask_region, do_measurements='partial',
-                         add_save_name='_extended_conv')
-            list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+            try:
+                results_ext_conv_morpho, _,_ = \
+                    measures(imagename=crop_image,
+                             residualname=crop_residual, z=z,
+                             sigma_mask=7.0,
+                             last_level=1.5, vmin_factor=1.0,
+                             data_2D=extended_model,
+                             dilation_size=None,
+                             results_final={},
+                             # rms=rms_model,
+                             rms=rms_ext_conv,
+                             apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
+                             do_petro=True,
+                             show_figure=show_figure,
+                             mask_component=mask_region_conv_ext,
+                             mask=mask_region, do_measurements='partial',
+                             add_save_name='_extended_conv')
+                list_results_ext_conv_morpho.append(results_ext_conv_morpho)
+            except:
+                empty_results = {key: np.nan for key in results_compact_conv_morpho.keys()}
+                list_results_ext_conv_morpho.append(empty_results)
 
             rms_model = mad_std(extended_model_deconv)
             rms_ext_deconv = rms_bkg_deconv # / len(ext_ids)
@@ -10330,25 +10603,29 @@ def run_image_fitting(imagelist, residuallist, sources_photometries,
             # else:
             #     _mask = mask
 
-            # print('++++ Computing properties of deconvolved extended model.')
-            results_ext_deconv_morpho, _,_ = \
-                measures(imagename=crop_image,
-                         residualname=crop_residual, z=z,
-                         sigma_mask=7.0,
-                         last_level=1.5, vmin_factor=1.0,
-                         data_2D=extended_model_deconv,
-                         dilation_size=None,
-                         results_final={},
-                         # rms=rms_model,
-                         rms=rms_ext_deconv,
-                         apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
-                         do_petro=True,
-                         show_figure=show_figure,
-                         mask_component=mask_region_deconv_ext,
-                         mask=mask_region, do_measurements='partial',
-                         add_save_name='_extended_deconv')
+            try:
+                # print('++++ Computing properties of deconvolved extended model.')
+                results_ext_deconv_morpho, _,_ = \
+                    measures(imagename=crop_image,
+                             residualname=crop_residual, z=z,
+                             sigma_mask=7.0,
+                             last_level=1.5, vmin_factor=1.0,
+                             data_2D=extended_model_deconv,
+                             dilation_size=None,
+                             results_final={},
+                             # rms=rms_model,
+                             rms=rms_ext_deconv,
+                             apply_mask=False, do_PLOT=do_PLOT, SAVE=SAVE,
+                             do_petro=True,
+                             show_figure=show_figure,
+                             mask_component=mask_region_deconv_ext,
+                             mask=mask_region, do_measurements='partial',
+                             add_save_name='_extended_deconv')
 
-            list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+                list_results_ext_deconv_morpho.append(results_ext_deconv_morpho)
+            except:
+                empty_results = {key: np.nan for key in results_compact_conv_morpho.keys()}
+                list_results_ext_deconv_morpho.append(empty_results)
 
         all_results = {**parameter_results, **decomp_results}
         results_fit.append(all_results)
@@ -11272,23 +11549,28 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
     y = fluxes
     yerr = fluxes_err
 
-    plt.figure(figsize=(8, 6))
-    plt.errorbar(x, y,
-                 yerr=yerr,
-                 fmt='o', label='Observed data', color='k', ecolor='gray', alpha=0.5)
-    plt.xlabel('Frequency [GHz]')
-    plt.ylabel('Flux Density [mJy]')
-    plt.legend()
-    plt.semilogy()
-    plt.semilogx()
-    plt.show()
+    # plt.figure(figsize=(8, 6))
+    # plt.errorbar(x, y,
+    #              yerr=yerr,
+    #              fmt='o', label='Observed data', color='k', ecolor='gray', alpha=0.5)
+    # plt.xlabel('Frequency [GHz]')
+    # plt.ylabel('Flux Density [mJy]')
+    # plt.legend()
+    # plt.semilogy()
+    # plt.semilogx()
+    # plt.show()
 
     def log_likelihood_linear(theta, nu, y):
         A1l, alpha = theta
         model = RC_function_linear(nu, A1l, alpha)
         # sigma2 = (np.std(y)) ** 2
+        # sigma2 = yerr ** 2
+        # likelihood = -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
         sigma2 = yerr ** 2
-        return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+        # sigma2 = (np.sqrt((yerr)**2.0+0.1))**2.0
+        likelihood = -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+        # likelihood = (y - model) / (y+np.sqrt((yerr)**2.0+0.1))#okay 
+        return likelihood
         # return np.sum(y-model)**2.0
 
     # def log_likelihood_linear(theta, nu, y):
@@ -11301,7 +11583,7 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
 
     def prior_transform_linear(utheta):
         ua1l, ualpha = utheta  # nu0 is not a parameter to be estimated, so it's removed from here
-        a1l = -1.0 + ua1l * (5.0)  # Transforming ua1l to be in the range -5 to 50
+        a1l = -2.0 + ua1l * (5000.0)  # Transforming ua1l to be in the range -5 to 50
         alpha = -3.0 + ualpha * (3.0)  # Transforming ualpha_nt to be in the range -2 to 1.5
         return a1l, alpha
 
@@ -11360,7 +11642,7 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
     A1l_best, alpha_nt_best = best_fit_params
 
     # Calculate the best-fit model
-    x_resample = np.linspace(np.min(x)*0.5, np.max(x)*2, 100)
+    x_resample = np.linspace(np.min(x)*0.7, np.max(x)*1.3, 100)
     best_fit_model = RC_function_linear(x_resample, A1l_best, alpha_nt_best)
 
     # Plotting the data
@@ -11369,7 +11651,7 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
                  alpha=0.5)
     plt.plot(x_resample, best_fit_model, label='Best-fit model', color='red')
     plt.xlabel('Frequency (GHz)')
-    plt.ylabel('Flux Density')
+    plt.ylabel('Flux Density [Jy]')
     plt.semilogx()
     plt.semilogy()
     plt.legend()
@@ -11383,7 +11665,7 @@ def calc_specidx_region_linear(freqs, fluxes, fluxes_err, ndim=3):
         fig = corner.corner(samples,
                             labels=[r'$A_1$', r'$\alpha_{\rm nt}$'],
                             truths=[A1l_best, alpha_nt_best],
-                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            quantiles=[0.025, 0.5, 0.975], show_titles=True,
                             title_kwargs={"fontsize": 12})
         plt.show()
     except:
@@ -11490,7 +11772,7 @@ def calc_specidx_region_S2(freqs, fluxes, fluxes_err, ndim=3):
         fig = corner.corner(samples,
                             labels=[r'$A_1$', r'$A_2$', r'$\alpha_{\rm nt}$'],
                             truths=[A1l_best, A2_best, alpha_nt_best],
-                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            quantiles=[0.025, 0.5, 0.975], show_titles=True,
                             title_kwargs={"fontsize": 12})
         plt.show()
     except:
@@ -11602,12 +11884,104 @@ def calc_specidx_region_Sq(freqs, fluxes, fluxes_err, ndim=3):
         fig = corner.corner(samples,
                             labels=[r'$S_{0}$',r'$\alpha$', r'$q$'],
                             truths=[S0_best, alpha_best, q_best],
-                            quantiles=[0.16, 0.5, 0.84], show_titles=True,
+                            quantiles=[0.025, 0.5, 0.975], show_titles=True,
                             title_kwargs={"fontsize": 12})
         plt.show()
     except:
         pass
     return (results, dsampler)
+
+
+def general_mcmc(x_data, y_data, yerr_data, 
+                 result_1, param_labels, 
+                 model_func, nwalkers=None,
+                 burn_in = 2500,thin=10,
+                 nsteps=7500, sigma_errors=1.0, prior_sigma=15):
+    """
+    General MCMC simulation for a model with n parameters.
+    
+    Parameters:
+    - x_data: Independent variable data
+    - y_data: Dependent variable data
+    - yerr_data: Error in dependent variable data
+    - result_1: Minimization result object from lmfit
+    - param_labels: List of parameter names
+    - model_func: The model function to fit
+    - nwalkers: Number of walkers for the MCMC sampler (default is 200)
+    - nsteps: Number of MCMC steps (default is 7500)
+    - sigma_errors: Number of standard deviations of the best parameters distribution, where
+      p +/- sigma * p_err 
+    - prior_sigma: Number of standard deviations for prior (default is 15.0)
+    
+    Returns:
+    - samples: MCMC samples for the parameters
+    """
+    # Extract best-fit parameters and their standard errors from the minimization result
+    best_fit_params = np.asarray([result_1.params[label].value for label in param_labels])
+    params_stderr = np.asarray([result_1.params[label].stderr for label in param_labels])
+    
+    mask = ~np.isnan(y_data)
+    x_data = x_data[mask]
+    y_data = y_data[mask]
+    yerr_data = yerr_data[mask]
+
+    # Number of dimensions (parameters)
+    ndim = len(best_fit_params)
+    if nwalkers is None:
+        nwalkers = int(100 * ndim)
+    # Define the log-probability function with priors
+    def log_prob(params, x, y, yerr, best_fit_params, params_stderr):
+        # Prior: within +/- 10 sigma
+        if not all(best_fit_params[i] - prior_sigma*params_stderr[i] < params[i] < best_fit_params[i] + prior_sigma*params_stderr[i] for i in range(ndim)):
+            return -np.inf
+        # Calculate the model predictions
+        model_pred = model_func(params, x)
+        # Calculate the log-likelihood
+        sigma2 = yerr**2
+        log_likelihood = -0.5 * np.sum((y - model_pred)**2 / sigma2 + np.log(sigma2))
+        return log_likelihood
+
+    # Initialize the walkers
+    p0 = []
+    for i in range(nwalkers):
+        walker_params = []
+        random_params = np.asarray(generate_random_params_normal(best_fit_params, 
+                                                                 params_stderr,
+                                                                 sigma_errors=sigma_errors))
+        p0.append(list(random_params))
+    p0 = np.asarray(p0) 
+
+    # Set up the MCMC sampler
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, log_prob, args=(x_data, 
+                                                                    y_data, 
+                                                                    yerr_data, 
+                                                                    best_fit_params, 
+                                                                    params_stderr))
+
+    # Run MCMC
+    sampler.run_mcmc(p0, nsteps, progress=True)
+
+    # Analyze the samples
+    samples = sampler.get_chain(discard=burn_in, thin=thin, flat=True)
+    
+    param_dict = {}
+    for i, label in enumerate(param_labels):
+        q = np.percentile(samples[:, i], [2.5, 50, 97.5])
+        param_dict[label] = {
+            'best': q[1],
+            'lower': (q[1] - q[0])/2,
+            'upper': (q[2] - q[1])/2
+        }
+    
+    # # Plotting the samples
+    # fig = corner.corner(samples, 
+    #                     labels=param_labels,
+    #                     show_titles=True, quantiles=[0.025, 0.5, 0.975],
+    #                     truths=best_fit_params)
+    # fig.show()
+    
+    return samples,param_dict
+
 
 
 def do_fit_spec_RC_linear(freqs,
@@ -11617,7 +11991,9 @@ def do_fit_spec_RC_linear(freqs,
                           save_name_append = None,
                           plot_errors_shade = False,
                           do_mcmc_fit = False,
+                          mcmc_version = 'general',
                           title_text = None,
+                          add_fit_legend = True,
                           verbose=0):
     """
     Peform a fit to the radio spectrum using a linear model.
@@ -11643,14 +12019,25 @@ def do_fit_spec_RC_linear(freqs,
     def min_func(params):
         A1 = params['A1']
         alpha = params['alpha']
-        res = (y - RC_function_linear(x, A1, alpha))/yerr
+        model = RC_function_linear(x, A1, alpha)
+        # res = (y - model)
+        # res = (y - model) / (y+np.sqrt((yerr)**2.0+0.1))#okay
+        # res = (y - model) / (y * (np.log(yerr)))  # okay
+        # res = (y - model) / (y+np.log(abs(yerr))) # okay 9
+        # res = (y  - model) / (np.sqrt(abs(y+yerr))) # okay 8
+        # res = (y  - model) / (np.log(abs(y+yerr))) # okay 8
+        # residuals = (y - model)/np.sqrt(abs(y+yerr))
+        res = (y - model) / (np.log(yerr))
+        # res = 0.5 * (residuals**2 + np.sqrt(2 * np.pi * yerr**2))
+        # res = (y - model) / (yerr)  # okay
+        # res = (y - model) / (y + yerr)  # okay
         # res = data - RC_function_S2(nu, A1l, alpha)
         return res.copy()
 
 
     fit_params = lmfit.Parameters()
-    fit_params.add("A1", value=10.0, min=-5, max=50000)
-    fit_params.add("alpha", value=-0.9, min=-5.0, max=5.0)
+    fit_params.add("A1", value=10.0, min=-5, max=10000)
+    fit_params.add("alpha", value=-0.9, min=-4.0, max=4.0)
 
     mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
                            nan_policy='omit', reduce_fcn='neglogcauchy')
@@ -11670,7 +12057,8 @@ def do_fit_spec_RC_linear(freqs,
                            ftol=1e-12, xtol=1e-12, gtol=1e-12,
                            verbose=verbose
                            )
-
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
     # result_1 = mini.minimize(method='nelder',
     #                          options={'maxiter': 30000, 'maxfev': 30000,
     #                                   'xatol': 1e-12, 'fatol': 1e-12,
@@ -11685,7 +12073,7 @@ def do_fit_spec_RC_linear(freqs,
     #                                 'return_all': True,'adaptive': True,
     #                                 'disp': True}
     #                  )
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 5),
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(6, 3),
                                    gridspec_kw={'height_ratios': [3, 1]})
 
     # fig, ax = plt.subplots()
@@ -11693,19 +12081,63 @@ def do_fit_spec_RC_linear(freqs,
     ax1.errorbar(x, y, yerr=yerr, 
                  fmt='o',label='Data', color='k', ecolor='gray',alpha=0.5)
 
+    # nwalkers = int(len(y) * 2 * 20)
+    
+    
     if do_mcmc_fit == True:
-        burn_in = 500
-        results_emcee = mini.emcee(burn=burn_in, steps=5000,
-                                     thin=3, nwalkers=200,
-                                   params=result.params, workers=6)
+        nwalkers = int(2 * 100)
+        burn_in = 2500
+        if mcmc_version == 'lmfit':
+            """ 
+            This will be removed in the future.
+            """
+            results_emcee = mini.emcee(burn=burn_in,
+                                    steps=4000,
+                                    thin=5, nwalkers=nwalkers,
+                                    is_weighted=False,
+                                    float_behavior='posterior',
+                                    params=result.params, workers=-1)
 
-        samples_emcee = results_emcee.flatchain[burn_in:]
-        _A1 = np.asarray(samples_emcee['A1'])
-        _alpha = np.asarray(samples_emcee['alpha'])
+            _samples_emcee = results_emcee.flatchain[burn_in:]
+            _A1 = np.asarray(_samples_emcee['A1'])
+            _alpha = np.asarray(_samples_emcee['alpha'])
+            model_samples = np.array(
+                [RC_function_linear(x_resample, _A1[i], _alpha[i]) for i in
+                range(_samples_emcee.shape[0])])
+            samples_emcee = np.asarray(_samples_emcee[['A1', 'alpha']])
+            param_dict = {}
+            for i, label in enumerate(['A1', 'alpha']):
+                q = np.percentile(samples_emcee[:, i], [2.5, 50, 97.5])
+                param_dict[label] = {
+                    'best': q[1],
+                    'lower': (q[1] - q[0])/2,
+                    'upper': (q[2] - q[1])/2
+                }
+            print(param_dict)
+        if mcmc_version == 'general':
+            """
+            This seems to be more robust as we have more control over
+            the MCMC process.
+            """
+            def RC_powerlaw(params,x):
+                return params[0] * (x**params[1])
+                
+            samples_emcee, param_dict = general_mcmc(x_data = x, 
+                                                    y_data = y, 
+                                                    yerr_data = yerr, 
+                                                    result_1 = result, 
+                                                    param_labels = ["A1", "alpha"], 
+                                                    burn_in = burn_in,
+                                                    nwalkers = nwalkers,
+                                                    model_func = RC_powerlaw)
+            _A1 = samples_emcee.T[0]
+            _alpha = samples_emcee.T[1]
 
-        model_samples = np.array(
-            [RC_function_linear(x_resample, _A1[i], _alpha[i]) for i in
-             range(samples_emcee.shape[0])])
+            model_samples = np.array(
+                [RC_function_linear(x_resample, 
+                                    _A1[i], 
+                                    _alpha[i]) for i in range(_A1.shape[0])])
+            print(param_dict)
 
         model_mean = np.mean(model_samples, axis=0)
         model_std = np.std(model_samples, axis=0)
@@ -11721,7 +12153,8 @@ def do_fit_spec_RC_linear(freqs,
     ax1.plot(x_resample,model_resample,
              color='red', ls='-.', label='Best-fit model')
     ax2.plot(x, (y-model_best)/model_best,
-             color='green', ls='--', label='Residual')
+             color='green', ls='dotted', label='Residual')
+    ax2.set_ylim(-1.0,1.0)
 
     if do_mcmc_fit == True:
         ax1.plot(x_resample, model_mean,
@@ -11734,10 +12167,10 @@ def do_fit_spec_RC_linear(freqs,
             ax1.fill_between(x_resample,
                              model_mean - 3*model_std,
                              model_mean + 3*model_std, color='lightgray',
-                            alpha=0.5)
+                            alpha=0.7)
         else:
             # Define the number of Monte Carlo samples
-            num_samples = 1000
+            num_samples = 5000
 
             # Generate random samples from parameter distributions
             A1_samples = np.random.normal(result.params['A1'].value, result.params['A1'].stderr,
@@ -11755,31 +12188,41 @@ def do_fit_spec_RC_linear(freqs,
             median_prediction = np.median(model_predictions, axis=0)
             std_prediction = np.std(model_predictions, axis=0)
 
-            # upper_bound = RC_function_linear(x_resample,
-            #                                  result.params['A1'].value + result.params['A1'].stderr,
-            #                                  result.params['alpha'].value + result.params['alpha'].stderr)
-            # lower_bound = RC_function_linear(x_resample,
-            #                                  result.params['A1'].value - result.params['A1'].stderr,
-            #                                  result.params['alpha'].value - result.params['alpha'].stderr)
             ax1.fill_between(x_resample, median_prediction - 1*std_prediction,
                              median_prediction + 1*std_prediction,
                              color='lightgray', alpha=0.5,
                              # label='Uncertainty (1-sigma)'
                              )
     # plt.ylim(1e-3,1.2*np.max(y))
-    ax1.legend()
-    ax1.set_ylim(0.1*np.min(y),3.0*np.max(y))
-    ax1.set_xlabel(r'$\nu$ [GHz]')
+    if add_fit_legend == True:
+        ax1.legend(loc=(0.05, 0.05),frameon=True,prop={'size': 11})
+    if np.nanmax(y) < 5:
+        ax1.set_ylim(0.1*np.nanmin(y),10.0*np.nanmax(y))
+    else:
+        ax1.set_ylim(0.1*np.nanmin(y),3.0*np.nanmax(y))
+    ax2.set_xlabel(r'$\nu$ [GHz]')
     # plt.ylabel('Integrated Flux Density [mJy]')
     ax1.set_ylabel(r'$S_{\nu}$ [mJy]')
-    text_x, text_y = 0.15, 0.37
-    text = (rf"$\alpha = {(result.params['alpha'].value):.2f}\pm "
+    text_x, text_y = 0.65, 0.37
+    text = (r"$\alpha_{\rm nth}"+f"= {(result.params['alpha'].value):.2f}\pm "
             rf"{(result.params['alpha'].stderr):.2f}$")
+    
     text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
     text_bbox = plt.text(text_x, text_y, text,
                         # ha='center', va='center',
                         fontsize=12, color='black',
                         bbox=text_bbox_props, transform=fig.transFigure)
+    if do_mcmc_fit == True:
+        if mcmc_version == 'general':
+            text_x, text_y = 0.65, 0.77
+            text = (r"$\alpha_{\rm nth}^{\rm MCMC}"+f"= {(param_dict['alpha']['best']):.2f}"
+                    rf"_{{-{param_dict['alpha']['lower']:.2f}}}^{{+{param_dict['alpha']['upper']:.2f}}}$")
+            text_bbox = plt.text(text_x, text_y, text,
+                                # ha='center', va='center',
+                                fontsize=12, color='black',
+                                # bbox=text_bbox_props, 
+                                transform=fig.transFigure)
+    
     if title_text is not None:
         ax1.set_title(title_text)
 
@@ -11787,27 +12230,9 @@ def do_fit_spec_RC_linear(freqs,
         ax1.semilogx()
         ax1.semilogy()
 
-    """
-    x_resample = np.linspace(x[0], x[-1], 100)
-    plt.plot(x, y, 'o')
-    plt.plot(x_resample, (RC_function_linear(x_resample,
-                             result.params['A1'].value,
-                             result.params['alpha'].value)),
-             '-', label='best fit')
-    plt.ylim(0,1.2*np.max(y))
-    """
-    # plt.plot(x, (RC_function_S2(x,
-    #                         result_mini.params['A1l'].value,
-    #                         result_mini.params['A2'].value*0,
-    #                         result_mini.params['alpha_nt'].value)),
-    #          '-', label='A1 term')
-    # plt.plot(x, (RC_function_S2(x,
-    #                         result_mini.params['A1l'].value*0,
-    #                         result_mini.params['A2'].value,
-    #                         result_mini.params['alpha_nt'].value)),
-    #          '-', label='A2 term')
     plt.subplots_adjust(hspace=0.05)
-    ax2.legend()
+    ax2.legend(loc=(0.7, 0.55),prop={'size': 14},frameon=False)
+    # legend()
 
     if basename_save is not None:
         if save_name_append is None:
@@ -11817,19 +12242,50 @@ def do_fit_spec_RC_linear(freqs,
         plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
                     bbox_inches='tight')
     # plt.show()
-
+    corner_kwargs = {
+        'bins': 30,
+        'hist_bin_factor': 1.0,
+        'color': 'purple',  # Change the color of the scatter plots and histograms
+        'hist_kwargs': {
+            'color': 'green',      # Histogram color
+            'edgecolor': 'black',  # Edge color of the bins
+            'linewidth': 1.5       # Width of the bin edges
+        },
+        'scatter_kwargs': {
+            'alpha': 0.6,          # Transparency of points
+            's': 10,               # Size of points
+            'color': 'purple',     # Color of points
+            'edgecolor': 'none'    # Edge color of points
+        },
+        'contour_kwargs': {
+            'colors': 'blue',       # Color of contour lines
+            'linewidths': 1.2       # Width of contour lines
+        }
+    }
     if do_mcmc_fit == True:
-        plt.figure()
-        _ = corner.corner(samples_emcee,
-                                labels=[r'$A_1$',
-                                        r'$\alpha$'],
-                                truths=[result.params['A1'].value,
-                                        result.params['alpha'].value],
-                                show_titles=True,
-                                quantiles=[0.16, 0.5, 0.84])
-        # plt.show()
-        print('++==>> Parameter Results (MCMC sampling).')
-        print(lmfit.fit_report(results_emcee.params))
+        try:
+            from scipy.stats import gaussian_kde
+            # fig_c = plt.figure(figsize=(2,2))
+            fig_c = plt.figure()
+            _ = corner.corner(samples_emcee,
+                                    labels=[r'$A_{\rm sy}$',r'$\alpha$'],
+                                    truths=[result.params['A1'].value,
+                                            result.params['alpha'].value],
+                                    show_titles=True,
+                                    quantiles=[0.025, 0.5, 0.975],
+                                    # **corner_kwargs
+                                    # fig=fig_c
+                                    )
+            print(samples_emcee.shape)
+            if basename_save is not None:
+                save_name_append_corner = save_name_append + '_corner'
+                plt.savefig(basename_save.replace('.fits','_')+save_name_append_corner+'.jpg', 
+                            dpi=600,bbox_inches='tight')
+                
+            print('++==>> Parameter Results (MCMC sampling).')
+            print(lmfit.fit_report(results_emcee.params))
+        except:
+            pass
     print('++==>> Parameter Results (original from fit).')
     print(lmfit.fit_report(result.params))
     return(mini,result)
@@ -11871,7 +12327,9 @@ def do_fit_spec_RC_curv(freqs,
         S0 = params['S0']
         alpha = params['alpha']
         q = params['q']
-        res = (y - RC_function_Sq(x, S0, alpha,q))/yerr
+        model = RC_function_Sq(x, S0, alpha, q)
+        # res = (y - model) / (y + np.sqrt((yerr) ** 2.0 + 0.001))  # okay
+        res = (y - model) / (y*(np.log(yerr)))  # okay
         return res.copy()
 
     fit_params = lmfit.Parameters()
@@ -11906,12 +12364,15 @@ def do_fit_spec_RC_curv(freqs,
                  label='Data', color='k', ecolor='gray',
                  alpha=0.5)
 
-
+    nwalkers = int(len(y) * 3 * 20)
     if do_mcmc_fit == True:
         burn_in = 500
-        results_emcee = mini.emcee(burn=burn_in, steps=5000,
-                                     thin=3, nwalkers=300,
-                                   params=result.params, workers=6)
+        results_emcee = mini.emcee(burn=burn_in,
+                                   steps=5000,
+                                   thin=100, nwalkers=nwalkers,
+                                   is_weighted=False,
+                                   float_behavior='posterior',
+                                   params=result.params, workers=-1)
 
         samples_emcee = results_emcee.flatchain[burn_in:]
         _S0 = np.asarray(samples_emcee['S0'])
@@ -11939,7 +12400,8 @@ def do_fit_spec_RC_curv(freqs,
     ax1.plot(x_resample, model_resample,
              color='red', ls='-.', label='Best-fit model')
     ax2.plot(x, (y-model_best)/model_best,
-             color='green', ls='--', label='Residual')
+             color='green', ls='dotted', label='Residual')
+    ax2.set_xlabel(r'$\nu$ [GHz]')
     # plt.fill_between(x_resample, lower_bound, upper_bound, color='lightgray', alpha=0.5,
     #                  label='Parameter uncertainty')
     if plot_errors_shade:
@@ -11981,11 +12443,10 @@ def do_fit_spec_RC_curv(freqs,
                              )
     # plt.ylim(1e-3,1.2*np.max(y))
     ax1.legend()
-    ax1.set_ylim(0.1*np.min(y),3.0*np.max(y))
-    ax1.set_xlabel(r'$\nu$ [GHz]')
+    ax1.set_ylim(0.1*np.nanmin(y),3.0*np.nanmax(y))
     # plt.ylabel('Integrated Flux Density [mJy]')
     ax1.set_ylabel(r'$S_{\nu}$ [mJy]')
-    text_x, text_y = 0.15, 0.37
+    text_x, text_y = 0.65, 0.37
     text = (rf"$\alpha = {(result.params['alpha'].value):.2f}\pm "
             rf"{(result.params['alpha'].stderr):.2f}$")
     text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
@@ -11993,6 +12454,16 @@ def do_fit_spec_RC_curv(freqs,
                         # ha='center', va='center',
                         fontsize=12, color='black',
                         bbox=text_bbox_props, transform=fig.transFigure)
+
+    text_x, text_y = 0.48, 0.37
+    text = (rf"$q = {(result.params['q'].value):.2f}\pm "
+            rf"{(result.params['q'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = ax1.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+
     if title_text is not None:
         ax1.set_title(title_text)
 
@@ -12013,7 +12484,7 @@ def do_fit_spec_RC_curv(freqs,
     plt.figure()
 
     if do_mcmc_fit == True:
-        _ = corner.corner(samples_emcee,
+        _ = corner.corner(samples_emcee[['S0','alpha','q']],
                                 labels=[r'$S_{0}$',
                                         r'$\alpha$',
                                         r'$q$'],
@@ -12021,7 +12492,249 @@ def do_fit_spec_RC_curv(freqs,
                                         result.params['alpha'].value,
                                         result.params['q'].value],
                                 show_titles=True,
-                                quantiles=[0.16, 0.5, 0.86])
+                                quantiles=[0.025, 0.5, 0.975])
+        plt.show()
+        print('++==>> Parameter Results (MCMC sampling).')
+        print(lmfit.fit_report(results_emcee.params))
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
+
+
+    return mini,result,samples_emcee
+
+def RC_function_turnover(nu,nut1,A,B,alpha):
+    tau = (nu/nut1)**(-2.1)
+    return ((1-np.exp(-tau))*(B+A*(nu/nut1)**(0.1+alpha))*((nu/nut1)**2.0))
+
+def do_fit_spec_RC_turnover(freqs,
+                          fluxes,
+                          fluxes_err,
+                          basename_save=None,log_plot=True,
+                          save_name_append = None,
+                          plot_errors_shade = False,
+                          do_mcmc_fit = False,
+                          title_text = None,
+                          verbose=0):
+    """
+    Peform a fit to the radio spectrum using a curved model.
+
+    Parameters
+    ----------
+    freqs : array
+        Frequency array in Hz.
+    fluxes : array
+        Flux density array in mJy.
+    fluxes_err : array
+        Flux density error array in mJy.
+    basename_save : str
+        Basename to save the output files.
+    verbose : int
+        Verbosity level.
+
+    """
+    x = freqs / 1e9
+    y = fluxes
+    yerr = fluxes_err
+
+    def minimisation_function(data,model,error,delta=0.1):
+        sigma2 = error ** 2
+        # return -0.5 * np.sum((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+        chi2 = np.sum((model - data)**2 / sigma2)
+        # Calculate log likelihood
+        log_likelihood = -0.5 * chi2
+        return log_likelihood
+
+
+    def min_func(params):
+        nut1 = params['nut1']
+        A = params['A']
+        B = params['B']
+        alpha = params['alpha']
+        model = RC_function_turnover(x, nut1, A, B, alpha)
+        # res = (y - model) / (y + np.sqrt((yerr) ** 2.0 + 0.001))  # okay
+        log_likelihood = (y - model) / (y*(np.log(abs(yerr))))  # okay
+        # res = (y - model) / (y * (np.sqrt(abs(yerr))))  # okay
+        # sigma2 = yerr ** 2
+        # chi2 = ((y - model)**2 / sigma2)
+        # log_likelihood = -0.5 * chi2
+        
+        # log_likelihood=0.5 * ((y - model) ** 2 / sigma2 + np.log(2 * np.pi * sigma2))
+        
+        # res = (y - model) / (y*np.log(abs(yerr) + 1.0))  # okay 8
+        return log_likelihood.copy()
+
+    fit_params = lmfit.Parameters()
+    fit_params.add("nut1", value=1.0, min=0.01, max=10)
+    fit_params.add("alpha", value=-0.9, min=-2.0, max=-0.2)
+    fit_params.add("A", value=10.0, min=0.00001, max=5000)
+    fit_params.add("B", value=10.0, min=0.00001, max=5000)
+
+    mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
+                           nan_policy='omit', reduce_fcn='neglogcauchy')
+
+    result_1 = mini.minimize(method='least_squares',
+                             max_nfev=200000,  # f_scale = 1.0,
+                             loss="cauchy", tr_solver="exact",
+                             ftol=1e-15, xtol=1e-15, gtol=1e-15,
+                             verbose=verbose
+                             )
+    second_run_params = result_1.params
+
+    result = mini.minimize(method='least_squares',
+                           params=second_run_params,
+                           max_nfev=200000,  # f_scale = 1.0,
+                           loss="cauchy", tr_solver="exact",
+                           ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                           verbose=verbose
+                           )
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 5),
+                                   gridspec_kw={'height_ratios': [3, 1]})
+
+    # fig = plt.figure(figsize=(8, 4))
+    x_resample = np.linspace(np.min(x)*0.25, np.max(x)*1.3, 500)
+    ax1.errorbar(x, y, yerr=yerr, fmt='o',
+                 label='Data', color='k', ecolor='gray',
+                 alpha=0.5)
+
+    nwalkers = int(len(y) * 3 * 20)
+    if do_mcmc_fit == True:
+        burn_in = 500
+        results_emcee = mini.emcee(burn=burn_in,
+                                   steps=5000,
+                                   thin=100, nwalkers=nwalkers,
+                                   is_weighted=False,
+                                   float_behavior='posterior',
+                                   params=result.params, workers=-1)
+
+        samples_emcee = results_emcee.flatchain[burn_in:]
+        _nut1 = np.asarray(samples_emcee['nut1'])
+        _alpha = np.asarray(samples_emcee['alpha'])
+        _A = np.asarray(samples_emcee['A'])
+        _B = np.asarray(samples_emcee['B'])
+        # RC_function_turnover(nu, nut1, A, B, alpha)
+        model_samples = np.array(
+            [RC_function_turnover(x_resample, _nut1[i], _A[i], _B[i], _alpha[i]) for i in
+             range(samples_emcee.shape[0])])
+
+        model_mean = np.mean(model_samples, axis=0)
+        model_std = np.std(model_samples, axis=0)
+
+    model_resample = RC_function_turnover(x_resample,
+                                    result.params['nut1'].value,
+                                    result.params['A'].value,
+                                    result.params['B'].value,
+                                    result.params['alpha'].value)
+
+    model_best = RC_function_turnover(x,
+                                    result.params['nut1'].value,
+                                    result.params['A'].value,
+                                    result.params['B'].value,
+                                    result.params['alpha'].value)
+
+
+    ax1.plot(x_resample, model_resample,
+             color='red', ls='-.', label='Best-fit model')
+    ax2.plot(x, (y-model_best)/model_best,
+             color='green', ls='dotted', label='Residual')
+    ax2.set_xlabel(r'$\nu$ [GHz]')
+    # plt.fill_between(x_resample, lower_bound, upper_bound, color='lightgray', alpha=0.5,
+    #                  label='Parameter uncertainty')
+    if plot_errors_shade:
+        if do_mcmc_fit == True:
+            ax1.plot(x_resample, model_mean,
+                     color='purple', linestyle=(0, (5, 10)), label='MCMC Mean')
+            ax1.fill_between(x_resample,
+                             model_mean - 3*model_std,
+                             model_mean + 3*model_std, color='lightgray',
+                            alpha=0.5)
+        else:
+            # Define the number of Monte Carlo samples
+            num_samples = 1000
+
+            # Generate random samples from parameter distributions
+            nut1_samples = np.random.normal(result.params['nut1'].value, result.params['nut1'].stderr,
+                                          num_samples)
+            alpha_samples = np.random.normal(result.params['alpha'].value,
+                                             result.params['alpha'].stderr,
+                                             num_samples)
+            A_samples = np.random.normal(result.params['A'].value, result.params['A'].stderr,
+                                         num_samples)
+
+            B_samples = np.random.normal(result.params['B'].value, result.params['B'].stderr,
+                                         num_samples)
+
+            # Compute model predictions for each sample
+            model_predictions = np.zeros((num_samples, len(x_resample)))
+            for i in range(num_samples):
+                model_predictions[i] = RC_function_turnover(x_resample,
+                                                            nut1_samples[i],
+                                                            A_samples[i],
+                                                            B_samples[i],
+                                                            alpha_samples[i])
+
+            median_prediction = np.median(model_predictions, axis=0)
+            std_prediction = np.std(model_predictions, axis=0)
+
+            ax1.fill_between(x_resample,
+                             median_prediction - 1*std_prediction,
+                             median_prediction + 1*std_prediction,
+                             color='lightgray', alpha=0.5,
+                             # label='Uncertainty (1-sigma)'
+                             )
+    # plt.ylim(1e-3,1.2*np.max(y))
+    ax1.legend()
+    ax1.set_ylim(0.1*np.nanmin(y),3.0*np.nanmax(y))
+    # plt.ylabel('Integrated Flux Density [mJy]')
+    ax1.set_ylabel(r'$S_{\nu}$ [mJy]')
+    text_x, text_y = 0.65, 0.37
+    text = (rf"$\alpha = {(result.params['alpha'].value):.2f}\pm "
+            rf"{(result.params['alpha'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = ax1.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+
+    text_x, text_y = 0.48, 0.37
+    text = (rf"$\nu_t = {(result.params['nut1'].value):.2f}\pm "
+            rf"{(result.params['nut1'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = ax1.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+
+    if title_text is not None:
+        ax1.set_title(title_text)
+
+    if log_plot == True:
+        ax1.semilogx()
+        ax1.semilogy()
+    plt.subplots_adjust(hspace=0.05)
+    ax2.legend()
+    if basename_save is not None:
+        if save_name_append is None:
+            save_name_append = '_RC_alpha_fit_turnover'
+        else:
+            save_name_append = save_name_append + '_RC_alpha_fit_turnover'
+        plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
+                    bbox_inches='tight')
+    plt.show()
+
+    plt.figure()
+
+    if do_mcmc_fit == True:
+        _ = corner.corner(samples_emcee[['nut1','A','B','alpha']],
+                                labels=[r'$\nu_{t,1}$',
+                                        r'$A$',
+                                        r'$B$',
+                                        r'$\alpha$'],
+                                truths=[result.params['nut1'].value,
+                                        result.params['A'].value,
+                                        result.params['B'].value,
+                                        result.params['alpha'].value],
+                                show_titles=True,
+                                quantiles=[0.025, 0.5, 0.975])
         plt.show()
         print('++==>> Parameter Results (MCMC sampling).')
         print(lmfit.fit_report(results_emcee.params))
@@ -12050,7 +12763,11 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
         A1 = params['A1']
         A2 = params['A2']
         alpha_nt = params['alpha_nt']
-        res = (y - RC_function_S2(x, A1, A2, alpha_nt,nu0))/yerr
+        # res = (y - RC_function_S2(x, A1, A2, alpha_nt,nu0))/yerr
+        model = RC_function_S2(x, A1, A2, alpha_nt,nu0)
+        # res = (y - model)/(y+yerr)
+        res = (y - model) / np.log(y+yerr)
+        # res = (y - model) / (np.log(abs(yerr)+1.0)) # okay 9
         # res = data - RC_function_S2(nu, A1l, alpha_nt)
         return res.copy()
 
@@ -12102,12 +12819,17 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
                  label='Data', color='k', ecolor='gray',
                  alpha=0.5)
 
+    # nwalkers = int(len(y) * 3 * 20)
+    nwalkers = int(3 * 100)
 
     if do_mcmc_fit == True:
-        burn_in = 500
-        results_emcee = mini.emcee(burn=burn_in, steps=5000,
-                                     thin=3, nwalkers=300,
-                                   params=result.params, workers=6)
+        burn_in = 1000
+        results_emcee = mini.emcee(burn=burn_in,
+                                   steps=10000,
+                                   thin=500, nwalkers=nwalkers,
+                                   is_weighted=False,
+                                   float_behavior='posterior',
+                                   params=result.params, workers=-1)
 
         samples_emcee = results_emcee.flatchain[burn_in:]
         _A1 = np.asarray(samples_emcee['A1'])
@@ -12169,8 +12891,8 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
              '-', label='A2 term')
 
     ax2.plot(x, (y-model_best)/model_best,
-             color='green', ls='--', label='Residual')
-
+             color='green', ls='dotted', label='Residual')
+    ax2.set_xlabel(r'$\nu$ [GHz]')
     if plot_errors_shade:
         if do_mcmc_fit == True:
             ax1.plot(x_resample, model_mean,
@@ -12269,7 +12991,7 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
     plt.figure()
 
     if do_mcmc_fit == True:
-        _ = corner.corner(samples_emcee,
+        _ = corner.corner(samples_emcee[['A1','A2','alpha_nt']],
                                 labels=[r'$A_1$',
                                         r'$A_2$',
                                         r'$\alpha_{\rm nt}$'],
@@ -12277,7 +12999,7 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
                                         result.params['A2'].value,
                                         result.params['alpha_nt'].value],
                                 show_titles=True,
-                                quantiles=[0.16, 0.5, 0.86])
+                                quantiles=[0.025, 0.5, 0.975])
         plt.show()
         print('++==>> Parameter Results (MCMC sampling).')
         print(lmfit.fit_report(results_emcee.params))
@@ -12286,6 +13008,327 @@ def do_fit_spec_RC_S2(freqs,fluxes,fluxes_err,nu0=None,
 
 
     return mini,result
+
+def RC_function_sy_ff_dust(nu, Asy, Aff, Adu, alpha_nt, alpha_du, nu0):
+    dust_comp = Adu * (200 ** (alpha_du)) * ((nu / 200) ** (alpha_du))
+    sy_comp = Asy * (nu0 ** (alpha_nt)) * ((nu / nu0) ** (alpha_nt))
+    return Aff * ((nu / nu0) ** (-0.1)) + dust_comp + sy_comp
+
+def do_fit_spec_RC_sy_ff_dust(freqs,fluxes,fluxes_err,nu0=None,
+                      basename_save=None, log_plot=True,
+                      save_name_append=None,
+                      plot_errors_shade=False,
+                      do_mcmc_fit=False,
+                      title_text=None,
+                      verbose=0):
+    x = freqs / 1e9
+    y = fluxes
+    yerr = fluxes_err
+    if nu0 is None:
+        nu0 = np.mean(x)
+
+
+    def min_func(params):
+        Asy = params['Asy']
+        Aff = params['Aff']
+        Adu = params['Adu']
+        alpha_nt = params['alpha_nt']
+        alpha_du = params['alpha_du']
+        # res = (y - RC_function_S2(x, A1, A2, alpha_nt,nu0))/yerr
+        model = RC_function_sy_ff_dust(x, Asy, Aff, Adu, alpha_nt, alpha_du, nu0)
+        # res = (y - model)/(y+yerr)
+        res = (y - model) / np.log(y+yerr)
+        # res = (y - model) / (np.log(abs(yerr)+1.0)) # okay 9
+        # res = data - RC_function_S2(nu, A1l, alpha_nt)
+        return res.copy()
+
+    fit_params = lmfit.Parameters()
+    fit_params.add("Asy", value=0.5, min=0, max=5000)
+    fit_params.add("Aff", value=0.5, min=0, max=5000)
+    fit_params.add("Adu", value=0.5, min=0, max=5000)
+    fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=0.5)
+    fit_params.add("alpha_du", value=4.0, min=0.5, max=10.0)
+
+    mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
+                           nan_policy='omit', reduce_fcn='neglogcauchy')
+
+    result_1 = mini.minimize(method='least_squares',
+                             max_nfev=200000,  # f_scale = 1.0,
+                             loss="cauchy", tr_solver="exact",
+                             ftol=1e-15, xtol=1e-15, gtol=1e-15,
+                             verbose=verbose
+                             )
+    second_run_params = result_1.params
+
+    result = mini.minimize(method='least_squares',
+                           params=second_run_params,
+                           max_nfev=200000,  # f_scale = 1.0,
+                           loss="cauchy", tr_solver="exact",
+                           ftol=1e-12, xtol=1e-12, gtol=1e-12,
+                           verbose=verbose
+                           )
+
+
+    # result_1 = mini.minimize(method='nelder',
+    #                          options={'maxiter': 30000, 'maxfev': 30000,
+    #                                   'xatol': 1e-12, 'fatol': 1e-12,
+    #                                   'return_all': True,'adaptive': True,
+    #                                   'disp': True}
+    #                      )
+    # second_run_params = result_1.params
+
+    # result = mini.minimize(method='nelder',params=second_run_params,
+    #                        options={'maxiter': 30000, 'maxfev': 30000,
+    #                                 'xatol': 1e-12, 'fatol': 1e-12,
+    #                                 'return_all': True,'adaptive': True,
+    #                                 'disp': True}
+    #                  )
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 5),
+                                   gridspec_kw={'height_ratios': [3, 1]})
+
+    # fig = plt.figure(figsize=(8, 4))
+    x_resample = np.linspace(np.min(x)*0.25, np.max(x)*1.3, 500)
+    ax1.errorbar(x, y, yerr=yerr, fmt='o',
+                 label='Data', color='k', ecolor='gray',
+                 alpha=0.5)
+
+    # nwalkers = int(len(y) * 3 * 20)
+    nwalkers = int(5 * 100)
+
+    if do_mcmc_fit == True:
+        burn_in = 3000
+        results_emcee = mini.emcee(burn=burn_in,
+                                   steps=20000,
+                                   thin=500, nwalkers=nwalkers,
+                                   is_weighted=False,
+                                   float_behavior='posterior',
+                                   params=result.params, workers=-1)
+
+        samples_emcee = results_emcee.flatchain[burn_in:]
+        _Asy = np.asarray(samples_emcee['Asy'])
+        _Aff = np.asarray(samples_emcee['Aff'])
+        _Adu = np.asarray(samples_emcee['Adu'])
+        _alpha_nt = np.asarray(samples_emcee['alpha_nt'])
+        _alpha_du = np.asarray(samples_emcee['alpha_du'])
+
+        model_samples = np.array(
+            [RC_function_sy_ff_dust(x_resample, 
+                            _Asy[i], 
+                            _Aff[i],
+                            _Adu[i], 
+                            _alpha_nt[i],
+                            _alpha_du[i], 
+                            nu0) for i in
+             range(samples_emcee.shape[0])])
+
+        model_mean = np.mean(model_samples, axis=0)
+        model_std = np.std(model_samples, axis=0)
+
+    model_resample = RC_function_sy_ff_dust(x_resample,
+                                 result.params['Asy'].value,
+                                 result.params['Aff'].value,
+                                 result.params['Adu'].value,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                                 nu0)
+
+    model_best = RC_function_sy_ff_dust(x,
+                                 result.params['Asy'].value,
+                                 result.params['Aff'].value,
+                                 result.params['Adu'].value,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                                 nu0)
+
+    ax1.plot(x_resample, model_resample,
+             color='red', ls='-.', label='Best-fit model')
+    
+    
+    Asyterm = RC_function_sy_ff_dust(x_resample,
+                                 result.params['Asy'].value,
+                                 result.params['Aff'].value*0,
+                                 result.params['Adu'].value*0,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                                 nu0)
+    
+    
+    Affterm = RC_function_sy_ff_dust(x_resample,
+                                 result.params['Asy'].value*0,
+                                 result.params['Aff'].value,
+                                 result.params['Adu'].value*0,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                                 nu0)
+    Aduterm = RC_function_sy_ff_dust(x_resample,
+                                 result.params['Asy'].value*0,
+                                 result.params['Aff'].value*0,
+                                 result.params['Adu'].value,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                                 nu0)
+
+    Snu0_14 = RC_function_sy_ff_dust(1.4,
+                                 result.params['Asy'].value,
+                                 result.params['Aff'].value,
+                                 result.params['Adu'].value,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                            1.4)
+    
+    Snu0_6 = RC_function_sy_ff_dust(6.0,
+                                 result.params['Asy'].value,
+                                 result.params['Aff'].value,
+                                 result.params['Adu'].value,
+                                 result.params['alpha_nt'].value,
+                                 result.params['alpha_du'].value,
+                            6.0)
+    
+    thermal_fraction_14 = result.params['Aff'].value/Snu0_14
+    
+    thermal_fraction_6 = result.params['Aff'].value/Snu0_6
+    
+    ax1.plot(x_resample, Asyterm,
+             '-', label='Sy term')
+    
+    ax1.plot(x_resample, Affterm,
+             '-', label='FF term')
+    ax1.plot(x_resample, Aduterm,
+             '-', label='Dust term')
+
+    ax2.plot(x, (y-model_best)/model_best,
+             color='green', ls='dotted', label='Residual')
+    ax2.set_xlabel(r'$\nu$ [GHz]')
+    if plot_errors_shade:
+        if do_mcmc_fit == True:
+            ax1.plot(x_resample, model_mean,
+                     color='purple', linestyle=(0, (5, 10)), label='MCMC Mean')
+            ax1.fill_between(x_resample,
+                             model_mean - 3*model_std,
+                             model_mean + 3*model_std, color='lightgray',
+                            alpha=0.5)
+        else:
+            # Define the number of Monte Carlo samples
+            num_samples = 1000
+
+            # Generate random samples from parameter distributions
+            Asy_samples = np.random.normal(result.params['Asy'].value, 
+                                          result.params['Asy'].stderr,
+                                          num_samples)
+            Aff_samples = np.random.normal(result.params['Aff'].value,
+                                          result.params['Aff'].stderr,
+                                          num_samples)
+            Adu_samples = np.random.normal(result.params['Adu'].value,
+                                          result.params['Adu'].stderr,
+                                          num_samples)
+            alpha_nt_samples = np.random.normal(result.params['alpha_nt'].value,
+                                             result.params['alpha_nt'].stderr,
+                                             num_samples)
+            alpha_du_samples = np.random.normal(result.params['alpha_du'].value,
+                                             result.params['alpha_du'].stderr,
+                                             num_samples)
+
+            # Compute model predictions for each sample
+            model_predictions = np.zeros((num_samples, len(x_resample)))
+            for i in range(num_samples):
+                model_predictions[i] = RC_function_sy_ff_dust(x_resample,
+                                                      Asy_samples[i],
+                                                      Aff_samples[i],
+                                                      Adu_samples[i],
+                                                      alpha_nt_samples[i],
+                                                      alpha_du_samples[i],
+                                                      nu0)
+
+            median_prediction = np.median(model_predictions, axis=0)
+            std_prediction = np.std(model_predictions, axis=0)
+
+            ax1.fill_between(x_resample,
+                             median_prediction - 1*std_prediction,
+                             median_prediction + 1*std_prediction,
+                             color='lightgray', alpha=0.5,
+                             # label='Uncertainty (1-sigma)'
+                             )
+    # plt.ylim(1e-3,1.2*np.max(y))
+    
+    ax1.legend()
+    ax1.set_ylim(0.1*np.min(y),3.0*np.max(y))
+    ax1.set_xlabel(r'$\nu$ [GHz]')
+    # plt.ylabel('Integrated Flux Density [mJy]')
+    ax1.set_ylabel(r'$S_{\nu}$ [mJy]')
+    
+    text_x, text_y = 0.70, 0.37
+    text = (rf"$\alpha = {(result.params['alpha_nt'].value):.2f}\pm "
+            rf"{(result.params['alpha_nt'].stderr):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        bbox=text_bbox_props, transform=fig.transFigure)
+    
+    
+    text_x, text_y = 0.5, 0.40
+    text = (rf"$fth(1.4) = {(thermal_fraction_14):.2f}\pm "
+            rf"{(result.params['Aff'].stderr/Snu0_14):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        # bbox=text_bbox_props, 
+                        transform=fig.transFigure)
+    
+    text_x, text_y = 0.5, 0.35
+    text = (rf"$fth(6.0) = {(thermal_fraction_6):.2f}\pm "
+            rf"{(result.params['Aff'].stderr/Snu0_6):.2f}$")
+    text_bbox_props = dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.5)
+    text_bbox = plt.text(text_x, text_y, text,
+                        # ha='center', va='center',
+                        fontsize=12, color='black',
+                        # bbox=text_bbox_props, 
+                        transform=fig.transFigure)
+    
+    if title_text is not None:
+        ax1.set_title(title_text)
+
+
+    if log_plot == True:
+        ax1.semilogx()
+        ax1.semilogy()
+    plt.subplots_adjust(hspace=0.05)
+    ax2.legend()
+
+    if basename_save is not None:
+        if save_name_append is None:
+            save_name_append = '_RC_sy_ff_dust'
+        else:
+            save_name_append = save_name_append + '_RC_sy_ff_dust'
+        plt.savefig(basename_save.replace('.fits','_')+save_name_append+'.jpg', dpi=600,
+                    bbox_inches='tight')
+    plt.show()
+    plt.figure()
+
+    if do_mcmc_fit == True:
+        _ = corner.corner(samples_emcee[['Asy','Aff','Adu','alpha_nt','alpha_du']],
+                                labels=[r'$A_{\rm sy}$',
+                                        r'$A_{\rm ff}$',
+                                        r'$A_{\rm du}$',
+                                        r'$\alpha_{\rm nt}$',
+                                        r'$\alpha_{\rm du}$'],
+                                truths=[result.params['Asy'].value,
+                                        result.params['Aff'].value,
+                                        result.params['Adu'].value,
+                                        result.params['alpha_nt'].value,
+                                        result.params['alpha_du'].value],
+                                show_titles=True,
+                                quantiles=[0.025, 0.5, 0.975])
+        plt.show()
+        print('++==>> Parameter Results (MCMC sampling).')
+        print(lmfit.fit_report(results_emcee.params))
+    print('++==>> Parameter Results (original from fit).')
+    print(lmfit.fit_report(result.params))
+
+
+    return mini,result
+
 
 
 """
@@ -12320,14 +13363,50 @@ def do_fit_spec_map(freqs,fluxes,fluxes_err,verbose=0):
     y = fluxes.copy()
     yerr = fluxes_err.copy()
     
-    def linear_function(x, alpha, b):
-        return b*((x)**alpha) #+ c*x*x
+    # def linear_function(x, alpha, b):
+    #     return b*((x)**alpha) #+ c*x*x
+    
+    def calculate_weights(yerr, epsilon=0.1, w_min=0.01, w_max=100):
+        """
+        Calculate weights from error values.
+
+        Args:
+        yerr (numpy array): Array of measurement errors.
+        epsilon (float): Small constant to prevent division by zero and soften the weight.
+        w_min (float): Minimum allowable weight.
+        w_max (float): Maximum allowable weight.
+
+        Returns:
+        numpy array: Weights for each measurement.
+        """
+        # Basic weights calculation with softening
+        # weights = 1.0 / (yerr + epsilon)**2
+        weights = 1/np.sqrt(yerr+epsilon)
+
+        # Capping the weights
+        # weights = np.clip(weights, w_min, w_max)
+
+        return weights
     
     def min_func(params):
         alpha = params['alpha']
         b = params['b']
-        res = (y - linear_function(x, alpha, b))/(yerr+1)
-        return res.copy()
+        model = linear_function(x, alpha, b)
+        # weightned_residual = (y - model)
+        # weights = calculate_weights(yerr)
+        # weightned_residual = residual * weights
+        # residual = np.sqrt(( yerr**2.0 + ((y - model) / yerr)**2.0))
+        # weightned_residual = (y - model)# / (yerr+y)
+        # weightned_residual = (y - model) / (y+np.log(abs(yerr))) # okay 9
+        weightned_residual = (y - model) / (np.log(yerr))
+        
+        # weightned_residual = (y - model) / (np.log(abs(yerr)+0.1)) # okay 8
+        # weightned_residual = (y - model) / (np.log(yerr+1)) # okay 7
+        # weightned_residual = (y - model) / (y+np.sqrt((yerr)**2.0+0.1))#okay 8
+        # weightned_residual = (y - model) / ( np.sqrt((yerr) ** 2.0 + 0.1))
+        # return residual.copy()
+        return weightned_residual.copy()
+        
         
     def huber_loss(r):
         """
@@ -12367,9 +13446,9 @@ def do_fit_spec_map(freqs,fluxes,fluxes_err,verbose=0):
                         nan_policy='omit', reduce_fcn='neglogcauchy')
     
     result_1 = mini.minimize(method='least_squares',
-                           max_nfev=200000, #f_scale = 1.0,
+                           max_nfev=15000, #f_scale = 1.0,
                         #    loss="huber", 
-                           loss="cauchy",
+                           loss="huber",
                            tr_solver="exact",
                            ftol=1e-12, xtol=1e-12, gtol=1e-12, 
                            verbose=verbose
@@ -12378,9 +13457,9 @@ def do_fit_spec_map(freqs,fluxes,fluxes_err,verbose=0):
     
     result = mini.minimize(method='least_squares',
                            params=second_run_params,
-                           max_nfev=200000, #f_scale = 1.0,
+                           max_nfev=15000, #f_scale = 1.0,
                         #    loss="huber", 
-                           loss="cauchy", 
+                           loss="huber", 
                            tr_solver="exact",
                            ftol=1e-12, xtol=1e-12, gtol=1e-12, 
                            verbose=0
@@ -12390,7 +13469,7 @@ def do_fit_spec_map(freqs,fluxes,fluxes_err,verbose=0):
 
 
 def do_fit_spec_S2_map(freqs,fluxes,fluxes_err,nu0=None,verbose=0):
-    x = freqs 
+    x = freqs
     y = fluxes
     yerr = fluxes_err
     if nu0 is None:
@@ -12401,14 +13480,21 @@ def do_fit_spec_S2_map(freqs,fluxes,fluxes_err,nu0=None,verbose=0):
         A1 = params['A1']
         A2 = params['A2']
         alpha_nt = params['alpha_nt']
-        res = (y - RC_function_S2(x, A1, A2, alpha_nt,nu0))/(yerr+1)
+        model = RC_function_S2(x, A1, A2, alpha_nt,nu0)
+        # res = (y - RC_function_S2(x, A1, A2, alpha_nt,nu0))/(yerr+1)
+        # res = (y - model) / (y+np.sqrt((yerr)**2.0+0.1))#okay 
+        # res = (y - model) / (y+yerr)
+        res = (y - model) / (np.log(y+yerr))
         # res = data - RC_function_S2(nu, A1l, alpha_nt)
         return res.copy()
 
     fit_params = lmfit.Parameters()
     fit_params.add("A1", value=0.5, min=1e-6, max=500)
     fit_params.add("A2", value=0.5, min=1e-6, max=5000)
-    fit_params.add("alpha_nt", value=-0.9, min=-2.5, max=2.5)
+    # fit_params.add("A1", value=0.5, min=-10, max=500)
+    # fit_params.add("A2", value=0.5, min=-10, max=5000)
+
+    fit_params.add("alpha_nt", value=-0.9, min=-4.0, max=4.0)
 
     mini = lmfit.Minimizer(min_func, fit_params, max_nfev=15000,
                            nan_policy='omit', reduce_fcn='neglogcauchy')
@@ -12528,7 +13614,7 @@ def specidx_map(imagelist,residuallist,freqs=None,
     alphaimage[:] = np.nan
     alphaimage_error[:] = np.nan
     
-#     x = np.log10(freqs)
+    # x = np.log10(freqs/1e9)
     x = freqs.copy()/1e9
     
     nspec = len(idx)
@@ -12541,9 +13627,13 @@ def specidx_map(imagelist,residuallist,freqs=None,
         # if count == 0:
         #     print(str(pcount) + '%...')
         
-#         y = np.log10(masked_cube[i,j,:])
+        
+        
+        # yerr = (masked_cube_res[i,j,:]*1000)/(masked_cube[i,j,:]*1000 * np.log(10))
+        # y = np.log10(masked_cube[i,j,:]*1000)
         y = masked_cube[i,j,:]*1000
         yerr = masked_cube_res[i,j,:]*1000
+        
     
         results_fit = do_fit_spec_map(x,y,yerr)
         
@@ -13468,10 +14558,10 @@ def plot_decomp_results(imagename,compact,extended_model,data_2D_=None,
                 (0.33, 0.26), xycoords='figure fraction', fontsize=18)
     ax.annotate(r"$S_\nu^{\rm res}/S_\nu^{\rm total}\ \ \ =$"+'{:0.2f}'.format(flux_res/flux_data),
                 (0.33, 0.23), xycoords='figure fraction', fontsize=18)
-    plt.savefig(
-        imagename.replace('.fits', '_extended'+special_name+'.jpg'),
-        dpi=300,
-        bbox_inches='tight')
+    # plt.savefig(
+    #     imagename.replace('.fits', '_extended'+special_name+'.jpg'),
+    #     dpi=300,
+    #     bbox_inches='tight')
 
     save_data = True
     if save_data == True:
@@ -14263,12 +15353,15 @@ def plot_image_model_res(imagename, modelname, residualname, reference_image, cr
 
 def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             vmax=None,fig=None,
+            dx_shift = 0,
+            dy_shift = 0,
             vmax_factor=0.5, neg_levels=np.asarray([-3]), CM='magma_r',
             cmap_cont='magma_r',
             rms=None, plot_title=None, apply_mask=False,
             add_contours=True, extent=None, projection='offset', add_beam=False,
-            vmin_factor=3, plot_colorbar=False, figsize=(5, 5), aspect=None,
-            show_axis='on',flux_units='Jy',
+            vmin_factor=3, plot_colorbar=False, cbar_orientation=None,pad=-0.2,
+            figsize=(5, 5), aspect=None,
+            show_axis='on',flux_units='Jy',add_frequency=False,freq_label=None,
             source_distance=None, scalebar_length=250 * u.pc,
             ax=None, save_name=None, special_name=''):
     """
@@ -14354,11 +15447,12 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
               'Then you can use for example:'
               'CM = cmr.flamingo')
     if ax is None:
-        if isinstance(box_size, int):
-            fig = plt.figure(figsize=figsize)
-        else:
-            scale_fig_x = box_size[0]/box_size[1]
-            fig = plt.figure(figsize=(figsize[0]*scale_fig_x,figsize[1]))
+        fig = plt.figure(figsize=figsize)
+        # if isinstance(box_size, int):
+        #     fig = plt.figure(figsize=figsize)
+        # else:
+        #     scale_fig_x = box_size[0]/box_size[1]
+        #     fig = plt.figure(figsize=(figsize[0]*scale_fig_x,figsize[1]))
     else:
         if fig is None:
             fig = plt.figure(figsize=figsize)
@@ -14389,7 +15483,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             _, mask_d = mask_dilation(imagename, cell_size=None,
                                       sigma=6, rms=None,
                                       dilation_size=None,
-                                      iterations=3, dilation_type='disk',
+                                      iterations=2, dilation_type='disk',
                                       PLOT=False, show_figure=False)
             print('Masking emission....')
             g = g * mask_d[xin:xen, yin:yen]
@@ -14438,9 +15532,9 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
     else:
         cell_size = 1
         axis_units_label = r'Offset [px]'
-
-    dx = g.shape[0] / 2
-    dy = g.shape[1] / 2
+    n_pts_labesl = 5
+    dx = g.shape[1] / 2
+    dy = g.shape[0] / 2
     if ax is None:
 
         if (projection == 'celestial') and (with_wcs == True) and (isinstance(
@@ -14459,8 +15553,8 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             axis_units_label = r'Offset [arcsec]'
             ax.set_xlabel(axis_units_label, fontsize=14)
 
-        dx = g.shape[0] / 2
-        dy = g.shape[1] / 2
+        dx = g.shape[1] / 2
+        dy = g.shape[0] / 2
         if projection == 'px':
             ax = fig.add_subplot()
             cell_size = 1
@@ -14479,10 +15573,11 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
             axis_units_label = r'Offset [arcsec]'
             ax.set_xlabel(axis_units_label, fontsize=14)
 
-    xticks = np.linspace(-dx, dx, 5)
-    yticks = np.linspace(-dy, dy, 5)
-    xticklabels = np.linspace(-dx * cell_size, +dx * cell_size, 5)
-    yticklabels = np.linspace(-dy * cell_size, +dy * cell_size, 5)
+    
+    xticks = np.linspace(-dx+dx_shift/2, dx+dx_shift/2, n_pts_labesl)
+    yticks = np.linspace(-dy+dy_shift/2, dy+dy_shift/2, n_pts_labesl)
+    xticklabels = np.linspace(-(dx-dx_shift/2) * cell_size, +(dx+dx_shift/2) * cell_size, n_pts_labesl)
+    yticklabels = np.linspace(-(dy-dy_shift/2) * cell_size, +(dy+dy_shift/2) * cell_size, n_pts_labesl)
     # if dx < 10:
     #     xticklabels = ['{:.2f}'.format(xtick) for xtick in xticklabels]
     # else:
@@ -14522,7 +15617,7 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
     vmin = vmin_factor * std
     if extent is None:
-        extent = [-dx, dx, -dy, dy]
+        extent = [-dx+dx_shift, dx+dx_shift, -dy+dy_shift, dy+dy_shift]
     #     print(g)
 
     if vmax is not None:
@@ -14562,7 +15657,8 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
 
             contour = ax.contour(g, levels=levels_g[::-1],
-                                 colors=contour_palette,
+                                #  colors=contour_palette[::-1], #for dark cmap
+                                 colors=contour_palette, #for light cmap
                                  # aspect=aspect,
                                  linewidths=1.2, extent=extent,
                                  alpha=1.0)
@@ -14582,13 +15678,54 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                        alpha=1.0)
         except:
             pass
+        
+    if add_frequency:
+        try:
+            if freq_label is None:
+                if isinstance(imagename, str) == True:
+                    frequency = f"{(getfreqs([imagename])[0]/1e9):.0f} GHz"
+            else:
+                frequency = freq_label
+            ax.annotate(frequency,
+                        xy=(0.75, 0.82), xycoords='axes fraction',
+                        fontsize=18,
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
+                        color='red')
+        except:
+            pass
+        
+    
     if plot_colorbar:
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        divider = make_axes_locatable(ax)
+        
         try:
             # cb = plt.colorbar(mappable=plt.gca().images[0],
             #                   cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
 
-            cb = plt.colorbar(im_plot, ax=ax,
-                              cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
+            # cb = plt.colorbar(im_plot, 
+            #                   ax=ax,
+            #                   cax=fig.add_axes([0.90, 0.15, 0.05, 0.70]))
+            # cbar_ax = fig.add_axes([0.15, 0.85, 0.7, 0.05])  # [left, bottom, width, height]
+            if cbar_orientation == 'horizontal':
+                cax = divider.append_axes("top", size="7%", pad=0.05)
+                cb = fig.colorbar(im_plot, 
+                                #   pad=pad,
+                                  cax=cax,
+                                  orientation='horizontal')
+            else:
+                # cb = plt.colorbar(im_plot, 
+                #                 ax=ax,
+                #                 cax=fig.add_axes([0.90, 0.15, 0.05, 0.70])
+                #                 )
+                cax = divider.append_axes("right", size="7%", pad=0.05)
+                cb = plt.colorbar(im_plot, 
+                                ax=ax,
+                                cax=cax
+                                )
+            # cb = plt.colorbar(im_plot, 
+            #                   ax=ax,
+            #                   orientation='horizontal', fraction=0.046, pad=0.04)
 
             if flux_units == 'Jy':
                 cb.set_label(r"Flux Density [mJy/Beam]", labelpad=10, fontsize=16)
@@ -14632,10 +15769,14 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 b = imhd['restoringbeam']['minor']['value']
                 pa = imhd['restoringbeam']['positionangle']['value']
                 if projection == 'px':
-                    el = Ellipse((-dx * 0.85, -dy * 0.85), b, a, angle=pa,
+                    el = Ellipse((-(dx-dx_shift) * 0.85, 
+                                  -(dy-dy_shift) * 0.85), 
+                                 b, a, angle=pa,
                                  facecolor='black', alpha=1.0)
                 else:
-                    el = Ellipse((-dx * 0.85, -dy * 0.85), b / cell_size,
+                    el = Ellipse((-(dx-dx_shift) * 0.85, 
+                                  -(dy-dy_shift) * 0.85), 
+                                 b / cell_size,
                                  a / cell_size,
                                  angle=pa, facecolor='black', alpha=1.0)
 
@@ -14644,17 +15785,17 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                 Oa = '{:.2f}'.format(a)
                 Ob = '{:.2f}'.format(b)
 
-                blabel_pos_x, blabel_pos_y = g.shape
-                blabel_pos_x = blabel_pos_x + dx
-                blabel_pos_y = blabel_pos_y + dy
+                blabel_pos_y, blabel_pos_x = g.shape
+                blabel_pos_x = (blabel_pos_x + dx+dx_shift)# * (dx/dy)
+                blabel_pos_y = (blabel_pos_y + dy+dy_shift) 
 
                 #         ax.annotate(r'$' + Oa +'\\times'+Ob+'$',
                 #                     xy=(blabel_pos_x* 0.77, blabel_pos_y * 0.58), xycoords='data',
                 #                     fontsize=15,bbox=dict(boxstyle='round', facecolor='white', alpha=0.9),
                 #                     color='red')
                 ax.annotate(r"$" + Oa + "''\\times" + Ob + "''$",
-                            xy=(0.67, 0.06), xycoords='axes fraction',
-                            fontsize=15,
+                            xy=(0.67, 0.08), xycoords='axes fraction',
+                            fontsize=18,
                             bbox=dict(boxstyle='round', facecolor='white',
                                       alpha=0.9),
                             color='red')
@@ -14682,19 +15823,19 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
                                                  u.dimensionless_angles())
 
         scale_bar_length_pixels = length.value / cell_size
-        scale_bar_position = (-dx * 0.50, -dy * 0.9)
+        scale_bar_position = (-(dx-2*dx_shift) * 0.50, -(dy-2*dy_shift) * 0.9)
 
         ax.annotate('',
                     xy=(scale_bar_position[0] + scale_bar_length_pixels,
                         scale_bar_position[1]),
                     # xy=(0.1, 0.1), ##
                     xytext=scale_bar_position, arrowprops=dict(arrowstyle='-',
-                                                               color='black',
-                                                               lw=3))
+                                                               color='black', #navy
+                                                               lw=5))
 
         ax.text(scale_bar_position[0] + scale_bar_length_pixels / 2,
-                scale_bar_position[1] + scale_bar_length_pixels / 20,
-                f'{scalebar_length}', fontsize=16,
+                scale_bar_position[1] + scale_bar_length_pixels / 15,
+                f'{scalebar_length}', fontsize=20,
                 color='black', ha='center',weight='bold',
                 va='bottom')
         # except:
@@ -14710,14 +15851,15 @@ def eimshow(imagename, crop=False, box_size=128, center=None, with_wcs=True,
 
 def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
                    vmin_factor = 3,neg_levels=np.asarray([-3]),
-                   vmin=None,vmax=None,rms=None,
+                   vmin=None,vmax=None,rms=None,figsize=(6, 6),
                    extent = None,crop=False,centre=None,
-                   plot_title='',cmap='magma_r',n_contours = 8,
+                   plot_title='',label_colorbar='',
+                   cmap='magma_r',n_contours = 8,
                    box_size=None,plot_alpha_error_points=False):
 
     from matplotlib.colors import ListedColormap
     
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=figsize)
 
     if isinstance(alphaimage, str) == True:
         g = ctn(radio_map)
@@ -14818,9 +15960,13 @@ def plot_alpha_map(alphaimage,alphaimage_error,radio_map,frequencies,
                         c='black', alpha=0.8,
         #                 marker='x',
                         label=fr'Max err $\alpha$ = {(marker_sizes[max_error_pos][0]/50):.2f}')
-        plt.legend()    
+        plt.legend()
+    if label_colorbar == '':
+        label_colorbar = fr"Spectral Index $\alpha$ [{(frequencies[0]/1e9):.1f} ~ {(frequencies[-1]/1e9):.1f} GHz]"
+    else:
+        label_colorbar = label_colorbar
     cbar = plt.colorbar(img, 
-                        label=fr"Spectral Index $\alpha$ [{(frequencies[0]/1e9):.1f} ~ {(frequencies[-1]/1e9):.1f} GHz]")
+                        label=label_colorbar)
     plt.grid()
     
     plt.title(f"{plot_title} ({len(frequencies)} images)")
