@@ -1788,11 +1788,6 @@ if run_mode == 'terminal':
 
             if 'start_image' not in steps_performed:
 
-                if image_statistics['test_image']['inner_flux_f'] > 0.5:
-                    mask_grow_iterations = 2
-                if image_statistics['test_image']['inner_flux_f'] < 0.5:
-                    mask_grow_iterations = 4
-
                 rms_mask = None#1 * image_statistics['test_image']['rms_box']
 
                 # if image_statistics['test_image']['total_flux'] * 1000 > 100.0:
@@ -1821,6 +1816,11 @@ if run_mode == 'terminal':
                                                                    sigma=p0_params['sigma_mask'],
                                                                    selfcal_step='p0')
 
+                if image_statistics['test_image_0']['inner_flux_f'] > 0.5:
+                    mask_grow_iterations = 4
+                if image_statistics['test_image_0']['inner_flux_f'] < 0.5:
+                    mask_grow_iterations = 8
+
                 mask_name = create_mask(image_list['test_image_0'],
                                         rms_mask=rms_mask,
                                         sigma_mask=p0_params['sigma_mask'],
@@ -1832,8 +1832,8 @@ if run_mode == 'terminal':
                             # uvtaper=['0.05arcsec'],
                             delmodel=True,
                             # opt_args=' -multiscale -multiscale-scales 0 ',
-                            nsigma_automask='5.0',
-                            nsigma_autothreshold='2.0',
+                            nsigma_automask=p0_params['nsigma_automask'],
+                            nsigma_autothreshold=p0_params['nsigma_autothreshold'],
                             # next time probably needs to use 7.0 instead of 3.0
                             niter=niter, shift=FIELD_SHIFT,quiet=quiet,
                             uvtaper=p0_params['uvtaper'],
@@ -1913,16 +1913,22 @@ if run_mode == 'terminal':
                 if params_trial_2 is None:
                     if image_statistics['selfcal_test_0']['total_flux_mask'] * 1000 < 10.0:
                         """
-                        Check if using a taper will increase the flux density above 10 mJy.
-                        If yes, the source will not considered as `very faint`, and we may attempt a
-                        second phase-selfcal run with the template `faint` (i.e. `p1` will be executed).
+                        After the first pass of selfcal [phase], the data quality may have 
+                        improved. If originaly, the total flux density was below 10 mJy, 
+                        now, after improved corrected phases, the flux may be above 10 mJy. 
+                        
+                        We can check that using a taper or a higher robust will increase the 
+                        flux density above 10 mJy. If yes, the source will not considered as `very faint`, 
+                        and we may attempt a second phase-selfcal run with the template `faint` (
+                        i.e. `p1` will be executed).
                         If not, we will continue with the `very faint` template and will proceed to
-                        `ap1`.
+                        `ap1`, e.i., `p1` will not executed. 
                         """
                         # modified_robust = robust + 0.5
+
                         print('Deconvolving image with a taper.')
                         run_wsclean(g_name, imsize=imsize, imsizey=imsizey, cell=cell,
-                                    robust=0.5, base_name='selfcal_test_0',
+                                    robust=1.0, base_name='selfcal_test_0',
                                     nsigma_automask=p0_params['nsigma_automask'],
                                     nsigma_autothreshold=p0_params['nsigma_autothreshold'],
                                     n_interaction='0', savemodel=False, quiet=quiet,
@@ -1955,7 +1961,7 @@ if run_mode == 'terminal':
                 selfcal_params = select_parameters(
                     image_statistics['selfcal_test_0']['total_flux_mask'] * 1000)
                 parameter_selection['p0_pos'] = selfcal_params
-                print(' ++++>> Template of Parameters to be used for now on:',
+                print(' ++++>> Template of Parameters to be used from now on:',
                       parameter_selection['p0_pos']['name'])
                 if parameter_selection['p0_pos']['p0']['combine'] == 'spw':
                     parameter_selection['p0_pos']['p0']['spwmap'] = get_spwmap(g_vis)
@@ -1995,6 +2001,11 @@ if run_mode == 'terminal':
                 #                                                    image_statistics=image_statistics,
                 #                                                    sigma=p1_params['sigma_mask'],
                 #                                                    prefix='selfcal_test_0')
+
+                if image_statistics['selfcal_test_0']['inner_flux_f'] > 0.5:
+                    mask_grow_iterations = 6
+                if image_statistics['selfcal_test_0']['inner_flux_f'] < 0.5:
+                    mask_grow_iterations = 12
 
                 mask_name = create_mask(image_list['selfcal_test_0'],
                                         rms_mask=rms_mask,
@@ -2063,7 +2074,7 @@ if run_mode == 'terminal':
                                   action='apply',
                                   PLOT=False,
                                   gain_tables=phase_tables,
-                                  spwmaps=spwmaps,
+                                  # spwmaps=spwmaps,
                                   # gain_tables=gain_tables_applied[
                                   #     'p0'].copy()
                                   ))
@@ -2333,12 +2344,12 @@ if run_mode == 'terminal':
                     if selfcal_params['name'] == 'bright':
                         mask_grow_iterations = 10
                     else:
-                        mask_grow_iterations = 2
+                        mask_grow_iterations = 6
                 if image_statistics['selfcal_test_2']['inner_flux_f'] < 0.5:
                     if selfcal_params['name'] == 'bright':
                         mask_grow_iterations = 15
                     else:
-                        mask_grow_iterations = 3
+                        mask_grow_iterations = 12
 
                 mask_name = create_mask(image_list['selfcal_test_2'],
                                         rms_mask=rms_mask,
