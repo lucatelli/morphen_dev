@@ -343,7 +343,8 @@ if __name__ == "__main__":
         continue_clean = ' --continue '
     else:
         continue_clean = ' '
-    opt_args = (' -mem 80 -abs-mem 35 '
+    opt_args = (
+                # ' -mem 80 -abs-mem 35 '
                 # '-pol RL,LR -no-negative -circular-beam -no-reorder '
                 # ' -save-first-residual -save-weights -save-uv '-maxuv-l 3150000
                 ' '+uvselection+continue_clean+args.opt_args+' '

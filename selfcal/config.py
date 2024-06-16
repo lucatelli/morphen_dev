@@ -15,16 +15,16 @@ combine = ''
 outlierfile = ''
 
 
-quiet = True
+quiet = False
 do_additional_images = False
 run_mode = 'terminal'
 
+path = ('/path/to/vis/')
+vis_list = ['example_vis'] #do not use .ms extension
 
-# path = ('/path/to/vis/')
-# vis_list = ['example_vis'] #do not use .ms extension
 
 #VLA
-receiver = 'L'
+receiver = 'C'
 instrument = 'EVLA' # 'EVLA' or 'eM'
 
 #number of channels-out for wsclean's MFS imager.
@@ -42,14 +42,14 @@ steps = [
     'save_init_flags',  # save (or restore) the initial flags and run statwt
     # 'fov_image', # create a FOV image
     'test_image',#create a test image
-    # 'run_autoflag_init', # run rflag on the initial data (rarely used)
+    # # 'run_autoflag_init', # run rflag on the initial data (rarely used)
     'select_refant', #select reference antenna
     'p0',#initial test  of selfcal, phase only (p)
     'p1',#redo phase-only selfcal (if enough flux density); ignores p0
-    # 'p2',#continue phase-only selfcal (incremental)
-    # 'ap1',#amp-selfcal (ap); uses p0 or (p1 and p2)
-    # 'split_trial_1',#split the data after first trial (and run wsclean)
-    # 'report_results',#report results of first trial
+    'p2',#continue phase-only selfcal (incremental)
+    'ap1',#amp-selfcal (ap); uses p0 or (p1 and p2)
+    'split_trial_1',#split the data after first trial (and run wsclean)
+    'report_results',#report results of first trial
     # 'run_autoflag_final',#run rflag on the final data
 ]
 
@@ -73,7 +73,7 @@ taper_sizes_eMERLIN = {'L':'0.2arcsec',
 taper_sizes_JVLA = {'L':'1.0arcsec',
                     'S':'0.8arcsec',
                     'C':'0.6arcsec',
-                    'X':'0.6arcsec',
+                    'X':'0.4arcsec',
                     'Ku':'0.2arcsec',
                     'K':'0.03arcsec',
                     'Ka':'0.07arcsec'}
@@ -91,10 +91,11 @@ init_parameters = {'fov_image': {'imsize': 1024*8,
                                 'basename': 'FOV_phasecal_image',
                                 'niter': 100,
                                 'robust': 0.5},
-                  'test_image': {'imsize': int(1024*6),
-                                 'imsizey': int(1024*6),
+                  'test_image': {'imsize': int(7168*1),
+                                 'imsizey': int(7168*1),
                                  # 'FIELD_SHIFT':"'15:34:55.658  +23.29.43.026'",
-                                 'FIELD_SHIFT':None,
+                                 # 'FIELD_SHIFT':"'20:37:30.248  +25.33.35.672'", #IRAS20351+2521
+                                 'FIELD_SHIFT':"'20:37:26.049  +25.33.46.196'",
                                  'cell': cell_size,
                                  'prefix': 'test_image',
                                  'uvtaper': [''],
@@ -126,7 +127,7 @@ params_very_faint = {'name': 'very_faint',
                      'p0': {'robust': 0.5,
                             'solint' : '96s' if receiver in ('K', 'Ka', 'Ku') or instrument ==
                                                'eM' else '60s',
-                            'sigma_mask': 6.0 if instrument == 'eM' else 15.0,
+                            'sigma_mask': 6.0 if instrument == 'eM' else 12.0,
                             'combine': 'spw',
                             'gaintype': 'T',
                             'calmode': 'p',
@@ -149,7 +150,8 @@ params_very_faint = {'name': 'very_faint',
                              'spwmap': [], #leavy empty here. It will be filled later if combine='spw'
                              'nsigma_automask' : '3.0',
                              'nsigma_autothreshold' : '1.5',
-                             'uvtaper' : [''],
+                             'uvtaper': [taper_size] if receiver in ('C', 'X', 'Ku', 'K', 'Ka') or
+                                                        instrument == 'eM' else [''],
                              'with_multiscale' : False if receiver in ('K', 'Ka', 'Ku') or
                                                           instrument == 'eM' else True,
                              'scales': 'None',

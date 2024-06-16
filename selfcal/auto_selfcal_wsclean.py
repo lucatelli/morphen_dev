@@ -2380,15 +2380,16 @@ if run_mode == 'terminal':
 
             print(' ++==>> Preaparing for amp-gains....')
             # SNRs, percentiles_SNRs, caltable_int, caltable_3, caltable_inf  =  (
-            #     check_solutions(g_name, field, cut_off=cut_off,
-            #                                          n_interaction=iteration,
-            #                                          solnorm=solnorm,
-            #                                          combine=combine, spwmap = spwmap,
-            #                                          calmode=calmode,refant=refant,
-            #                                          gaintype=gaintype,
-            #                                          interp='cubic,cubic',
-            #                                          gain_tables_selfcal=phase_tables,
-            #                                          return_solution_stats=True))
+            #     check_solutions(g_name, field, cut_off=1.0,
+            #                     n_interaction=iteration,
+            #                     solnorm=solnorm,
+            #                     combine=ap1_params['combine'],
+            #                     spwmap=ap1_params['spwmap'],
+            #                     calmode=ap1_params['calmode'], refant=refant,
+            #                     gaintype=ap1_params['gaintype'],
+            #                     interp='cubic,cubic',
+            #                     gain_tables_selfcal=phase_tables.copy(),
+            #                     return_solution_stats=True))
 
             if 'ap1' not in steps_performed:
                 gain_tables_selfcal_ap1, spwmaps_selfcal_ap1 = (
