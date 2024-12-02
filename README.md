@@ -27,7 +27,8 @@ processing. The three main functionalities of `morphen` are:
 2. Multi-Sersic Image Fitting Decomposition ([image_decomposition/README.md](image_decomposition/README.md))
 3. Radio Interferometric Self-calibration ([selfcal/README.md](selfcal/README.md))
 
-
+These tasks are powered by: Astropy, NumPy, SciPy, Photutils, PetroFit, Morfometryka, SEP, LMFIT, 
+Jax, scikit-image, WSClean, CASA, among others. 
 
 You will be able to measure basic image morphology and photometry. `morphen` also comes with a 
 state-of-the-art python-based image fitting implementation based on the Sersic 
@@ -55,43 +56,37 @@ Currently, there is no option to install `morphen` (via `pip` or `conda`).
 However, its usage is simple. The code can be used as a module, interactively via Jupyter notebooks,
 or via the command line interface (see "Important notes" below). For now, we recommend  
 using it via Jupyter notebooks (see below for examples). 
+See ([install_instructions.md](install_instructions.md)) for installation instructions.
 
 
 The modular file `morphen.py` is the on-development module that allows you 
-to do such tasks, like a normal package installed via `pip`. For that, need to download the 
+to do such tasks, like a normal package installed via `pip`. For that, one need to download the 
 entire repository. The `libs` directory, specifically 
 the `libs/libs.py` file, contains the core functionalities in which `morphen.py` is based.
-Examples can be found in the following directories: 
-- `notebooks/`: contains some more general examples of how to use the code.
-- `image_analysis/`: contains examples of how to use the image analysis functionalities.
-- `image_decomposition/`: contains examples of how to use the Sersic image decomposition 
-  functionalities.
+
+[//]: # (Examples can be found in the following directories: )
+
+[//]: # (- `notebooks/`: contains some more general examples of how to use the code.)
+
+[//]: # (- `image_analysis/`: contains examples of how to use the image analysis functionalities.)
+
+[//]: # (- `image_decomposition/`: contains examples of how to use the Sersic image decomposition )
+
+[//]: # (  functionalities.)
 
 ### Important notes
-1. The functionalities presented in the examples notebooks are stable. We are in extensive 
-   development, and we are setting milestones for optimizations, bug fixes, better 
-   documentation, and new functionalities for a larger scope of the code. 
+1. The functionalities presented in the examples notebooks are somehow stable. We are in extensive 
+   development and testing, and we are setting milestones for optimizations, bug fixes, better 
+   documentation, and new functionalities for a larger scope of the code and scientific objectives.
 2. The command line option is still under development and not all argument options are 
    available. However, using it via jupyter is somehow stable (check the notebooks for examples). 
-3. This readme file is under development. I am also currently adding more basic usages 
-to Jupyter notebooks guides. 
-4. Installation instructions for all the dependencies are provided in the `install_instructions.md` 
-file.
+3. This readme file is under development. I am also currently adding more basic usages to 
+   Jupyter notebooks guides. We also recognise that the code is still lacking of documentation, and 
+   we are working on it.
+4. Installation instructions for all the dependencies are provided in the ([install_instructions.md](install_instructions.md)) file.
 
 
 ## Features
-### Image Analysis
-In the directory [```image_analysis/```](image_analysis/), the notebook 
-[```morphen.ipynb```](image_analysis/morphen.ipynb) contain sets examples of how to perform 
-basic image analysis, such as image statistics, photometry,
-shape analysis, etc. Check also [```image_analysis/README.md```](image_analysis/README.md) file for more details.
-
-[//]: # (Collective direct results from this code are published here: `<<ADD LINK>>`.)
-
-
-
-
-
 ### Image Fitting Decomposition
 
 We introduce a Python-based image fitting implementation using the Sersic function.
@@ -107,7 +102,9 @@ Prior photometry is measured from the data using the `PetroFit` code
 `photutils` package (https://photutils.readthedocs.io/en/stable/) and used as initial 
 constraints for the minimisation.
 Examples of how to use it can be found in the Notebook 
-[```image_decomposition/morphen_sersic.ipynb```](image_decomposition/morphen_sersic.ipynb)
+[```image_decomposition/morphen_sersic.ipynb```](image_decomposition/morphen_sersic.ipynb) (for 
+radio images) and in [```image_decomposition/morphen_sersic_optical.ipynb```](image_decomposition/morphen_sersic_optical.ipynb) 
+for optical images.
 
 
 The decomposition was first designed for radio interferometric images, but can be used with any 
@@ -139,19 +136,29 @@ For now, you already can check some basic examples in the notebook
 [//]: # (It uses the LMFIT package with an )
 [//]: # (object-oriented implementation, easy to use and manageable number of n-components. )
 
+### Image Analysis
+In the directory [```image_analysis/```](image_analysis/), the notebook 
+[```morphen.ipynb```](image_analysis/morphen.ipynb) contain sets of examples of how to perform 
+basic image analysis, such as image statistics, photometry,
+shape analysis, etc. 
+
+[//]: # (Check also [```image_analysis/README.md```]&#40;image_analysis/README.md&#41; file for more details.)
+
+[//]: # (Collective direct results from this code are published here: `<<ADD LINK>>`.)
+
 ### Radio Interferometric Related Tasks
 
+[//]: # (#### Interferometric Imaging With `wsclean`)
 
+[//]: # (Directory [```imaging/```]&#40;imaging/&#41; contains a python script called )
 
-#### Interferometric Imaging With `wsclean`
-Directory [```imaging/```](imaging/) contains a python script called 
-[```imaging/imaging_with_wsclean_v3.py```](imaging/imaging_with_wsclean_v3.py) which is just a support code 
-for easy use to call wsclean on the command line. See the intructions file of 
-how to use it: [```imaging/wsclean_imaging.md```](imaging/wsclean_imaging.md)
+[//]: # ([```imaging/imaging_with_wsclean_v3.py```]&#40;imaging/imaging_with_wsclean_v3.py&#41; which is just a support code )
 
+[//]: # (for easy use to call wsclean on the command line. See the intructions file of )
 
+[//]: # (how to use it: [```imaging/wsclean_imaging.md```]&#40;imaging/wsclean_imaging.md&#41;)
 
-#### Imaging with `wsclean` and self-calibration
+#### Imaging with `wsclean` and self-calibration of interferometric visibilities
 
 File [```selfcal/imaging_with_wsclean.py```](selfcal/imaging_with_wsclean.py) is a wrapper
 to call `wsclean` on the command line, with pre-defined parameters already set. You can 
@@ -182,8 +189,9 @@ is a script to perform self-calibration with `wsclean` and `CASA`. Is fully auto
 but is still in development. Check the 
 [```selfcal/README.md```](selfcal/README.md) file for more details.
 
-#### Selfcalibration and Imaging with `CASA`.
-(DOC NOT READY)
+[//]: # (#### Selfcalibration and Imaging with `CASA`.)
+
+[//]: # (&#40;DOC NOT READY&#41;)
 
 #### Interferometric Decomposition
 Interferometric decomposition is a technique introduced by Lucatelli et al. (2024) to 
@@ -191,8 +199,9 @@ disentangle the radio emission using combined images from distinct interferometr
 
 ***More details will be provided soon.***
 
-#### CASA Utilities
-(IN DEV)
+[//]: # (#### CASA Utilities)
+
+[//]: # (&#40;IN DEV&#41;)
 
 ### Origin of `morphen`
 The idea of `morphen` predates back to 2018 alongside the development of 
@@ -208,6 +217,7 @@ decomposition.
 Alongside, it was also clear that the reproducibility in radio astronomy is a challenge, and 
 we were in need of a package towards reproducibility of scientific results. Hence, the ideas of 
 `morphen` were brought back to be incorporated within radio astronomy.
+
 
 ## How to contribute
 This is an open-source project. We are welcoming all kinds of contributions, suggestions and bug 
